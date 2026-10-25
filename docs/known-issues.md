@@ -1,0 +1,24 @@
+# 已知问题与限制（v1.0）
+
+## 功能边界（设计如此，非缺陷）
+
+- **静态模式无实时协作**：WebSocket 光标/在线状态/备注保存仅在本地完整模式；静态模式 UI 明确禁用并标注（"无实时协作"徽标），不伪装支持。
+- **依赖分析仅 TS/JS**：Python/Go/Rust 等语言不解析；`dependencyAnalysis` 如实输出 `partial`。解析不了的 import 记为 unresolved，不虚构边。
+- **Agent 报告 ≠ 事实**：`.archsync/agent-reports.jsonl` 每条 `authoritative:false`，不参与快照状态计算。
+- **init 向导的层分配是启发式**：目录名匹配 + 组件文件探测，输出中明确标注「请人工确认」；依赖建议来自真实 import（非猜测）。
+
+## 已知限制
+
+1. **匿名 GitHub API 限流 60 req/h/IP**：PR files/checks 按预算拉取（默认前 12 个 PR：open 优先），超出预算的 PR 保持 `checks=unknown`、`changedFiles=[]` 并整体标注 stale。私有大仓库建议用本地模式 + GITHUB_TOKEN。
+2. **本地模式的快照历史未持久化多版本**：状态存储仍为 JSON 文件（单当前版本 + 备注修订）；SQLite 历史库属后续任务（静态模式已有多版本 + 差异）。
+3. **live 模式（token）不逐 PR 拉变更文件**：模块↔PR 关联依赖配置 issues 映射与路径（changedFiles 为空）。静态匿名管线反而有 PR files。
+4. **静态 bundle 体积 ~570KB（gzip ~180KB）**：YAML 导入功能把 yaml+zod+graph 打入前端；可按需 code-split 优化。
+5. **import 分析为正则解析**：覆盖 import/export from/require/dynamic import 常见形态；动态拼接的导入无法覆盖（记为 external）。
+6. **CI 内浏览器 E2E 未部署**：本轮以等效 browser-use 真实浏览器验收；Playwright 进 CI 待做。
+7. **快照历史分支首跑**：`site-snapshots` 分支在首次 CI 运行时由 bot 创建；若仓库禁用了 Actions 推送，需要手动建分支。
+8. **移动端为可用级适配**（侧栏收起、画布可操作），未针对触控手势深度优化。
+
+## 安全限制
+
+- 访问码为单一共享码（无个人账户体系）；会话 12h。适合小团队/个人公网演示，不适合多租户。
+- 静态站点一旦发布即公开：务必只用 `publishStatic: true` + 公开数据，敏感仓库绝不开启。
