@@ -4,10 +4,10 @@
 
 ## 当前状态（2026-10-25）
 
-- **分支**：`feat/v1.0`（基于 origin/main @ a7389e3 开发，未推送→见下方最新）
+- **分支**：`feat/v1.0` 已推送 → **PR #7**（https://github.com/lovezy0730-create/ArchSync/pull/7，CI verify+build 全绿，deploy 在 PR 上正确跳过）
 - **开放 PR**：
-  - **#3** `feat/deploy-readiness`：访问码鉴权 + Docker。已修复统一鉴权门并 rebase 到最新 main，**等用户合并**（合并顺序：先 #3 后 v1.0 PR）。
-  - **v1.0 PR**：`feat/v1.0` → main（本分支，见提交列表）。
+  - **#3** `feat/deploy-readiness`：访问码鉴权 + Docker（已修复统一鉴权门并 rebase）。**等用户合并**。
+  - **#7** `feat/v1.0`：等用户合并（合并 #3 后如冲突需 rebase——本分支基于最新 main，预期无冲突）。
 - **Pages**：https://lovezy0730-create.github.io/ArchSync/ 已上线（main 自动部署）。v1.0 合并后将自动重新部署并携带真实数据（archsync 自举项目 live PR 数据）。
 
 ## v1.0 分支提交清单
