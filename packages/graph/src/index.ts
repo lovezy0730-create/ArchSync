@@ -421,3 +421,5 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
 
 export { diffSnapshots } from './diff.js';
 export type { SnapshotDiff, ModuleDiffEntry, StateChangeEntry, EdgeDiffEntry } from './diff.js';
+
+export { dependencyClosure, isEdgeOnPath } from './closure.js';

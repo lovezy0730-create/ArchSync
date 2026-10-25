@@ -1,4 +1,5 @@
 import type { ModuleState, Snapshot } from '@archsync/contracts';
+export { dependencyClosure, isEdgeOnPath } from '@archsync/graph';
 
 /** Deterministic layered layout: one column per layer, stable ordering. */
 export interface LayoutedNode {
@@ -49,58 +50,6 @@ export function layoutSnapshot(snapshot: Snapshot): {
   const width = 40 + columns.length * (NODE_WIDTH + COL_GAP) + 40;
   const height = HEADER_HEIGHT + maxRows * (NODE_HEIGHT + ROW_GAP) + 40;
   return { nodes, columns, canvasSize: { width, height } };
-}
-
-/** Transitive upstream (what the module depends on) and downstream sets. */
-export function dependencyClosure(
-  modules: ModuleState[],
-  startId: string,
-): { upstream: Set<string>; downstream: Set<string> } {
-  const byId = new Map(modules.map((m) => [m.id, m]));
-  // derive reverse edges locally so correctness never depends on the
-  // dependedOnBy field being populated by the caller
-  const reverse = new Map<string, string[]>();
-  for (const m of modules) {
-    for (const dep of m.plannedDependsOn) {
-      reverse.set(dep, [...(reverse.get(dep) ?? []), m.id]);
-    }
-  }
-
-  const upstream = new Set<string>();
-  const downstream = new Set<string>();
-
-  const walk = (id: string, neighbors: (id: string) => string[], visited: Set<string>): void => {
-    for (const next of neighbors(id)) {
-      if (next === startId || visited.has(next)) continue;
-      visited.add(next);
-      walk(next, neighbors, visited);
-    }
-  };
-  walk(startId, (id) => byId.get(id)?.plannedDependsOn ?? [], upstream);
-  walk(startId, (id) => reverse.get(id) ?? [], downstream);
-  return { upstream, downstream };
-}
-
-export interface EdgeHighlightInput {
-  edges: Snapshot['edges'];
-  selectedId: string;
-  upstream: Set<string>;
-  downstream: Set<string>;
-}
-
-export function isEdgeOnPath(
-  edge: { source: string; target: string },
-  selectedId: string,
-  upstream: Set<string>,
-  downstream: Set<string>,
-): boolean {
-  // upstream edges: a→b where a is an ancestor and b is the selection or an ancestor
-  const upHit =
-    upstream.has(edge.source) && (upstream.has(edge.target) || edge.target === selectedId);
-  // downstream edges: a→b where a is the selection or a descendant and b is a descendant
-  const downHit =
-    (downstream.has(edge.source) || edge.source === selectedId) && downstream.has(edge.target);
-  return upHit || downHit;
 }
 
 export function matchesSearch(module: ModuleState, query: string): boolean {
