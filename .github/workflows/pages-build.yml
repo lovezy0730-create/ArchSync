@@ -5,6 +5,15 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Real-data refresh channels: issue/PR activity re-renders collaboration
+  # state on the static site. These run the SAME trusted main pipeline — no
+  # pull_request_target, no untrusted checkout, no extra secrets.
+  issues:
+    types: [opened, edited, closed, reopened, assigned, unassigned, labeled]
+  schedule:
+    # weekly reconciliation catch-up (03:17 UTC Sundays); anonymous API use is
+    # ~30 req/run — far below the 60 req/h limit
+    - cron: '17 3 * * 0'
   workflow_dispatch:
 
 # Static snapshots are public. The generator only includes explicitly
@@ -14,6 +23,8 @@ permissions:
 
 concurrency:
   group: github-pages-release
+  # mid-flight issue/PR events queue behind the current release instead of
+  # stacking redundant builds; a queued run picks up the latest state anyway
   cancel-in-progress: false
 
 jobs:
@@ -39,8 +50,46 @@ jobs:
         run: pnpm typecheck
       - name: Tests
         run: pnpm test
-      - name: Generate public-safe snapshots
+      - name: Restore snapshot history (site-snapshots branch)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: site-snapshots
+          path: site-snapshots-checkout
+          fetch-depth: 1
+        continue-on-error: true
+        # first run: branch does not exist yet, generator seeds an empty history
+
+      - name: Seed history dir from branch
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -d site-snapshots-checkout/history ]; then
+            mkdir -p site-snapshots
+            cp -r site-snapshots-checkout/history/* site-snapshots/ 2>/dev/null || true
+          fi
+
+      - name: Generate public-safe snapshots (with history versions)
         run: pnpm snapshot:generate
+
+      - name: Persist new snapshot versions to site-snapshots branch
+        if: github.event_name != 'pull_request'
+        run: |
+          cd site-snapshots
+          if [ -n "$(git status --porcelain 2>/dev/null || true)" ] || [ ! -d .git ]; then
+            cd ..
+            git config user.name "archsync-snapshot-bot"
+            git config user.email "actions@users.noreply.github.com"
+            REMOTE_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git worktree add -f site-snapshots-wt -b site-snapshots 2>/dev/null || git worktree add -f site-snapshots-wt site-snapshots
+            cd site-snapshots-wt
+            mkdir -p history
+            cp -r ../site-snapshots/* history/ 2>/dev/null || true
+            git add history
+            git commit -m "chore(snapshots): archive snapshot versions [skip ci]" || true
+            git push "$REMOTE_URL" HEAD:site-snapshots
+            cd ..
+            git worktree remove --force site-snapshots-wt || true
+          fi
       - name: Build GitHub Pages site at /ArchSync/
         run: pnpm build:pages
       - name: Verify published files and scrub secrets
