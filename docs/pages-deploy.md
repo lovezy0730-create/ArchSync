@@ -1,3 +1,37 @@
+# GitHub Pages 部署与运维
+
+> **状态**：本仓库已配备正式 Pages 构建/验证/部署工作流（`.github/workflows/pages-build.yml`）。网站是否真正上线，以 GitHub Actions 中 `deploy` job 的结果及网站 HTTP 访问结果为准。
+
+## 首次激活（仓库管理员执行一次）
+
+GitHub Pages 必须在仓库设置中选用 **GitHub Actions** 发布来源：
+
+1. 打开 https://github.com/lovezy0730-create/ArchSync/settings/pages
+2. 在 **Build and deployment → Source** 下拉选 **GitHub Actions**。
+3. 返回 Actions 页面，打开 `GitHub Pages (build, verify and deploy)`，使用 `Run workflow`（选择 `main`）。
+4. 等待 `build`、`deploy` 两个 job 都显示成功，再访问 https://lovezy0730-create.github.io/ArchSync/ 。
+
+若首次触发时 Pages 尚未启用，`deploy` 可能失败。只需按前述步骤开启 Pages 并重跑工作流；不要修改仓库可见性或发布私有快照。
+
+## 工作流行为
+
+- PR：执行 lint、typecheck、测试、静态快照、构建、安全验证；输出 `pages-static-site-preview` 预览 Artifact；**不发布**。
+- push 到 `main`：执行相同检查，上传官方 Pages Artifact，再用 `actions/deploy-pages@v4` 发布。
+- `workflow_dispatch`：可手动重新构建并部署 `main`。
+- 发布内容由 `publishStatic: true` 允许列表决定，默认仅包含 Sticky Notes 演示工程。
+- 静态版本不具备实时 WebSocket、编辑备注、本地扫描等在线服务器功能。
+
+## 常用命令
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:pages
+pnpm verify:pages
+pnpm preview:pages
+```
+
+## 历史部署前指南（保留作参考）
+
 # GitHub Pages 部署指南（Pages Ready → 上线）
 
 > **当前状态：GitHub Pages Ready — All Checks Passed — Not Deployed。**
