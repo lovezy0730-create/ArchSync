@@ -125,7 +125,9 @@ export function parseProjectConfig(text: string): ConfigParseResult {
   const errors: ConfigError[] = [];
   const warnings: ConfigError[] = [];
 
-  const bytes = Buffer.byteLength(text, 'utf8');
+  // TextEncoder instead of Buffer: this module also runs in the browser
+  // (static-site YAML import preview).
+  const bytes = new TextEncoder().encode(text).length;
   if (bytes > MAX_CONFIG_BYTES) {
     errors.push({
       path: '$',
