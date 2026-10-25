@@ -95,6 +95,40 @@ describe('access-code auth mode', () => {
     expect(setCookie).not.toContain(ACCESS_CODE); // cookie must not leak the code
   });
 
+  it('unauthenticated READS are also 401 (unified gate)', async () => {
+    // the gap this closes: GET endpoints must not leak data anonymously
+    const endpoints = [
+      '/api/v1/projects',
+      '/api/v1/projects/testproj/snapshot',
+      '/api/v1/projects/testproj/modules/mod-a',
+      '/api/v1/projects/testproj/team',
+      '/api/v1/jobs/whatever',
+    ];
+    for (const ep of endpoints) {
+      const res = await fetch(`${handle.url}${ep}`);
+      expect(res.status, `GET ${ep} should require a session`).toBe(401);
+    }
+    const validate = await fetch(`${handle.url}/api/v1/config/validate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ config: 'schemaVersion: 1' }),
+    });
+    expect(validate.status).toBe(401);
+    // healthz stays public for probes
+    expect((await fetch(`${handle.url}/healthz`)).status).toBe(200);
+  });
+
+  it('authenticated reads succeed with a valid session cookie', async () => {
+    const login = await fetch(`${handle.url}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: ACCESS_CODE }),
+    });
+    const cookie = (res => res.headers.get('set-cookie')?.split(';')[0] ?? '')(login);
+    const projects = await fetch(`${handle.url}/api/v1/projects`, { headers: { cookie } });
+    expect(projects.status).toBe(200);
+  });
+
   it('unauthenticated mutation is 401; cookie grants access', async () => {
     const url = `${handle.url}/api/v1/projects/testproj/modules/mod-a/annotation`;
     const body = JSON.stringify({ text: '通过访问码写入', expectedRevision: 1 });

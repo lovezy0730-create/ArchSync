@@ -1,12 +1,27 @@
 import type { ModuleDetail } from '@archsync/contracts';
-import { api } from './api.js';
-import { SERVER_CAPABILITIES, type AnnotationWriteResult, type DataProvider, type TeamInfo } from './data-provider.js';
+import { api, ApiError } from './api.js';
+import {
+  SERVER_CAPABILITIES,
+  type AnnotationWriteResult,
+  type AuthProbe,
+  type DataProvider,
+  type TeamInfo,
+} from './data-provider.js';
 
 /** Local full mode: talks to the Fastify server (REST + WS live in presence-client). */
 export function createServerProvider(): DataProvider {
   return {
     mode: 'server',
     capabilities: SERVER_CAPABILITIES,
+    probeAuth: async (): Promise<AuthProbe> => api.me(),
+    submitAccessCode: async (code) => {
+      try {
+        await api.login(code);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, message: err instanceof ApiError && err.status === 401 ? '访问码不正确，请重试。' : `验证失败: ${(err as Error).message}` };
+      }
+    },
     listProjects: () => api.projects(),
     loadSnapshot: (projectId) => api.snapshot(projectId),
     loadModule: (projectId, moduleId) => api.module(projectId, moduleId),
@@ -18,8 +33,15 @@ export function createServerProvider(): DataProvider {
       expectedRevision: number,
       user: string,
     ): Promise<AnnotationWriteResult> {
-      const result = await api.patchAnnotation(projectId, moduleId, { text, expectedRevision }, user);
-      return { ok: true, revision: result.revision, text: result.text };
+      try {
+        const result = await api.patchAnnotation(projectId, moduleId, { text, expectedRevision }, user);
+        return { ok: true, revision: result.revision, text: result.text };
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          return { ok: false, conflict: true, message: '备注已被其他成员修改，已为你加载最新版本，请基于最新内容重试。' };
+        }
+        return { ok: false, message: `保存失败: ${(err as Error).message}` };
+      }
     },
     async resync(projectId: string): Promise<void> {
       const { jobId } = await api.sync(projectId);

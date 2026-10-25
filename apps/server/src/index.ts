@@ -13,7 +13,7 @@ import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
 import { registerRoutes } from './routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
-import { SessionStore, parseCookies, SESSION_COOKIE } from './auth.js';
+import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -101,6 +101,29 @@ export async function createServer(overrides?: {
   await app.register(websocket);
 
   app.get('/healthz', async () => ({ ok: true, time: new Date().toISOString() }));
+
+  // ---- unified auth gate (code mode) -------------------------------------
+  // Every /api/v1/* request — reads included — requires a valid session.
+  // Only the auth endpoints themselves and /healthz stay reachable so the
+  // login page can bootstrap. This closes the gap where GET endpoints
+  // (projects/snapshot/team/jobs) leaked data anonymously in code mode.
+  const PUBLIC_API_PATHS = new Set([
+    '/api/v1/me',
+    '/api/v1/auth/login',
+    '/api/v1/auth/logout',
+  ]);
+  if (env.authMode === 'code') {
+    app.addHook('onRequest', async (request, reply) => {
+      const path = request.url.split('?')[0] ?? request.url;
+      if (!path.startsWith('/api/') || PUBLIC_API_PATHS.has(path)) return;
+      const token = sessionTokenFromRequest(request);
+      if (!sessions.validate(token)) {
+        return reply.code(401).send({
+          error: { code: 'unauthorized', message: '需要访问码会话（请先登录）' },
+        });
+      }
+    });
+  }
 
   registerRoutes(app, {
     entries: entryById,
