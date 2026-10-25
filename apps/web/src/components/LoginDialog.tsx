@@ -7,10 +7,11 @@ export function LoginDialog() {
   const team = useStore((s) => s.team);
   const teamDemo = useStore((s) => s.teamDemo);
   const booted = useStore((s) => s.booted);
+  const mode = useStore((s) => s.mode);
 
   const [name, setName] = useState('');
 
-  if (!booted || identity) return null;
+  if (!booted || identity || mode === 'static') return null;
 
   return (
     <div className="login-overlay" role="dialog" aria-label="选择身份">

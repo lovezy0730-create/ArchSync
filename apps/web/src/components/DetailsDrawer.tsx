@@ -24,6 +24,7 @@ export function DetailsDrawer() {
   const saveAnnotation = useStore((s) => s.saveAnnotation);
   const conflict = useStore((s) => s.annotationConflict);
   const dismissConflict = useStore((s) => s.dismissConflict);
+  const annotationWrite = useStore((s) => s.capabilities.annotationWrite);
 
   const [draft, setDraft] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
@@ -183,8 +184,11 @@ export function DetailsDrawer() {
             <textarea
               ref={textareaRef}
               value={draft}
-              placeholder="记录架构备注（所有成员可见，乐观锁保护并发编辑）…"
+              placeholder={annotationWrite
+                ? '记录架构备注（所有成员可见，乐观锁保护并发编辑）…'
+                : '静态模式下备注为只读；启动本地服务模式（pnpm dev）后可编辑。'}
               maxLength={2000}
+              disabled={!annotationWrite}
               onFocus={() => sendEditingToPeers('annotation')}
               onBlur={() => sendEditingToPeers(null)}
               onChange={(e) => setDraft(e.target.value)}
@@ -197,7 +201,8 @@ export function DetailsDrawer() {
               )}
               <button
                 className="save-btn"
-                disabled={!detail}
+                disabled={!detail || !annotationWrite}
+                title={annotationWrite ? '保存备注' : '静态模式下备注不可编辑'}
                 onClick={async () => {
                   if (!detail) return;
                   const ok = await saveAnnotation(module.id, draft, detail.annotation.revision);
