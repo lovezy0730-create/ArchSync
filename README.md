@@ -1,47 +1,69 @@
 # ArchSync
 
-基于浏览器的**架构可视化与团队协作工作台**：从 `.archsync/project.yaml` 规划文件生成交互式分层架构图，用本地工作区扫描判定真实实现状态，叠加（可选的）GitHub 协作数据，并提供多会话实时在线协作。
+**ArchSync 是一个面向开发者与 AI Agent 的架构可视化和协作工作台。** 它读取 `.archsync/project.yaml` 中的架构规划，将模块与依赖展示为交互式图谱，并结合文件扫描和 GitHub 协作信息解释项目进度。
 
-> **状态：MVP v0.1（功能分支 `feat/mvp-workbench` 开发中）。** 本 README 描述的功能以当前分支代码为准；主线 `main` 目前只包含施工文档。
+[**在线体验 · GitHub Pages**](https://lovezy0730-create.github.io/ArchSync/) · [施工设计](docs/CONSTRUCTION_PLAN.md) · [Pages 部署说明](docs/pages-deploy.md) · [API 文档](docs/api.md)
 
-## 60 秒启动（Windows 11 / macOS / Linux）
+> **当前版本：MVP v0.1，已提供 GitHub Pages 静态演示站和本地完整模式。** GitHub Actions 的正式 Pages `build` / `deploy` 已通过（[发布记录](https://github.com/lovezy0730-create/ArchSync/actions/runs/40204211709)）。在线站点的协作数据是明确标记的 **DEMO**，并非本仓库的实时任务状态；这不是已完成的生产级多人协作平台。
 
-前置：Node.js ≥ 22、pnpm ≥ 10（`corepack enable` 可自动获取）。
+![ArchSync 静态模式工作台截图](docs/screenshots/pages-static-mode.png)
+
+## 立即体验
+
+### 方式一：网页体验（无需安装）
+
+打开 **https://lovezy0730-create.github.io/ArchSync/**。
+
+网页基于 GitHub Pages 免费静态托管，可进行以下操作：
+
+- 浏览 React Flow 分层架构图，缩放、拖拽、适应视图与高亮上下游依赖。
+- 搜索、按任务/实现状态筛选模块，点击节点查看路径、负责人、任务关联与证据。
+- 查看构建时生成的版本、时间和来源 SHA；识别 **DEMO 数据**与不可用的数据来源。
+- 点击「导入 YAML」，在浏览器内解析自己的架构规划并预览；文件**不会上传**，也**不会扫描本机代码**，因此无法确认的实现状态显示为「未知」。
+
+**网页演示数据：** 当前只发布示例工程 `Windows 便签 (Sticky Notes)` 的静态快照。示例中的成员、Issue 和 PR 均为虚构演示数据；源仓库自身的架构不会默认加入公开快照。
+
+**静态模式边界：** 无 WebSocket 实时光标、服务器端备注编辑、本地文件监听和即时 GitHub 同步。网页展示的是**上一次构建时的数据**，不能将其当作实时 GitHub 状态。
+
+### 方式二：本地完整模式（Windows 11 / macOS / Linux）
+
+环境：Node.js **≥ 22**，项目使用 `pnpm@11.22.0`（可以先执行 `corepack enable`）。
 
 ```powershell
 git clone https://github.com/lovezy0730-create/ArchSync.git
 cd ArchSync
-pnpm install
-pnpm dev          # 首次会自动构建前端，然后启动服务
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-打开 **http://127.0.0.1:4310** 即可。无需任何令牌或配置。
+打开 **http://127.0.0.1:4310**。首次启动会构建网页，然后在单端口提供 React 前端、Fastify REST API 与 WebSocket。
 
-- 服务单端口承载 REST API、WebSocket 与构建好的前端。
-- 无 `GITHUB_TOKEN` 时，自带示例项目使用**明确标记的演示协作数据**（界面显示 `DEMO 数据` 徽标）。
+本地模式额外支持：
 
-## 两个内置项目
+- 实际扫描本仓库或 `examples/*` 项目的 Git 基线与工作区文件，区分规划、实际文件和未提交变更。
+- Chokidar 自动监听本地文件以及部分 Git 状态变化，触发本地快照刷新。
+- 多浏览器会话的在线成员、光标、选中模块及备注编辑状态。
+- 模块备注保存与修订冲突检测；可选只读 GitHub Issues / PR 数据源。
 
-| 项目 | 数据来源 | 用途 |
-|---|---|---|
-| `ArchSync 工作台（本仓库自描述）` | **真实**：扫描本仓库工作区 + git 基线；无协作数据 | 看 ArchSync 自己的架构与真实扫描 |
-| `Windows 便签 (Sticky Notes)`（示例） | 真实扫描 `examples/sticky-notes/` + **演示** Issue/PR/成员（`collab.demo.json`） | 体验全部状态与协作场景 |
+> 默认登录仅是**本机演示身份**，服务仅监听回环地址。它不是公网用户认证，**不要直接把本地开发服务暴露到互联网**。独立的部署鉴权改动如果尚未合并到主线，则不属于上述本地默认版本。
 
-示例项目刻意覆盖了完整状态矩阵：已完成并验收（绿）、待审核（紫）、开发中（蓝）、已阻塞（红）、未开始/未检测到代码（灰）。
+## 两种模式的能力对照
 
-## 界面功能
+| 能力 | GitHub Pages 静态模式 | 本地完整模式 |
+| --- | --- | --- |
+| 架构图、详情、搜索、筛选、依赖高亮 | ✅ | ✅ |
+| 架构 YAML 导入预览 | ✅ 浏览器内预览 | ✅ 仓库配置解析与校验 |
+| Git 文件扫描及本地覆盖层 | — 只有构建时快照 | ✅ |
+| GitHub Issues / PR | 构建时公开允许的数据或 DEMO | ✅ 配置只读 Token 后获取 |
+| 自动更新 | `main` 更新触发重新构建与发布 | ✅ 本地文件监听；GitHub 状态仍需重新同步 |
+| 多人在线光标与模块选中 | — | ✅ 本机多会话 |
+| 协作备注写入与冲突检测 | — 只读 | ✅ |
+| 需要常驻 Node.js 服务 | 否 | 是 |
 
-- **交互式架构图**：按层分列、缩放/拖拽/适应视图、小地图、点击节点查看详情。
-- **依赖高亮**：选中模块后高亮其全部上下游传递路径，其余淡出。
-- **搜索与筛选**：按名称/负责人搜索；按任务状态、实现状态、层级筛选；刷新后保持选择。
-- **模块详情**：负责人/执行者/贡献者、规划路径与实际匹配文件、关联 Issue/PR、证据链、协作备注（乐观锁）。
-- **真实状态判定**：`未检测到代码 ≠ 功能不存在`；扫描失败显示 `未知`；规划边与已验证调用严格区分（MVP 不做 AST，`dependencyAnalysis: not_supported`）。
-- **本地覆盖层**：未提交的增/删/改只计入本机视图并明确标注，不会混入主线。
-- **实时协作**：同项目多会话在线列表、画布光标、正在查看的模块、备注编辑状态；断线自动重连。
+## 项目配置示例
 
-## 连接你自己的项目
-
-在仓库根目录或任意子目录放一个 `.archsync/project.yaml`（服务会自动发现根目录与 `examples/*`）：
+将 `.archsync/project.yaml` 放在项目根目录：
 
 ```yaml
 schemaVersion: 1
@@ -53,56 +75,97 @@ project:
     repo: your-repo
     defaultBranch: main
   root: "."
+  # 仅在你明确同意整个生成快照被公开时开启：
+  # publishStatic: true
+
 layers:
-  - { id: web, label: 前端, order: 1 }
-  - { id: api, label: 服务, order: 2 }
+  - { id: ui, label: 界面, order: 1 }
+  - { id: service, label: 服务, order: 2 }
+
 modules:
-  - id: web-app
-    label: Web 应用
-    layer: web
-    paths: ["apps/web/src/**"]
-    plannedDependsOn: [api-gateway]
-    acceptance:
-      requiredIssues: [12]        # 验收所需的 Issue（completed 关闭）
-      requiredChecks: [lint, test]
-      manualApproval: false
-  - id: api-gateway
-    label: 网关服务
-    layer: api
-    paths: ["services/gateway/**"]
+  - id: ui-app
+    label: Web UI
+    layer: ui
+    paths: ["src/ui/**"]
+    plannedDependsOn: [api-service]
+    issues: [12]
+
+  - id: api-service
+    label: API 服务
+    layer: service
+    paths: ["src/service/**"]
 ```
 
-重新启动（或点界面上的 `⟳ 重新扫描`）即可看到你的架构。校验失败会给出可定位的错误（文件、路径、行列）。
+本地服务当前会自动发现项目根目录及 `examples/*` 下的配置。配置错误会报告路径、字段及可用的定位信息。
 
-### 接入真实 GitHub 数据
-
-复制 `.env.example` 为 `.env`，填入一个**只读**的 GitHub PAT（需要 `repo` 读权限或细粒度只读 Issues/Pull requests）：
+如需在本地服务读取真实 GitHub 协作状态，可将 `.env.example` 复制为 `.env`，使用具有所需**只读权限**的 Token 配置：
 
 ```dotenv
-GITHUB_TOKEN=github_pat_xxxx
+GITHUB_TOKEN=YOUR_READ_ONLY_TOKEN
 ```
 
-重启后，`project.github` 指向的真实仓库的 Issue/PR 会取代演示数据（顶栏徽标变为 `GitHub 实时`）。**令牌不会被提交，也不会下发到浏览器。** 当前限制：live 模式不逐 PR 拉取变更文件，模块↔PR 关联依赖配置中的 `issues`/`moduleIssues` 映射。
+不要把真实 Token 提交到 Git。静态 Pages 构建默认**不接受私有 Token**；构建时仅允许 `publishStatic: true` 的项目进入公开产物。真实公开 GitHub 协作数据还需要显式设置 `publishPublicGithubData: true`，否则使用标记过的演示数据或显示不可用。
 
-### 双人多用户演示
+## GitHub Pages：构建、预览与自动部署
 
-同一浏览器多标签页 = 同一用户多会话（互相可见、独立超时）。要演示**两个用户**，用两个浏览器或两个 Profile（例如 Chrome 与 Edge）分别打开 http://127.0.0.1:4310，选择不同身份即可；在线列表、选中模块、光标、备注编辑状态实时互通。服务监听回环地址，mock 身份仅限本机（绑定非回环地址时服务拒绝启动 mock 模式）。
+从仓库根目录执行：
 
-## 开发
-
-```powershell
-pnpm lint        # ESLint（flat config）
-pnpm typecheck   # 各 workspace 严格 TS 检查
-pnpm test        # Vitest：配置校验 / 扫描器 / 状态矩阵 / REST+WS 集成 / 布局
-pnpm build       # 构建前端 + 全量类型检查
+```bash
+pnpm install --frozen-lockfile
+pnpm build:pages       # 生成公开安全的快照并打包静态前端
+pnpm verify:pages      # 检查 /ArchSync/ 路径、快照格式与常见凭据泄漏
+pnpm preview:pages     # 预览 http://localhost:4173/ArchSync/
 ```
 
-目录结构：`packages/contracts`（共享契约）→ `packages/config`（YAML 解析）→ `packages/scanner`（git 基线 + 工作区 + 覆盖层）→ `packages/graph`（三源合并与状态判定）→ `apps/server`（Fastify REST/WS/watcher）→ `apps/web`（React + React Flow 工作台）。详见 [docs/CONSTRUCTION_PLAN.md](docs/CONSTRUCTION_PLAN.md)。
+网页构建输出到 `apps/web/dist`，Vite 使用项目子路径 `/ArchSync/`。
 
-## 当前限制（诚实清单）
+GitHub Actions 工作流 [`.github/workflows/pages-build.yml`](.github/workflows/pages-build.yml) 的行为：
 
-- 演示协作数据来自 fixture，界面全程标注 `DEMO`；不与真实 GitHub 数据混淆。
-- 无 AST 调用链分析：依赖仅展示规划边，`observedDependsOn=null`。
-- live GitHub 模式不拉取 PR 变更文件列表；无 webhook（改用手动/定时重扫）。
-- 状态存储为 JSON 文件（单实例）；SQLite 迁移与快照历史在后续任务包（ARCH-006）。
-- 未提交变更的覆盖层在 `git commit` 后由 watcher 自动重扫（监听 `.git` 状态信号），但 GitHub 数据仍需手动或重启刷新。
+1. 对 PR：运行 lint、类型检查、测试、生成静态快照、构建、产物校验，并上传**预览 Artifact**；不发布线上网站。
+2. 对 `main` 的 push 或选择 `main` 的手动运行：同样完成校验后，上传 Pages Artifact，并用 `actions/deploy-pages` 自动发布。
+3. **GitHub Issue/PR 状态本身变化不会立即更新网页**：当前没有启用定时发布；需要一次新的 `main` 构建或手动运行工作流。
+
+发布配置与隐私约束见 [GitHub Pages 部署及运维指南](docs/pages-deploy.md)。
+
+## 开发与工程约定
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build             # 本地服务模式前端构建
+pnpm snapshot:generate # 构建时静态快照
+pnpm build:pages
+pnpm verify:pages
+```
+
+主要目录：
+
+```text
+apps/web/              React + React Flow 工作台、双数据提供器
+apps/server/           Fastify REST/WS、本地文件监听、静态快照生成器
+packages/contracts/    前后端共享 Schema 和类型
+packages/config/       YAML 解析与校验
+packages/scanner/      Git 文件树与本地工作区扫描
+packages/graph/        规划/扫描/协作状态归并
+examples/sticky-notes/ 演示项目及明确标记的协作模拟数据
+.github/workflows/     CI 与 GitHub Pages 自动构建/发布
+```
+
+贡献者和 Coding Agent 请先阅读 [AGENTS.md](AGENTS.md)，使用**独立功能分支、原子化 Conventional Commits、PR 审查与真实测试记录**。
+
+## 当前限制与后续方向
+
+ArchSync 当前是一套可以体验、能够部署的 **MVP 工作台**，尚不是完整的源代码架构智能分析或生产级团队权限管理平台：
+
+- 依赖连线目前主要来自 YAML **规划关系**；未实现 AST/跨语言实际调用关系识别，实际依赖为未知而非空。
+- 本地 GitHub 读取功能尚不拉取逐 PR 修改文件、完整 Reviews/Checks/Projects 状态；尚无 GitHub Webhook 和周期对账闭环。
+- 静态站点不提供真正的多人实时协作；在线快照展示最新**成功发布的构建**，不等于当前工作区状态。
+- 本地状态存储主要使用单机 JSON 文件；SQLite、多版本历史快照、可靠多人身份与跨仓库权限隔离尚待实现。
+- Pages 的公开数据安全依赖显式发布允许列表、验证与人工审核；**静态文件一经部署即对所有访问者可见**。
+
+[施工设计](docs/CONSTRUCTION_PLAN.md) · [运行手册](docs/runbook.md) · [API 参考](docs/api.md) · [Pages 发布指南](docs/pages-deploy.md)
+
+---
+
+本项目仍在迭代中。**在线 Demo 用于展示交互体验，本地完整模式用于验证真实文件扫描与会话协作。**
