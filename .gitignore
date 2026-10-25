@@ -8,3 +8,7 @@ coverage/
 *.log
 .DS_Store
 Thumbs.db
+.local/
+
+# generated static snapshot data (build-time artifact, not source)
+apps/web/public/data/

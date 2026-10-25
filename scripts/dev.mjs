@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 /**
- * One-command dev launcher: builds the web app (first run), then starts the
- * Fastify server which serves API + WebSocket + built frontend on one port.
- * An optional `--rebuild` flag forces a fresh web build.
+ * One-command dev launcher: (re)builds the web app, then starts the Fastify
+ * server which serves API + WebSocket + built frontend on one port.
+ *
+ * The rebuild is unconditional on purpose: a previous `pnpm build:pages` can
+ * leave a /ArchSync/-base static bundle in dist/, which would break the
+ * server-rooted local mode. Pass --no-build to skip (dangerous unless you
+ * know dist is a plain build).
  */
-import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const distIndex = join(root, 'apps', 'web', 'dist', 'index.html');
-const forceRebuild = process.argv.includes('--rebuild');
+const skipBuild = process.argv.includes('--no-build');
 
-if (forceRebuild || !existsSync(distIndex)) {
-  console.log('[archsync] building web app…');
+if (!skipBuild) {
+  console.log('[archsync] building web app (local server mode)…');
   const build = spawnSync('pnpm', ['--filter', '@archsync/web', 'build'], {
     cwd: root, stdio: 'inherit', shell: true,
   });

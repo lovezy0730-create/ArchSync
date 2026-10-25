@@ -1,0 +1,81 @@
+name: Pages Build (artifact only — NOT deployed)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Optional periodic rebuild for updated collaboration data.
+  # GitHub API limits: anonymous calls are bounded by the demo fixtures and a
+  # couple of public endpoints; a daily cadence is far inside any limit.
+  # Uncomment to enable (uses Actions minutes on private repos):
+  # schedule:
+  #   - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  build-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history so the generator can read the real HEAD sha
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        # version read from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Generate public static snapshots
+        # No GitHub token is provided on purpose: published data must come
+        # from publishStatic-allowed projects + demo fixtures only.
+        run: pnpm snapshot:generate
+
+      - name: Build GitHub Pages bundle (/ArchSync/ base)
+        run: pnpm build:pages
+
+      - name: Verify artifact (paths, schema, no /api//ws, no secrets)
+        run: pnpm verify:pages
+
+      - name: Record build info
+        run: |
+          {
+            echo "builtAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "manifest:"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat apps/web/public/data/index.json >> "$GITHUB_STEP_SUMMARY" || true
+          {
+            echo ""
+            echo "artifact sizes:"
+            du -sk apps/web/dist
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Artifact = the exact directory GitHub Pages would publish. Deploying
+      # is a deliberate human step and is intentionally NOT automated here.
+      - name: Upload static site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-static-site
+          path: apps/web/dist
+          retention-days: 30
+          if-no-files-found: error

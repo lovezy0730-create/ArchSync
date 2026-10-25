@@ -14,7 +14,11 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "build": "pnpm --filter @archsync/web build"
+    "build": "pnpm --filter @archsync/web build",
+    "snapshot:generate": "tsx apps/server/src/pages/generate-static-snapshot.ts",
+    "build:pages": "pnpm snapshot:generate && vite build --mode pages --config apps/web/vite.config.ts apps/web",
+    "preview:pages": "vite preview --mode pages --config apps/web/vite.config.ts apps/web",
+    "verify:pages": "node scripts/verify-pages-dist.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
