@@ -1,0 +1,141 @@
+schemaVersion: 1
+project:
+  id: archsync
+  name: ArchSync 工作台（本仓库自描述）
+  github:
+    owner: lovezy0730-create
+    repo: ArchSync
+    defaultBranch: main
+  root: "."
+
+layers:
+  - id: web
+    label: 前端
+    order: 1
+  - id: server
+    label: 服务
+    order: 2
+  - id: core
+    label: 核心包
+    order: 3
+  - id: infra
+    label: 工程基础
+    order: 4
+
+modules:
+  - id: workbench-ui
+    label: 架构工作台界面
+    layer: web
+    description: React Flow 交互式架构图、模块详情与协作面板
+    owners: []
+    paths: ["apps/web/src/**"]
+    issues: []
+    plannedDependsOn: [snapshot-api, presence-ws]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck]
+      manualApproval: false
+
+  - id: snapshot-api
+    label: 快照 REST API
+    layer: server
+    description: 项目列表、快照、模块详情、备注与同步任务接口
+    owners: []
+    paths: ["apps/server/src/routes/**"]
+    issues: []
+    plannedDependsOn: [graph-engine, state-store]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test]
+      manualApproval: false
+
+  - id: presence-ws
+    label: 实时协作 Presence
+    layer: server
+    description: WebSocket 房间、光标/选中广播、心跳与会话超时
+    owners: []
+    paths: ["apps/server/src/ws/**"]
+    issues: []
+    plannedDependsOn: [state-store]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test]
+      manualApproval: false
+
+  - id: sync-engine
+    label: 快照构建与监听
+    layer: server
+    description: 扫描-合并-发布管线与本地文件 watcher
+    owners: []
+    paths: ["apps/server/src/sync/**"]
+    issues: []
+    plannedDependsOn: [graph-engine, scanner-core, state-store]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck]
+      manualApproval: false
+
+  - id: config-contracts
+    label: 配置与契约
+    layer: core
+    description: YAML 解析校验与共享 Zod 数据契约
+    owners: []
+    paths: ["packages/contracts/src/**", "packages/config/src/**"]
+    issues: []
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test]
+      manualApproval: false
+
+  - id: scanner-core
+    label: 本地扫描器
+    layer: core
+    description: git 基线、工作区文件与未提交覆盖层检测
+    owners: []
+    paths: ["packages/scanner/src/**"]
+    issues: []
+    plannedDependsOn: [config-contracts]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test]
+      manualApproval: false
+
+  - id: graph-engine
+    label: 图谱合并引擎
+    layer: core
+    description: 规划/扫描/协作三源合并与状态判定矩阵
+    owners: []
+    paths: ["packages/graph/src/**"]
+    issues: []
+    plannedDependsOn: [config-contracts, scanner-core]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test]
+      manualApproval: false
+
+  - id: state-store
+    label: 状态存储
+    layer: infra
+    description: JSON 文件状态存储（快照版本、备注修订、任务）
+    owners: []
+    paths: ["apps/server/src/store/**"]
+    issues: []
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck]
+      manualApproval: false
+
+  - id: dev-tooling
+    label: 开发与构建工具链
+    layer: infra
+    description: monorepo 脚本、lint/typecheck/test/build 与 CI
+    owners: []
+    paths: ["scripts/**", ".github/workflows/**"]
+    issues: []
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [lint, typecheck, test, build]
+      manualApproval: false
