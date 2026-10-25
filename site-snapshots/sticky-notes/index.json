@@ -1,0 +1,12 @@
+{
+  "projectId": "sticky-notes",
+  "versions": [
+    {
+      "version": 1,
+      "contentHash": "96df20cf31ce68c9",
+      "generatedAt": "2026-10-25T15:42:12.780Z",
+      "sourceCommitSha": "a7389e3e80b9240ac047f8ece4cd184b7846907c",
+      "file": "v1.json"
+    }
+  ]
+}

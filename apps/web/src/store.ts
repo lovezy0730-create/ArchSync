@@ -321,6 +321,8 @@ export const useStore = create<AppState>((set, get) => ({
       modules: [],
       errors: ['浏览器导入预览不执行本地扫描：实现状态显示为 unknown，依赖仅有规划边'],
       scannedAt: now,
+      importAnalysisRan: false,
+      observedDependencies: [],
     };
     const snapshot = buildSnapshot({
       config: result.config,

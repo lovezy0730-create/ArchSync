@@ -11,7 +11,7 @@
  *   subcommands is spawned and no shell interpolation happens.
  */
 import { execFile } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import picomatch from 'picomatch';
@@ -27,7 +27,23 @@ const execFileAsync = promisify(execFile);
 // Pure path logic lives in ./pure (browser-bundlable, no Node imports);
 // this module re-exports it so the public API stays unchanged.
 export { toPosix, isIgnoredPath, matchPaths } from './pure.js';
+export {
+  analyzeImports,
+  extractImportSpecifiers,
+  isAnalyzable,
+  moduleDependencyEdges,
+  resolveSpecifier,
+  MAX_ANALYZE_BYTES,
+} from './imports.js';
+export type { ImportAnalysis, AnalyzableFile } from './imports.js';
 import { isIgnoredPath, matchPaths, toPosix } from './pure.js';
+import {
+  analyzeImports,
+  isAnalyzable,
+  moduleDependencyEdges,
+  type AnalyzableFile,
+  type PackageAliases,
+} from './imports.js';
 
 const IGNORED_DIR_NAMES = new Set([
   '.git',
@@ -238,7 +254,71 @@ export async function scanProject(
   const baselineFiles = baseline?.files ?? [];
   const modules = computeModuleScans(config, baselineFiles, workspaceFiles, overlay);
 
+  // module-level dependency edges observed from TS/JS import analysis of the
+  // live workspace (conservative: only resolvable relative imports count)
+  const observedDependencies: Array<{ source: string; target: string }> = [];
+  let importAnalysisRan = false;
+  try {
+    // monorepo package-name imports (`@archsync/graph`) resolve to local
+    // entry files via each workspace package's exports field
+    const packageAliases: PackageAliases = new Map();
+    for (const group of ['packages', 'apps']) {
+      const groupDir = join(rootDir, group);
+      let names: string[] = [];
+      try {
+        names = (await readdir(groupDir, { withFileTypes: true }))
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        try {
+          const pkg = JSON.parse(await readFile(join(groupDir, name, 'package.json'), 'utf8')) as {
+            name?: string;
+            exports?: Record<string, string> | string;
+          };
+          if (!pkg.name) continue;
+          const entry = typeof pkg.exports === 'string' ? pkg.exports : pkg.exports?.['.'];
+          if (typeof entry === 'string') {
+            packageAliases.set(pkg.name, toPosix(join(group, name, entry)));
+          }
+        } catch {
+          // unreadable package.json: skip this alias
+        }
+      }
+    }
+    const globToModule: Array<[string, string]> = [];
+    for (const m of config.modules) for (const g of m.paths) globToModule.push([g, m.id]);
+    const moduleOf = (filePath: string): string | null => {
+      for (const [glob, moduleId] of globToModule) {
+        if (matchPaths([glob], [filePath]).length > 0) return moduleId;
+      }
+      return null;
+    };
+    const analyzable: AnalyzableFile[] = [];
+    for (const file of workspaceFiles) {
+      if (!isAnalyzable(file)) continue;
+      try {
+        const content = await readFile(join(rootDir, file), 'utf8');
+        analyzable.push({ path: file, content });
+      } catch {
+        // unreadable file: skip rather than fabricate
+      }
+    }
+    if (analyzable.length > 0) {
+      importAnalysisRan = true;
+      observedDependencies.push(
+        ...moduleDependencyEdges(analyzeImports(analyzable, packageAliases), moduleOf),
+      );
+    }
+  } catch {
+    // analysis failure leaves observedDependencies empty and the flag false
+  }
+
   return {
+    importAnalysisRan,
+    observedDependencies,
     ok: baseline !== null && walkOk,
     baselineSha: baseline?.sha ?? null,
     branch: baseline?.branch ?? null,

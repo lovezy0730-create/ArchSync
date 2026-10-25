@@ -439,3 +439,11 @@ textarea:focus { outline: none; border-color: var(--accent); }
   .topbar { flex-wrap: wrap; height: auto; padding: 8px 10px; row-gap: 6px; }
   .topbar-right { margin-left: 0; flex-wrap: wrap; }
 }
+
+/* ---------- dependency edge legend ---------- */
+.legend-stack { position: absolute; left: 14px; bottom: 14px; z-index: 5; display: flex; flex-direction: column; gap: 6px; }
+.legend-stack .layer-legend { position: static; }
+.legend-item .lg { width: 18px; height: 0; border-top-width: 2.5px; border-top-style: solid; border-radius: 0; }
+.lg-confirmed { border-top-color: #3fb950; }
+.lg-planned { border-top-color: #8b98a9; border-top-style: dashed; }
+.lg-observed { border-top-color: #d29922; border-top-style: dotted; }

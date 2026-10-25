@@ -232,6 +232,11 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     }
   }
 
+  const observedBySource = new Map<string, string[]>();
+  for (const edge of scan.observedDependencies ?? []) {
+    observedBySource.set(edge.source, [...(observedBySource.get(edge.source) ?? []), edge.target]);
+  }
+
   const modules: ModuleState[] = config.modules.map((m) => {
     const moduleScan = scanByModule.get(m.id);
     const issues = linkedIssues(collab, m.id, m.issues);
@@ -336,7 +341,9 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       matchedBaselinePaths: moduleScan?.matchedBaselinePaths ?? [],
       matchedWorkspacePaths: moduleScan?.matchedWorkspacePaths ?? [],
       overlayChanges: moduleScan?.overlayChanges ?? [],
-      observedDependsOn: null,
+      observedDependsOn: scan.importAnalysisRan
+        ? [...new Set(observedBySource.get(m.id) ?? [])].sort()
+        : null,
       implementation: impl.state,
       workflow: wf.state,
       owners: m.owners,
@@ -349,17 +356,36 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     };
   });
 
-  const edges: SnapshotEdge[] = config.modules.flatMap((m) =>
-    m.plannedDependsOn
-      .filter((dep) => dep !== m.id)
-      .map((dep) => ({
-        id: `${m.id}->${dep}`,
-        source: m.id,
-        target: dep,
-        kind: 'planned' as const,
-        demo: false,
-      })),
+  const plannedPairs = new Set<string>();
+  for (const m of config.modules) {
+    for (const dep of m.plannedDependsOn) {
+      if (dep !== m.id) plannedPairs.add(`${m.id}->${dep}`);
+    }
+  }
+  const observedPairs = new Set(
+    (scan.observedDependencies ?? [])
+      .filter((e) => e.source !== e.target)
+      .map((e) => `${e.source}->${e.target}`),
   );
+
+  const edges: SnapshotEdge[] = [
+    ...[...plannedPairs].map((pair) => {
+      const [source, target] = pair.split('->');
+      return {
+        id: pair,
+        source: source!,
+        target: target!,
+        kind: observedPairs.has(pair) ? ('confirmed' as const) : ('planned' as const),
+        demo: false,
+      };
+    }),
+    ...[...observedPairs]
+      .filter((pair) => plannedPairs.has(pair) === false)
+      .map((pair) => {
+        const [source, target] = pair.split('->');
+        return { id: pair, source: source!, target: target!, kind: 'observed' as const, demo: false };
+      }),
+  ];
 
   const base = {
     projectId: config.project.id,
@@ -377,7 +403,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
         ? ('complete' as const)
         : ('partial' as const)
       : ('unknown' as const),
-    dependencyAnalysis: 'not_supported' as const,
+    dependencyAnalysis: scan.importAnalysisRan ? ('partial' as const) : ('not_supported' as const),
     layers: config.layers,
     modules,
     edges,
@@ -392,3 +418,6 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     ...base,
   };
 }
+
+export { diffSnapshots } from './diff.js';
+export type { SnapshotDiff, ModuleDiffEntry, StateChangeEntry, EdgeDiffEntry } from './diff.js';

@@ -8,18 +8,22 @@ const NOW = '2026-10-25T00:00:00.000Z';
 
 describe('publishStaticSnapshots (against the real repo)', () => {
   let outDir: string;
+  let historyDir: string;
   beforeAll(async () => {
     outDir = await mkdtemp(join(tmpdir(), 'archsync-pages-out-'));
+    historyDir = await mkdtemp(join(tmpdir(), 'archsync-pages-hist-'));
   });
   afterAll(async () => {
     await rm(outDir, { recursive: true, force: true });
+    await rm(historyDir, { recursive: true, force: true });
   });
 
-  it('publishes only the publishStatic=true project with demo data', async () => {
-    const result = await publishStaticSnapshots({ outDir, now: NOW, log: () => {} });
+  it('publishes publishStatic projects; sticky demo data + archsync live (offline)', async () => {
+    const result = await publishStaticSnapshots({ outDir, historyDir, now: NOW, offline: true, log: () => {} });
     const ids = result.published.map((p) => p.id);
     expect(ids).toContain('sticky-notes');
-    expect(ids).not.toContain('archsync');
+    // the self-describing project now opts in to publishing (repo is public)
+    expect(ids).toContain('archsync');
 
     const snapshotText = await readFile(join(outDir, 'snapshot-sticky-notes.json'), 'utf8');
     const payload = JSON.parse(snapshotText) as {
@@ -36,26 +40,37 @@ describe('publishStaticSnapshots (against the real repo)', () => {
     expect(manifest.projects.map((p) => p.id)).toEqual(ids);
   });
 
-  it('is reproducible: identical inputs produce identical content hashes', async () => {
+  it('is reproducible and version-stable for identical inputs', async () => {
     const outDir2 = await mkdtemp(join(tmpdir(), 'archsync-pages-out2-'));
     try {
-      const first = await publishStaticSnapshots({ outDir, now: NOW, log: () => {} });
-      const second = await publishStaticSnapshots({ outDir: outDir2, now: NOW, log: () => {} });
+      const first = await publishStaticSnapshots({ outDir, historyDir, now: NOW, offline: true, log: () => {} });
+      const second = await publishStaticSnapshots({ outDir: outDir2, historyDir, now: NOW, offline: true, log: () => {} });
       expect(first.published.map((p) => p.contentHash)).toEqual(
         second.published.map((p) => p.contentHash),
       );
+      // identical content must not bump versions (T17)
+      expect(second.published.every((p) => p.versionBumped === false)).toBe(true);
+      expect(second.published.map((p) => p.version)).toEqual(first.published.map((p) => p.version));
     } finally {
       await rm(outDir2, { recursive: true, force: true });
     }
   });
 
-  it('private project paths never appear in the published bundle', async () => {
+  it('publishes the self project with real repo paths (public dogfood) + history index', async () => {
     const files = await readFile(join(outDir, 'index.json'), 'utf8');
-    const manifest = JSON.parse(files) as { projects: Array<{ id: string }> };
-    expect(manifest.projects.map((p) => p.id)).not.toContain('archsync');
-    // the self-describing project maps real repo paths like packages/graph —
-    // none of the repo's own module globs may leak
-    expect(files).not.toContain('packages/graph');
+    const manifest = JSON.parse(files) as {
+      projects: Array<{ id: string; historyIndex: string; githubSource: string }>;
+    };
+    const self = manifest.projects.find((p) => p.id === 'archsync');
+    expect(self).toBeTruthy();
+    // offline mode: live fetch skipped, collab degrades to unavailable honestly
+    expect(self?.githubSource).toBe('unavailable');
+    expect(self?.historyIndex).toBe('data/history/archsync/index.json');
+    // history index written for the project
+    const historyIndex = JSON.parse(
+      await readFile(join(outDir, 'history', 'archsync', 'index.json'), 'utf8'),
+    ) as { versions: Array<{ version: number }> };
+    expect(historyIndex.versions.length).toBe(1);
   });
 
   it('demo fixture data passes the secret scan', async () => {
