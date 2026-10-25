@@ -207,7 +207,9 @@ function stableStringify(value: unknown): string {
 }
 
 export function snapshotContentHash(snapshot: Omit<Snapshot, 'id' | 'version' | 'generatedAt' | 'contentHash'>): string {
-  return createHash('sha256').update(stableStringify(snapshot)).digest('hex').slice(0, 16);
+  // Volatile timestamps must not create meaningless version bumps (T17).
+  const { githubFetchedAt: _ignored, ...stable } = snapshot;
+  return createHash('sha256').update(stableStringify(stable)).digest('hex').slice(0, 16);
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
