@@ -7,6 +7,11 @@ project:
     repo: sticky-notes
     defaultBranch: main
   root: "."
+  # Explicit public-publishing gate for the GitHub Pages static build.
+  # This project is fictional demo data, so it is safe to publish.
+  # The self-describing `archsync` project intentionally does NOT set this:
+  # its real file paths must not leak into a public static bundle.
+  publishStatic: true
 
 layers:
   - id: ui
