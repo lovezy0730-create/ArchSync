@@ -18,7 +18,10 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit & { user?: string }): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (init?.user) headers['x-archsync-user'] = init.user;
+  if (init?.user) {
+    // HTTP header values must be ISO-8859-1; display names can be any UTF-8.
+    headers['x-archsync-user'] = encodeURIComponent(init.user);
+  }
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as

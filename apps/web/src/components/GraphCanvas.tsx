@@ -189,6 +189,8 @@ export function GraphCanvas() {
         <MiniMap
           pannable
           zoomable
+          style={{ background: '#10161f', border: '1px solid #262d38', borderRadius: 8 }}
+          maskColor="#0d1117cc"
           nodeColor={(node) => (node as ModuleFlowNode).data?.layerColor ?? '#555'}
         />
       </ReactFlow>

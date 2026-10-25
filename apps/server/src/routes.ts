@@ -26,9 +26,18 @@ export interface RouteContext {
 function requireIdentity(ctx: RouteContext, request: { headers: Record<string, unknown> }): string | null {
   if (ctx.devAuthMode !== 'mock') return null;
   const raw = request.headers['x-archsync-user'];
-  const name = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof name !== 'string' || name.trim().length === 0 || name.length > 64) return null;
-  return name.trim();
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 192) return null;
+  // clients percent-encode non-ISO-8859-1 display names; tolerate raw ASCII too
+  let name = value;
+  try {
+    name = decodeURIComponent(value);
+  } catch {
+    name = value;
+  }
+  name = name.trim();
+  if (name.length === 0 || name.length > 64) return null;
+  return name;
 }
 
 export function registerRoutes(app: FastifyInstance, ctx: RouteContext): void {

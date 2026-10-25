@@ -238,3 +238,24 @@ describe('presence websocket', () => {
     expect(closed.code).toBe(4004);
   }, 30_000);
 });
+
+describe('unicode identity handling', () => {
+  it('accepts percent-encoded non-ASCII identity in annotation writes', async () => {
+    const detailRes = await fetch(`${handle.url}/api/v1/projects/testproj/modules/mod-a`);
+    const detail = (await detailRes.json()) as { annotation: { revision: number } };
+    const url = `${handle.url}/api/v1/projects/testproj/modules/mod-a/annotation`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-archsync-user': encodeURIComponent('林旭'),
+      },
+      body: JSON.stringify({ text: '中文身份写入', expectedRevision: detail.annotation.revision }),
+    });
+    expect(res.status).toBe(200);
+    const after = await (
+      await fetch(`${handle.url}/api/v1/projects/testproj/modules/mod-a`)
+    ).json();
+    expect(after.annotation.updatedBy).toBe('林旭');
+  });
+});

@@ -28,7 +28,7 @@ export function timeAgo(iso: string | null): string {
   return `${Math.floor(hours / 24)} 天前`;
 }
 
-export function githubSourceLabel(source: string, demo: boolean): { label: string; color: string } {
+export function githubSourceLabel(source: string, _demo: boolean): { label: string; color: string } {
   if (source === 'live') return { label: 'GitHub 实时', color: '#3fb950' };
   if (source === 'demo') return { label: '演示数据', color: '#d29922' };
   return { label: 'GitHub 未接入', color: '#8b949e' };
