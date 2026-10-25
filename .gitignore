@@ -13,3 +13,6 @@ Thumbs.db
 # generated static snapshot data (build-time artifact, not source)
 apps/web/public/data/
 .archsync/agent-reports.jsonl
+
+# local static-snapshot history (CI manages the site-snapshots branch)
+site-snapshots/
