@@ -253,9 +253,9 @@ describe('unicode identity handling', () => {
       body: JSON.stringify({ text: '中文身份写入', expectedRevision: detail.annotation.revision }),
     });
     expect(res.status).toBe(200);
-    const after = await (
+    const after = (await (
       await fetch(`${handle.url}/api/v1/projects/testproj/modules/mod-a`)
-    ).json();
+    ).json()) as { annotation: { updatedBy: string } };
     expect(after.annotation.updatedBy).toBe('林旭');
   });
 });
