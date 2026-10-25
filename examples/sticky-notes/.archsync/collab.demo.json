@@ -1,0 +1,227 @@
+{
+  "_notice": "DEMO DATA — 本文件是演示协作数据（虚拟团队成员、Issue、PR），不代表任何真实 GitHub 仓库。服务端加载时会整体标记 demo=true，并在界面显示『演示数据』徽标。",
+  "team": [
+    { "login": "lin-xu", "name": "林旭", "role": "maintainer" },
+    { "login": "mu-ran", "name": "沐然", "role": "developer" },
+    { "login": "chen-qing", "name": "陈晴", "role": "developer" },
+    { "login": "wang-meng", "name": "王萌", "role": "developer" }
+  ],
+  "issues": [
+    {
+      "number": 3,
+      "title": "SQLite 存储层与迁移框架",
+      "state": "closed",
+      "assignees": ["mu-ran"],
+      "labels": ["infra"],
+      "author": "mu-ran",
+      "createdAt": "2026-09-02T02:00:00Z",
+      "updatedAt": "2026-09-18T08:30:00Z",
+      "closedAt": "2026-09-18T08:30:00Z",
+      "completion": "completed"
+    },
+    {
+      "number": 4,
+      "title": "笔记主界面：列表 + 编辑器",
+      "state": "closed",
+      "assignees": ["lin-xu"],
+      "labels": ["ui"],
+      "author": "lin-xu",
+      "createdAt": "2026-09-05T06:00:00Z",
+      "updatedAt": "2026-10-08T01:10:00Z",
+      "closedAt": "2026-10-08T01:10:00Z",
+      "completion": "completed"
+    },
+    {
+      "number": 7,
+      "title": "笔记管理服务与版本历史",
+      "state": "closed",
+      "assignees": ["mu-ran"],
+      "labels": ["service"],
+      "author": "mu-ran",
+      "createdAt": "2026-09-10T03:00:00Z",
+      "updatedAt": "2026-09-30T09:45:00Z",
+      "closedAt": "2026-09-30T09:45:00Z",
+      "completion": "completed"
+    },
+    {
+      "number": 12,
+      "title": "多设备增量同步协议",
+      "state": "open",
+      "assignees": ["chen-qing"],
+      "labels": ["service"],
+      "author": "chen-qing",
+      "createdAt": "2026-10-02T05:00:00Z",
+      "updatedAt": "2026-10-21T07:20:00Z",
+      "closedAt": null,
+      "completion": "none"
+    },
+    {
+      "number": 19,
+      "title": "全文搜索：分词与倒排索引",
+      "state": "open",
+      "assignees": ["mu-ran"],
+      "labels": ["core"],
+      "author": "mu-ran",
+      "createdAt": "2026-10-06T02:00:00Z",
+      "updatedAt": "2026-10-20T10:00:00Z",
+      "closedAt": null,
+      "completion": "none"
+    },
+    {
+      "number": 34,
+      "title": "桌面便签组件：置顶与快速新建",
+      "state": "open",
+      "assignees": ["lin-xu"],
+      "labels": ["ui"],
+      "author": "lin-xu",
+      "createdAt": "2026-10-12T08:00:00Z",
+      "updatedAt": "2026-10-23T12:00:00Z",
+      "closedAt": null,
+      "completion": "none"
+    },
+    {
+      "number": 41,
+      "title": "番茄钟：计时与提醒",
+      "state": "open",
+      "assignees": ["wang-meng"],
+      "labels": ["ui"],
+      "author": "wang-meng",
+      "createdAt": "2026-10-15T09:00:00Z",
+      "updatedAt": "2026-10-24T02:30:00Z",
+      "closedAt": null,
+      "completion": "none"
+    },
+    {
+      "number": 45,
+      "title": "同步服务被存储锁机制阻塞",
+      "state": "open",
+      "assignees": ["chen-qing"],
+      "labels": ["blocked", "service"],
+      "author": "chen-qing",
+      "createdAt": "2026-10-20T01:00:00Z",
+      "updatedAt": "2026-10-22T06:00:00Z",
+      "closedAt": null,
+      "completion": "none"
+    }
+  ],
+  "pullRequests": [
+    {
+      "number": 21,
+      "title": "feat(note): 笔记服务与版本管理",
+      "state": "closed",
+      "draft": false,
+      "author": "mu-ran",
+      "assignees": ["mu-ran"],
+      "headRef": "feat/note-service",
+      "mergedAt": "2026-09-30T09:40:00Z",
+      "closedAt": "2026-09-30T09:40:00Z",
+      "createdAt": "2026-09-24T02:00:00Z",
+      "updatedAt": "2026-09-30T09:40:00Z",
+      "changedFiles": [
+        "src/services/note/NoteService.ts",
+        "src/services/note/NoteRepository.ts",
+        "src/services/note/NoteVersioning.ts"
+      ],
+      "checks": "success"
+    },
+    {
+      "number": 24,
+      "title": "feat(ui): 笔记主界面",
+      "state": "closed",
+      "draft": false,
+      "author": "lin-xu",
+      "assignees": ["lin-xu"],
+      "headRef": "feat/notes-ui",
+      "mergedAt": "2026-10-08T01:05:00Z",
+      "closedAt": "2026-10-08T01:05:00Z",
+      "createdAt": "2026-10-01T04:00:00Z",
+      "updatedAt": "2026-10-08T01:05:00Z",
+      "changedFiles": [
+        "src/ui/notes/NotesList.tsx",
+        "src/ui/notes/NoteEditor.tsx",
+        "src/ui/notes/NotesViewModel.ts"
+      ],
+      "checks": "success"
+    },
+    {
+      "number": 28,
+      "title": "feat(infra): SQLite 存储与迁移",
+      "state": "closed",
+      "draft": false,
+      "author": "mu-ran",
+      "assignees": ["mu-ran"],
+      "headRef": "feat/storage",
+      "mergedAt": "2026-09-18T08:25:00Z",
+      "closedAt": "2026-09-18T08:25:00Z",
+      "createdAt": "2026-09-12T02:00:00Z",
+      "updatedAt": "2026-09-18T08:25:00Z",
+      "changedFiles": [
+        "src/infra/storage/Database.ts",
+        "src/infra/storage/Migrations.ts"
+      ],
+      "checks": "success"
+    },
+    {
+      "number": 35,
+      "title": "feat(widget): 桌面便签窗口与拖拽",
+      "state": "open",
+      "draft": false,
+      "author": "lin-xu",
+      "assignees": ["lin-xu"],
+      "headRef": "feat/sticky-widget",
+      "mergedAt": null,
+      "closedAt": null,
+      "createdAt": "2026-10-18T03:00:00Z",
+      "updatedAt": "2026-10-23T12:00:00Z",
+      "changedFiles": [
+        "src/ui/widget/StickyWidget.tsx",
+        "src/ui/widget/WidgetDrag.ts"
+      ],
+      "checks": "pending"
+    },
+    {
+      "number": 38,
+      "title": "wip(search): 倒排索引草稿",
+      "state": "open",
+      "draft": true,
+      "author": "mu-ran",
+      "assignees": ["mu-ran"],
+      "headRef": "wip/search-index",
+      "mergedAt": null,
+      "closedAt": null,
+      "createdAt": "2026-10-19T07:00:00Z",
+      "updatedAt": "2026-10-24T05:00:00Z",
+      "changedFiles": [
+        "src/core/search/Indexer.ts",
+        "src/core/search/Tokenizer.ts"
+      ],
+      "checks": "pending"
+    },
+    {
+      "number": 40,
+      "title": "fix(sync): 并发写冲突（已被要求返工）",
+      "state": "closed",
+      "draft": false,
+      "author": "chen-qing",
+      "assignees": ["chen-qing"],
+      "headRef": "fix/sync-conflict",
+      "mergedAt": null,
+      "closedAt": "2026-10-21T09:00:00Z",
+      "createdAt": "2026-10-16T02:00:00Z",
+      "updatedAt": "2026-10-21T09:00:00Z",
+      "changedFiles": [
+        "src/services/sync/SyncEngine.ts",
+        "src/services/sync/ConflictResolver.ts"
+      ],
+      "checks": "failure"
+    }
+  ],
+  "moduleIssues": {
+    "sync-service": [12, 45]
+  },
+  "manualApprovals": {
+    "notes-ui": ["lin-xu"],
+    "note-service": ["lin-xu"],
+    "storage": ["lin-xu"]
+  }
+}

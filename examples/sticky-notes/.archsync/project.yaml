@@ -1,0 +1,147 @@
+schemaVersion: 1
+project:
+  id: sticky-notes
+  name: Windows 便签 (Sticky Notes)
+  github:
+    owner: example-org
+    repo: sticky-notes
+    defaultBranch: main
+  root: "."
+
+layers:
+  - id: ui
+    label: 前端界面
+    order: 1
+  - id: services
+    label: 业务服务
+    order: 2
+  - id: core
+    label: 核心能力
+    order: 3
+  - id: infra
+    label: 数据与基础设施
+    order: 4
+
+modules:
+  - id: notes-ui
+    label: 笔记主界面
+    layer: ui
+    description: 笔记列表、编辑器与视图切换
+    owners: [lin-xu]
+    paths: ["src/ui/notes/**"]
+    issues: [4]
+    plannedDependsOn: [note-service, search-index, settings-store]
+    acceptance:
+      requiredIssues: [4]
+      requiredChecks: [lint, test]
+      manualApproval: true
+
+  - id: sticky-widget
+    label: 桌面便签组件
+    layer: ui
+    description: 常驻桌面的快速便签窗口
+    owners: [lin-xu]
+    paths: ["src/ui/widget/**"]
+    issues: [34]
+    plannedDependsOn: [note-service, settings-store]
+    acceptance:
+      requiredIssues: [34]
+      requiredChecks: [lint, test]
+
+  - id: pomodoro-timer
+    label: 番茄钟
+    layer: ui
+    description: 专注计时与提醒弹层
+    owners: [wang-meng]
+    paths: ["src/ui/pomodoro/**"]
+    issues: [41]
+    plannedDependsOn: [pomodoro-service, settings-store]
+    acceptance:
+      requiredIssues: [41]
+      requiredChecks: [lint, test]
+
+  - id: settings-ui
+    label: 设置界面
+    layer: ui
+    description: 外观、账户与同步设置面板（尚未开工）
+    owners: [chen-qing]
+    paths: ["src/ui/settings/**"]
+    issues: []
+    plannedDependsOn: [settings-store, sync-service]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: []
+
+  - id: note-service
+    label: 笔记管理服务
+    layer: services
+    description: 笔记的创建、编辑、归档与版本管理
+    owners: [mu-ran]
+    paths: ["src/services/note/**"]
+    issues: [7]
+    plannedDependsOn: [storage, search-index]
+    acceptance:
+      requiredIssues: [7]
+      requiredChecks: [lint, test]
+      manualApproval: true
+
+  - id: sync-service
+    label: 云同步服务
+    layer: services
+    description: 多设备增量同步与冲突合并
+    owners: [chen-qing]
+    paths: ["src/services/sync/**"]
+    issues: [12]
+    plannedDependsOn: [note-service, storage]
+    acceptance:
+      requiredIssues: [12]
+      requiredChecks: [lint, test]
+
+  - id: pomodoro-service
+    label: 番茄钟服务
+    layer: services
+    description: 计时调度、统计与通知节流（尚未开工）
+    owners: [wang-meng]
+    paths: ["src/services/pomodoro/**"]
+    issues: []
+    plannedDependsOn: [storage]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: []
+
+  - id: search-index
+    label: 全文搜索
+    layer: core
+    description: 分词、倒排索引与增量更新
+    owners: [mu-ran]
+    paths: ["src/core/search/**"]
+    issues: [19]
+    plannedDependsOn: [storage]
+    acceptance:
+      requiredIssues: [19]
+      requiredChecks: [lint, test]
+
+  - id: storage
+    label: 数据持久化
+    layer: infra
+    description: SQLite 存储与迁移脚本
+    owners: [mu-ran]
+    paths: ["src/infra/storage/**"]
+    issues: [3]
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: [3]
+      requiredChecks: [lint, test]
+      manualApproval: true
+
+  - id: settings-store
+    label: 设置存储
+    layer: infra
+    description: 应用设置读写与默认值管理（尚未开工）
+    owners: [chen-qing]
+    paths: ["src/infra/settings/**"]
+    issues: []
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: []
