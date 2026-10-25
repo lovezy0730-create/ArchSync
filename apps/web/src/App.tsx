@@ -12,6 +12,7 @@ export function App() {
   const booted = useStore((s) => s.booted);
   const snapshot = useStore((s) => s.snapshot);
   const identity = useStore((s) => s.identity);
+  const loadError = useStore((s) => s.loadError);
 
   useEffect(() => {
     void boot();
@@ -26,9 +27,16 @@ export function App() {
           <ReactFlowProvider>
             <GraphCanvas />
           </ReactFlowProvider>
-          {booted && !snapshot && (
+          {loadError && (
+            <div className="canvas-error">
+              <strong>数据加载失败</strong>
+              <span>{loadError}</span>
+              <span className="hint">静态模式：请确认站点由 pnpm build:pages 构建且包含 data/ 目录。</span>
+            </div>
+          )}
+          {booted && !loadError && !snapshot && (
             <div className="canvas-empty">
-              {identity ? '正在加载快照…' : '等待身份确认…'}
+              {identity || useStore.getState().mode === 'static' ? '正在加载快照…' : '等待身份确认…'}
             </div>
           )}
         </main>

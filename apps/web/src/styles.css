@@ -400,3 +400,42 @@ textarea:focus { outline: none; border-color: var(--accent); }
 ::-webkit-scrollbar { width: 10px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #2a323e; border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- run-mode badges & static affordances ---------- */
+.badge-mode { border: 1px solid var(--border2); background: var(--panel2); color: var(--text-dim); }
+.badge-mode-static { color: #58a6ff; border-color: #58a6ff44; background: #58a6ff14; }
+.badge-mode-server { color: var(--ok); border-color: #3fb95044; background: #3fb95014; }
+.static-hint { font-size: 11px; color: var(--text-dim); border: 1px dashed var(--border2); border-radius: 6px; padding: 4px 9px; white-space: nowrap; }
+.import-btn {
+  background: var(--panel2); border: 1px solid var(--border2); color: var(--text);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12.5px;
+}
+.import-btn:hover { border-color: var(--accent); color: var(--accent); }
+.import-toast {
+  position: absolute; top: 58px; left: 50%; transform: translateX(-50%); z-index: 60;
+  display: flex; gap: 10px; align-items: center;
+  border-radius: 9px; padding: 8px 14px; font-size: 12.5px;
+  box-shadow: 0 8px 26px #00000066; max-width: 70vw;
+}
+.import-toast.ok { background: #12261a; border: 1px solid #3fb95066; color: #7ee787; }
+.import-toast.err { background: #2a1512; border: 1px solid #f8514b66; color: #ffa198; }
+.import-toast button { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; }
+.canvas-error {
+  position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
+  align-items: center; justify-content: center; text-align: center; padding: 20px;
+}
+.canvas-error strong { font-size: 16px; }
+.canvas-error span { color: var(--text-dim); font-size: 13px; max-width: 520px; line-height: 1.6; }
+.canvas-error .hint { color: #6e7681; font-size: 11.5px; }
+
+/* ---------- responsive: mobile shows canvas-first ---------- */
+@media (max-width: 1100px) {
+  .drawer { width: 300px; }
+  .sidebar { width: 210px; }
+}
+@media (max-width: 760px) {
+  .sidebar { display: none; }
+  .drawer { width: 260px; }
+  .topbar { flex-wrap: wrap; height: auto; padding: 8px 10px; row-gap: 6px; }
+  .topbar-right { margin-left: 0; flex-wrap: wrap; }
+}
