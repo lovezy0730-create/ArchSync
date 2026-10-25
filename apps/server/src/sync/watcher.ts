@@ -5,15 +5,28 @@ export interface WatcherCallbacks {
   onProjectChanged: (entry: ProjectEntry) => void;
 }
 
-const IGNORED = [
-  '**/.git/**',
-  '**/node_modules/**',
-  '**/dist/**',
-  '**/build/**',
-  '**/.local/**',
-  '**/coverage/**',
-  '**/.next/**',
-];
+const IGNORED_DIR_NAMES = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  '.local',
+  'coverage',
+  '.next',
+]);
+
+/**
+ * `.git` is watched selectively: HEAD/index/refs change on commit, stage and
+ * branch switch, which alters the uncommitted overlay even though no source
+ * file changed. Everything else under `.git` is ignored (objects churn etc.).
+ */
+function isGitStateSignal(normPath: string): boolean {
+  const segments = normPath.split('/');
+  const dotGit = segments.indexOf('.git');
+  if (dotGit === -1) return false;
+  const rel = segments.slice(dotGit + 1).join('/');
+  return rel === 'HEAD' || rel === 'index' || rel.startsWith('refs/');
+}
 
 /**
  * Local file watcher (FR-07): watches every project's workspace, debounces
@@ -35,14 +48,15 @@ export class WorkspaceWatcher {
     this.watcher = chokidar.watch(roots, {
       ignored: (path: string) => {
         const norm = path.replace(/\\/g, '/');
-        return IGNORED.some((pattern) => {
-          const seg = pattern.replace(/\*\*\//g, '').replace(/\/\*\*/g, '');
-          return norm.split('/').some((s) => s === seg);
-        });
+        const segments = norm.split('/');
+        if (segments.some((s) => IGNORED_DIR_NAMES.has(s))) {
+          return !isGitStateSignal(norm);
+        }
+        return false;
       },
       ignoreInitial: true,
       persistent: true,
-      depth: 12,
+      depth: 14,
     });
     this.watcher.on('all', (_event, file) => {
       const norm = file.replace(/\\/g, '/');
