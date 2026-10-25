@@ -5,6 +5,14 @@ import type { ModuleDetail, ProjectSummary } from '@archsync/contracts';
 import { parseProjectConfig } from '@archsync/config';
 import type { ProjectEntry } from './projects.js';
 import { emptyProjectState, type StateStore } from './store/index.js';
+import type { AuthMode } from './env.js';
+import {
+  SessionStore,
+  buildClearedSessionCookie,
+  buildSessionCookie,
+  constantTimeEquals,
+  sessionTokenFromRequest,
+} from './auth.js';
 
 const AnnotationPatchSchema = z.object({
   text: z.string().max(2000),
@@ -12,19 +20,35 @@ const AnnotationPatchSchema = z.object({
 });
 
 const ValidateConfigSchema = z.object({ config: z.string().max(1024 * 1024) });
+const LoginSchema = z.object({ code: z.string().min(1).max(256) });
 
 export interface RouteContext {
   entries: Map<string, ProjectEntry>;
   store: StateStore;
-  devAuthMode: 'mock' | 'off';
+  authMode: AuthMode;
+  authCode: string | null;
+  sessions: SessionStore;
+  /** true when the deployment serves over HTTPS (adds the Secure cookie flag) */
+  secureCookies: boolean;
   /** enqueue a rebuild in the background; returns the job id immediately */
   scheduleRebuild: (entry: ProjectEntry) => string;
   /** used when a request needs the rebuild finished before replying */
   scheduleRebuildAndWait?: (entry: ProjectEntry) => Promise<{ jobId: string }>;
 }
 
+/**
+ * Resolve the acting display name:
+ * - mock/off: x-archsync-user header only (loopback dev demo).
+ * - code: valid session cookie AND the display-name header.
+ * Returns null when unauthenticated; callers must reject with 401.
+ */
 function requireIdentity(ctx: RouteContext, request: { headers: Record<string, unknown> }): string | null {
-  if (ctx.devAuthMode !== 'mock') return null;
+  if (ctx.authMode === 'code') {
+    const token = sessionTokenFromRequest(request);
+    if (!ctx.sessions.validate(token)) return null;
+  } else if (ctx.authMode !== 'mock') {
+    return null;
+  }
   const raw = request.headers['x-archsync-user'];
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > 192) return null;
@@ -41,6 +65,44 @@ function requireIdentity(ctx: RouteContext, request: { headers: Record<string, u
 }
 
 export function registerRoutes(app: FastifyInstance, ctx: RouteContext): void {
+  app.get('/api/v1/me', async (request, reply) => {
+    const token = sessionTokenFromRequest(request);
+    const authenticated =
+      ctx.authMode === 'code'
+        ? ctx.sessions.validate(token)
+        : ctx.authMode === 'mock'; // mock: identity comes per-request via header
+    const identity = requireIdentity(ctx, request);
+    return reply
+      .headers({ 'cache-control': 'no-store' })
+      .send({ mode: ctx.authMode, authenticated, identity });
+  });
+
+  app.post('/api/v1/auth/login', async (request, reply) => {
+    if (ctx.authMode !== 'code' || ctx.authCode === null) {
+      return reply.code(400).send({
+        error: { code: 'auth_mode_disabled', message: '当前部署未启用访问码鉴权' },
+      });
+    }
+    const parsed = LoginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: { code: 'invalid_body', message: 'expected { code: string }' } });
+    }
+    if (!constantTimeEquals(parsed.data.code, ctx.authCode)) {
+      // constant-time compare via hashed digests prevents timing oracles
+      return reply.code(401).send({ error: { code: 'invalid_code', message: '访问码不正确' } });
+    }
+    const token = ctx.sessions.issue();
+    reply.headers({ 'set-cookie': buildSessionCookie(token, ctx.secureCookies) });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/auth/logout', async (request, reply) => {
+    const token = sessionTokenFromRequest(request);
+    ctx.sessions.revoke(token);
+    reply.headers({ 'set-cookie': buildClearedSessionCookie() });
+    return { ok: true };
+  });
+
   app.get('/api/v1/projects', async () => {
     const summaries: ProjectSummary[] = [...ctx.entries.values()].map((entry) => {
       const state = ctx.store.project(entry.id);
