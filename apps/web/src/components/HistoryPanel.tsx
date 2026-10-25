@@ -116,9 +116,9 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
           <div className="history-diff">
             <div className="diff-title">
               v{diff.from.version} <span className="arrow">→</span> v{diff.to.version}
-              <span className="muted">（{diff.modules.length + diff.stateChanges.length + diff.edges.length} 处变化）</span>
+              <span className="muted">（{diff.modules.length + diff.stateChanges.length + diff.edges.length + diff.matchedFilesDelta.length} 处变化）</span>
             </div>
-            {diff.modules.length + diff.stateChanges.length + diff.edges.length === 0 && (
+            {diff.modules.length + diff.stateChanges.length + diff.edges.length + diff.matchedFilesDelta.length === 0 && (
               <p className="muted">两个版本内容一致（无实质变化）。</p>
             )}
             {diff.modules.length > 0 && (
@@ -141,6 +141,18 @@ export function HistoryPanel({ onClose }: { onClose: () => void }) {
                     <li key={i}>
                       {c.label} · {c.field === 'implementation' ? '实现' : '任务'}：
                       <code>{c.from}</code> → <code>{c.to}</code>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {diff.matchedFilesDelta.length > 0 && (
+              <section>
+                <h5>代码规模变化</h5>
+                <ul>
+                  {diff.matchedFilesDelta.map((d) => (
+                    <li key={d.id}>
+                      {d.label}：{d.from} → {d.to} 个文件
                     </li>
                   ))}
                 </ul>
