@@ -597,7 +597,8 @@ CREATE TABLE module_annotations (
 
 CREATE TABLE annotation_revisions (
   project_id TEXT NOT NULL,
-  module_id TEXT NOT NULL,  revision INTEGER NOT NULL,
+  module_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
   text TEXT NOT NULL,
   author_login TEXT NOT NULL,
   created_at TEXT NOT NULL,
