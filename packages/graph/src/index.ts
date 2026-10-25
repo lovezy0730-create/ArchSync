@@ -11,7 +11,7 @@
  *   overlay signal and never imply task progress
  * - observedDependsOn stays null (no AST analysis in MVP)
  */
-import { createHash } from 'node:crypto';
+import { sha256Hex } from './sha256.js';
 import type {
   CollabData,
   ConfigError,
@@ -27,7 +27,7 @@ import type {
   SnapshotEdge,
   WorkflowState,
 } from '@archsync/contracts';
-import { matchPaths } from '@archsync/scanner';
+import { matchPaths } from '@archsync/scanner/pure';
 
 export interface BuildSnapshotInput {
   config: ProjectConfigFile;
@@ -209,7 +209,7 @@ function stableStringify(value: unknown): string {
 export function snapshotContentHash(snapshot: Omit<Snapshot, 'id' | 'version' | 'generatedAt' | 'contentHash'>): string {
   // Volatile timestamps must not create meaningless version bumps (T17).
   const { githubFetchedAt: _ignored, ...stable } = snapshot;
-  return createHash('sha256').update(stableStringify(stable)).digest('hex').slice(0, 16);
+  return sha256Hex(stableStringify(stable)).slice(0, 16);
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {

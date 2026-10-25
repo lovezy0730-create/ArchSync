@@ -55,6 +55,19 @@ export const ProjectConfigFileSchema = z.object({
     name: z.string().min(1),
     github: GithubTargetSchema,
     root: z.string().default('.'),
+    /**
+     * Static-site publishing gate (GitHub Pages). Snapshots of a project are
+     * only written to the public static bundle when this is explicitly true.
+     * Private repo paths, issues, PRs and member data must never leak into a
+     * published snapshot — absence of this flag is the safe default.
+     */
+    publishStatic: z.boolean().optional(),
+    /**
+     * When publishing, allow build-time anonymous fetch of public GitHub
+     * issues/PRs for the configured repository. Private repos fail anyway;
+     * this flag exists so exposing collaboration data is always explicit.
+     */
+    publishPublicGithubData: z.boolean().optional(),
   }),
   layers: z.array(LayerConfigSchema).min(1),
   modules: z.array(ModuleConfigSchema).min(1),
