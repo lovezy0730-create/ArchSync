@@ -19,7 +19,8 @@
     "build:pages": "pnpm snapshot:generate && pnpm --filter @archsync/web exec vite build --mode pages",
     "preview:pages": "pnpm --filter @archsync/web exec vite preview --mode pages",
     "verify:pages": "node scripts/verify-pages-dist.mjs",
-    "agent": "tsx apps/server/src/agent/cli.ts"
+    "agent": "tsx apps/server/src/agent/cli.ts",
+    "archsync:init": "tsx apps/server/src/init/init-wizard.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
