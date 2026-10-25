@@ -133,7 +133,8 @@ describe('listWorkspaceFiles', () => {
       await writeFile(join(dir, 'node_modules', 'pkg', 'index.js'), '');
       await writeFile(join(dir, '.git', 'HEAD'), 'ref');
       await writeFile(join(dir, 'README.md'), '# x\n');
-      const files = await listWorkspaceFiles(dir);
+      const { files, rootError } = await listWorkspaceFiles(dir);
+      expect(rootError).toBeNull();
       expect(files).toEqual(['README.md', 'src/ui/a.ts']);
       // sanity: readdir sees the noise, the walker must filter it
       expect((await readdir(join(dir))).length).toBeGreaterThan(2);

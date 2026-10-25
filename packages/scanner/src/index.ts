@@ -102,29 +102,33 @@ export function computeModuleScans(
 /* Filesystem walk                                                    */
 /* ------------------------------------------------------------------ */
 
-export async function listWorkspaceFiles(rootDir: string): Promise<string[]> {
+export async function listWorkspaceFiles(
+  rootDir: string,
+): Promise<{ files: string[]; rootError: string | null }> {
   const files: string[] = [];
-  const walk = async (dir: string): Promise<void> => {
+  let rootError: string | null = null;
+  const walk = async (dir: string, isRoot: boolean): Promise<void> => {
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return; // unreadable dir: skip rather than fail the whole scan
+    } catch (err) {
+      if (isRoot) rootError = `无法读取项目根目录: ${(err as Error).message}`;
+      return; // unreadable subdir: skip rather than fail the whole walk
     }
     for (const entry of entries) {
       if (entry.name.startsWith('.archsync') && entry.isDirectory()) continue;
       if (IGNORED_DIR_NAMES.has(entry.name)) continue;
       const rel = toPosix(join(dir, entry.name).slice(rootDir.length + 1));
       if (entry.isDirectory()) {
-        await walk(join(dir, entry.name));
+        await walk(join(dir, entry.name), false);
       } else if (entry.isFile()) {
         if (!isIgnoredPath(rel)) files.push(rel);
       }
       // Symlinks are deliberately not followed (path-escape safety).
     }
   };
-  await walk(rootDir);
-  return files.sort();
+  await walk(rootDir, true);
+  return { files: files.sort(), rootError };
 }
 
 /* ------------------------------------------------------------------ */
@@ -242,7 +246,12 @@ export async function scanProject(
 
   let workspaceFiles: string[] = [];
   try {
-    workspaceFiles = await listWorkspaceFiles(rootDir);
+    const walk = await listWorkspaceFiles(rootDir);
+    workspaceFiles = walk.files;
+    if (walk.rootError !== null) {
+      walkOk = false;
+      errors.push(walk.rootError);
+    }
   } catch (err) {
     walkOk = false;
     errors.push(`工作区扫描失败: ${(err as Error).message}`);
