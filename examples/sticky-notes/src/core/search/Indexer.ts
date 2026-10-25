@@ -1,10 +1,5 @@
 import { tokenize } from './Tokenizer';
 
-export interface InvertedIndex {
-  term: string;
-  noteIds: Set<string>;
-}
-
 /** 倒排索引：增量更新而非全量重建。 */
 export class SearchIndexer {
   private index = new Map<string, Set<string>>();
@@ -26,4 +21,11 @@ export class SearchIndexer {
     if (terms.length === 0) return [];
     const first = this.index.get(terms[0]!) ?? new Set<string>();
     const result = new Set(first);
- 
+    for (const t of terms.slice(1)) {
+      const bucket = this.index.get(t);
+      if (!bucket) return [];
+      for (const id of result) if (!bucket.has(id)) result.delete(id);
+    }
+    return [...result];
+  }
+}
