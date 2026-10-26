@@ -170,7 +170,6 @@ export class GithubSyncWorker {
     try {
       for (const { entry, intervalSeconds } of this.monitored()) {
         const idle = this.idleMultiplier.get(entry.id) ?? 1;
-        const lastKey = `last-tick:${entry.id}`;
         const last = this.lastTickAt.get(entry.id);
         const dueMs = Math.max(this.minIntervalMs, intervalSeconds * 1000 * idle);
         if (last !== undefined && Date.now() - last < dueMs) continue;

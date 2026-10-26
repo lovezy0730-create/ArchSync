@@ -39,11 +39,6 @@ const entry: ProjectEntry = {
   demoCollabFetchedAt: null,
 };
 
-function newClient(): GithubApiClient {
-  const db = new LocalDatabase(':memory:');
-  return new GithubApiClient(db, () => 'test-token');
-}
-
 describe('GithubApiClient', () => {
   it('sends Authorization and persists ETag → 304 returns cached data', async () => {
     let authorized = '';

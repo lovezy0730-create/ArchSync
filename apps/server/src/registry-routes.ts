@@ -133,12 +133,6 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     },
   );
 
-  app.get('/api/v1/registry/sync-status', async (_request, _reply) => {
-    void _request;
-    void _reply;
-    return { ok: true };
-  });
-
   app.post<{ Params: { id: string } }>('/api/v1/registry/:id/remove', async (request, reply) => {
     const removed = ctx.registry.remove(request.params.id);
     if (!removed) return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
