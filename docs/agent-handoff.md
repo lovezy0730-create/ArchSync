@@ -38,3 +38,11 @@ f86e16e feat(init): public repo import wizard with real import-based module sugg
 - Windows/Git Bash；Node 24；pnpm 11（allowBuilds 在 pnpm-workspace.yaml）。
 - ZCode browser-use 用于浏览器验收（Playwright locator click 偶发不路由 → 用 evaluate 原生 click 兜底）。
 - `/tmp` 在 Git Bash 内跨进程不稳定，临时文件放仓库根并清理。
+
+## RC 集成验证轮（2026-10-26 最新）
+
+- `feat/v1.0` @ ecdbb1a（PR #7，CI：build/verify 绿，archive/deploy 在 PR 上正确 skipped）
+- `feat/deploy-readiness` @ 1ffd468（PR #3，CI 绿；含限流/CSRF 加固）
+- `feat/v1.0` 已 merge #3 全部内容 → **合并顺序：先 #3 后 #7，零冲突**
+- 集成态 86 用例全绿；鉴权五项 401/限流 429/跨源 403 实测；归档脚本四场景 bare-remote 验证
+- 待人工：合并两 PR → 首次 Actions 观察 archive/deploy → 线上复核（docs/pages-deploy.md）
