@@ -1,121 +1,83 @@
 # GitHub Pages 部署与运维
 
-> **状态**：本仓库已配备正式 Pages 构建/验证/部署工作流（`.github/workflows/pages-build.yml`）。网站是否真正上线，以 GitHub Actions 中 `deploy` job 的结果及网站 HTTP 访问结果为准。
+线上地址：**https://lovezy0730-create.github.io/ArchSync/**
 
-## 首次激活（仓库管理员执行一次）
+> 源码中的 v1.0 功能只有合并到 `main` 且新的 Pages `deploy` 作业成功后才算**已上线**。验证生产状态请看 [Actions](https://github.com/lovezy0730-create/ArchSync/actions) 的最新 main 工作流、站点中的 `sourceCommitSha` 与公开数据快照；不要仅凭 PR 绿色或 README 版本判断。
 
-GitHub Pages 必须在仓库设置中选用 **GitHub Actions** 发布来源：
+## 发布架构和权限
 
-1. 打开 https://github.com/lovezy0730-create/ArchSync/settings/pages
-2. 在 **Build and deployment → Source** 下拉选 **GitHub Actions**。
-3. 返回 Actions 页面，打开 `GitHub Pages (build, verify and deploy)`，使用 `Run workflow`（选择 `main`）。
-4. 等待 `build`、`deploy` 两个 job 都显示成功，再访问 https://lovezy0730-create.github.io/ArchSync/ 。
+工作流：[`.github/workflows/pages-build.yml`](../.github/workflows/pages-build.yml)，三个独立作业：
 
-若首次触发时 Pages 尚未启用，`deploy` 可能失败。只需按前述步骤开启 Pages 并重跑工作流；不要修改仓库可见性或发布私有快照。
+| Job | 权限 | 用途 |
+| --- | --- | --- |
+| `build` | `contents: read` | 校验、构建、生成快照；上传 `snapshot-history` 和**官方 `github-pages` Artifact** |
+| `archive` | `contents: write` | 在可信 `main` 中检出 `scripts/archive-history.sh`，将历史版本推送到 `site-snapshots` 孤儿分支 |
+| `deploy` | `pages: write`, `id-token: write` | `needs: [build, archive]`，归档成功后才发布 Pages |
 
-## 工作流行为
+`pull_request`：仅运行只读构建、测试和预览 Artifact，**不归档、不上传正式 Pages Artifact、不部署**。
 
-- PR：执行 lint、typecheck、测试、静态快照、构建、安全验证；输出 `pages-static-site-preview` 预览 Artifact；**不发布**。
-- push 到 `main`：执行相同检查，上传官方 Pages Artifact，再用 `actions/deploy-pages@v4` 发布。
-- `workflow_dispatch`：可手动重新构建并部署 `main`。
-- 发布内容由 `publishStatic: true` 允许列表决定，默认仅包含 Sticky Notes 演示工程。
-- 静态版本不具备实时 WebSocket、编辑备注、本地扫描等在线服务器功能。
+`push(main)`、`issues` 事件、每周日 03:17 UTC 的 `schedule`、在 `main` 上手动 `workflow_dispatch`：执行可信构建、归档、正式部署。
 
-## 常用命令
+注意：**PR 新建或更新不会立即刷新生产站**，该事件只运行 PR 检查。PR 合并通常触发 `main` push，未合并 PR 的协作信息由 Issues 事件、周日对账或手动触发补偿。静态数据是**构建时快照**，不是实时 WebSocket。
+
+## 首次发布或 v1.0 升级
+
+1. 确认仓库 [Settings → Pages](https://github.com/lovezy0730-create/ArchSync/settings/pages) 的发布来源已设置为 **GitHub Actions**。
+2. 按顺序审核并合并 PR #3（访问码鉴权）和 PR #7（v1.0）。在合并 #3 后再次检查 #7 是否可合并及测试是否仍通过。
+3. 合并 #7 后打开 [Actions](https://github.com/lovezy0730-create/ArchSync/actions)，找到**基于最新 `main` SHA** 的 `GitHub Pages (build, verify, archive, deploy)` 运行。
+4. 核查 `build` 成功、`snapshot-history` 与 `github-pages` 两个 Artifact 均已上传。
+5. 核查 `archive` 成功，并出现 [`site-snapshots` 分支](https://github.com/lovezy0730-create/ArchSync/tree/site-snapshots)。**首次成功运行前该链接不存在是正常的。**
+6. 查看该分支根目录应以 `history/` 为主，不应把主分支全部源码拷入历史分支；确认每个项目的 `index.json` 和版本 JSON 存在。
+7. 核查 `deploy` 成功，再访问 https://lovezy0730-create.github.io/ArchSync/ ，强制刷新并检查 `/ArchSync/data/index.json`、架构快照、历史索引。
+8. 选择真实 `ArchSync` 项目，确认真实公开 GitHub PR/文件证据、三态依赖边和历史面板。Sticky Notes 仍是明确标注的 DEMO。确认界面显示的来源 SHA 和构建时间对应此次新发布。
+9. 再次触发 `workflow_dispatch` 测试第二次归档：无变化不能无限新增历史版本；有变化时应保留旧版本并生成新版本。
+
+**必须以首次真实 `archive` 和 `deploy` 作业结果为准。** 这两个生产作业会在 PR 检查时跳过，PR CI 成功不等于生产已验证。
+
+## 静态构建与本地预览
+
+环境：Node.js ≥22、pnpm（版本以 `package.json` 为准）。
 
 ```bash
+corepack enable
 pnpm install --frozen-lockfile
+pnpm verify:workflow
 pnpm build:pages
 pnpm verify:pages
 pnpm preview:pages
 ```
 
-## 历史部署前指南（保留作参考）
+预览地址：`http://localhost:4173/ArchSync/`；构建产物：`apps/web/dist/`，部署路径：`/ArchSync/`。
 
-# GitHub Pages 部署指南（Pages Ready → 上线）
+`build:pages` 会生成快照并构建网站。工作流使用 `pnpm snapshot:generate` 后再执行 Vite build，以保留从历史分支恢复的版本数据。不得在恢复历史后再次使用清空历史的构建步骤。
 
-> **当前状态（2026-10-26）：**
-> - 线上 https://lovezy0730-create.github.io/ArchSync/ 跑的是 **main 上的 v0.x 版本**（已部署）。
-> - **v1.0（PR #7）尚未合并/发布**：RC 已通过全部本地与 CI 验证，等待人工合并。
-> - 本文说明合并 #7 后的上线操作与首次生产运行检查。执行前请阅读「数据安全边界」。
+## 公开数据安全边界
 
-## v1.0 发布流水线（PR #7 交付）
+1. 只有设置 `project.publishStatic: true` 的项目进入公开产物；真实公开 GitHub 协作数据还需要显式 `project.publishPublicGithubData: true`。
+2. 只有确定允许公开的信息才能写入静态快照。当前 v1.0 准备发布 ArchSync 自描述项目的公开数据与虚构 Sticky Notes 示例；公开不等于实时。
+3. 静态生成器拒绝私有 GitHub Token，`verify:pages` 检查常见凭据和无效 `/api`、`/ws` 引用。仍应人工抽查 `apps/web/dist/data/`，因为启发式扫描不能保证发现所有敏感文本。
+4. `site-snapshots` 分支及 Pages JSON **均为公开资源**，不能借助前端登录保护其中的内容。
+5. `archive` 的写权限只赋予可信的主分支发布路径，PR 代码不得进入拥有仓库写权限的上下文。
 
-**build（只读）→ archive（唯一写权限）→ deploy（Pages 发布）**：
+## 失败排查和恢复
 
-- build：lint/typecheck/test → 快照生成（历史只读输入）→ 构建 → `verify:workflow` + `verify:pages` → 上传官方 `github-pages` artifact + `snapshot-history` artifact。PR 事件只出 preview artifact。
-- archive：显式 checkout **可信 main** 获取归档脚本（PR 代码永远到不了这个写权限上下文），用孤儿 `git init` 维护 site-snapshots 分支（只含 history/）；推送冲突 fresh-clone 重试一次；历史 JSON 损坏拒绝归档。
-- deploy：`needs: [build, archive]`，deploy-pages 原子发布；失败保留上一个成功版本。
+- **build 失败**：打开失败步骤日志；先本地复现。不要跳过 lint/test/verify。
+- **archive 出现 403**：检查 Actions Token 的 `contents: write` 作业权限、仓库 Actions 设置、规则集/分支保护；不要把整个 workflow 改为写权限。
+- **archive 无法执行脚本**：检查 archive checkout 到的确实是此次可信 main 代码及 `scripts/archive-history.sh` 路径。
+- **首次无 site-snapshots 分支**：build 在首次恢复历史时允许跳过；archive 应通过 `git init` 创建只含 history 的孤儿分支。
+- **deploy 找不到 github-pages Artifact**：确认 build 成功执行了 `actions/upload-pages-artifact@v3`，并检查官方 artifact 名称与内容。
+- **deploy 404**：检查 Settings → Pages 来源是否启用 GitHub Actions。
+- **站点仍是旧数据**：先检查最新 main 部署运行结果及 `data/index.json` 的 SHA、时间；缓存可能造成暂时显示旧内容。
+- **匿名 API 限流**：检查静态快照 `githubSource` 及 stale 标记；公开 PR 明细可能降级，不能把缺失数据解释为“没有 PR”。
+- **历史归档与发布版本不一致**：停止继续部署，保留上一个成功 Pages 版本，调查工作流版本与历史分支 SHA；不要强推历史分支。
 
-## 已具备的能力（本分支交付）
+发布失败时可以在 GitHub Pages Deployments 中回退至上一个成功部署（如提供该操作），或在 `main` revert 导致错误的提交后重新触发 Pages 构建。历史分支应独立保留，禁止为了回滚页面而直接清空历史。
 
-| 能力 | 命令 / 文件 |
-|---|---|
-| 静态快照生成（公开数据门控） | `pnpm snapshot:generate` |
-| Pages 生产构建（/ArchSync/ 子路径） | `pnpm build:pages` |
-| 本地子路径预览 | `pnpm preview:pages` → http://localhost:4173/ArchSync/ |
-| 产物验证（路径/schema/无 /api·/ws/无凭据） | `pnpm verify:pages` |
-| CI 构建 + Artifact（不部署） | `.github/workflows/pages-build.yml` |
+## 已知边界
 
-## 数据安全边界（发布前必读）
+- GitHub Pages 是静态站：无线上 WS 光标、在线备注写入、本地磁盘监听。
+- 当前静态历史最多保留近 20 版，本地服务的 SQLite 多版本历史仍未实现。
+- TS/JS 的 import 依赖分析为部分分析，不代表对所有实际调用关系的完整证明。
+- PR 触发只做检查；已发布快照的同步受 Actions 事件、周期、API 限流与 GitHub Pages 缓存约束。
 
-1. **publishStatic 门**：只有 `project.yaml` 中 `project.publishStatic: true` 的项目才会进入公开静态包。默认（缺省 false）一切项目都不发布。当前已标记的只有虚构的 sticky-notes 演示项目；ArchSync 自描述项目（含真实仓库路径）被显式排除并有测试守护。
-2. **协作数据**：默认仅允许 demo fixture（界面全程 DEMO 标注）。若要发布某公开仓库的真实 Issue/PR，须显式设置 `project.publishPublicGithubData: true`，生成器才会用**匿名**公开 API 拉取（私有仓库必然失败，不会泄漏）。生成器**拒绝任何 token**——需要 token 即意味着私有数据，一律中止。
-3. **凭据扫描**：生成器写出前扫描（PAT / AUTH_CODE / 私钥模式），CI 的 `verify:pages` 对整个产物二次扫描。
-4. **隐私自查**：发布前用 `pnpm verify:pages` + 人工抽查 `apps/web/dist/data/*.json`。
-
-## 剩余上线操作（人工执行）
-
-### 方式 A：GitHub Actions 官方部署（推荐）
-
-1. 仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**。
-2. 在 `pages-build.yml` 末尾**追加**部署 job（本 PR 有意未包含）：
-
-```yaml
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
-        id: deployment
-```
-
-并给工作流加权限：
-
-```yaml
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-```
-
-同时把 upload-artifact 步骤改为 `actions/upload-pages-artifact@v3`（`path: apps/web/dist`），或在 deploy job 里 `download-artifact` 后部署。
-
-3. 推送到 main（或手动 Run workflow）→ Actions 运行完成后访问：
-   `https://lovezy0730-create.github.io/ArchSync/`
-
-### 方式 B：手动上传 Artifact
-
-1. 在 PR/CI 的 **Actions 运行页 → Artifacts** 下载 `pages-static-site`（zip）。
-2. 解压后 `npx serve -l 8080 .` 本地核验，或推送到任意静态托管（对象存储/CDN）。
-3. 若托管在子路径 `/ArchSync/` 之外（例如自定义域根路径），用 `pnpm build:pages --` 改造：`vite build --mode pages --base=/`（或修改 `apps/web/vite.config.ts` 的 base），重新验证后发布。
-
-## 自动更新机制
-
-- **触发**：push 到 main、PR 合并、手动 `workflow_dispatch`。每次运行都重新扫描 → 生成快照 → 构建并验证产物。
-- **定期构建**（可选）：工作流中已备好注释掉的 `schedule`（每日 03:17 UTC）。启用后注意私有仓库的 Actions 免费额度；频率受 GitHub API 限制约束——匿名公开 API 为 60 请求/小时/IP，当前管线仅 2-3 个请求，任何合理频率都在限额内。
-- **前端版本识别**：静态站顶栏显示快照 `v版本号` 与「构建于 <时间>」；manifest 携带 `sourceCommitSha`。页面刷新即获取最新构建；无 WebSocket，因此**不声称实时同步**——「构建时数据」徽标全程显示。
-- **缓存**：JSON 内容哈希保证相同输入不产生误导性版本变化；Pages 对静态资源默认缓存 10 分钟。
-
-## 本地复现（无 GitHub 凭据）
-
-```bash
-pnpm install
-pnpm snapshot:generate   # 只读本地 git + demo fixture，无需任何令牌
-pnpm build:pages         # 构建到 apps/web/dist（/ArchSync/ base）
-pnpm verify:pages        # 产物验证
-pnpm preview:pages       # http://localhost:4173/ArchSync/
-```
-
-## 已知限制
-
-- 静态模式无实时协作、无备注保存、无本地文件监听（UI 已明确禁用并标注）。
-- YAML 导入预览在浏览器中进行：不执行本地扫描（实现状态诚实显示「未知」），数据不出浏览器。
-- 快照历史（多版本切换）暂只保留当前构建版本；历史版本随 CI 覆盖。
+其他部署方式（Docker、访问码和 HTTPS）请看 [服务器部署指南](deploy.md)；完整已知问题请看 [known-issues.md](known-issues.md)。
