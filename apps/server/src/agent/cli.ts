@@ -164,6 +164,42 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'projects') {
+    const res = await fetch(`http://127.0.0.1:${process.env.ARCHSYNC_PORT ?? 4310}/api/v1/registry`).catch(() => null);
+    if (!res || !res.ok) {
+      fail('无法连接本地服务（pnpm dev 需在运行）；离线场景请用 snapshot 命令', 'service_unavailable');
+    }
+    const body = (await res.json()) as { projects: Array<Record<string, unknown>> };
+    out({
+      ok: true,
+      hint: 'projects 来自本地服务注册表；快照/模块/影响命令可离线进程内计算',
+      projects: body.projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        localPath: p.localPath,
+        github: p.owner && p.repo ? `${String(p.owner)}/${String(p.repo)}` : null,
+        monitoring: p.monitoringEnabled,
+        lastScanAt: p.lastScanAt,
+        lastSyncAt: p.lastSyncAt,
+        lastError: p.lastError,
+      })),
+    });
+    return;
+  }
+
+  if (command === 'timeline') {
+    const projectId = positional[0] ?? flags.get('project');
+    if (!projectId) fail('用法: timeline <projectId> [--limit 50]');
+    const limit = Number(flags.get('limit') ?? 50);
+    const res = await fetch(
+      `http://127.0.0.1:${process.env.ARCHSYNC_PORT ?? 4310}/api/v1/registry/${encodeURIComponent(projectId)}/timeline?limit=${limit}`,
+    ).catch(() => null);
+    if (!res || !res.ok) fail('无法连接本地服务或项目不存在', 'service_unavailable');
+    const body = (await res.json()) as { events: Array<Record<string, unknown>> };
+    out({ ok: true, projectId, count: body.events.length, events: body.events });
+    return;
+  }
+
   if (command === 'snapshot') {
     const entry = await resolveProject(flags.get('project'));
     const snapshot = await buildOfflineSnapshot(entry);
@@ -283,7 +319,7 @@ async function main(): Promise<void> {
   }
 
   fail(
-    `未知命令 "${command}"。可用: snapshot | module | impact | context | validate | report`,
+    `未知命令 "${command}"。可用: projects | timeline | snapshot | module | impact | context | validate | report`,
     'unknown_command',
   );
 }
