@@ -55,3 +55,10 @@ f86e16e feat(init): public repo import wizard with real import-based module sugg
 - **状态：Release Ready — Awaiting Merge & Production Verification**
 - 合并顺序：#3 → #7；合并后重点观察 archive job 首跑（site-snapshots 分支创建）与 deploy
 - **切勿**把 feat/v1.0 merge 进 feat/deploy-readiness（会污染 PR #3 的独立范围——本轮曾误操作并已 reset）
+
+## v1.1 Local Agent 轮（2026-10-26 晚）
+
+- 分支 `feat/v1.1-local-agent`（基于 main @ cc67806）
+- 提交：registry（eae7c9d）→ worker（多条）→ 前端（5b85174 附近）→ watcher 修复（956ccf8）→ e2e 验收
+- 关键修复：watcher 最长前缀根匹配（嵌套 root 归属）+ Windows polling 默认；worker 缓存→CollabData shape 规范化
+- 剩余：Agent MCP 化、UI 内 Token 安全存储、事件保留窗口、SQLite/JSON 双存储统一

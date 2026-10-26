@@ -29,3 +29,14 @@
 - `site-snapshots` 归档 job 的逻辑已在与 CI 相同的脚本上用本地 bare remote 验证四种场景（初始化/追加/无变化/冲突重试），**尚未在 GitHub 真实远端首跑**——合并后需观察第一次 Actions 运行。
 - PR 创建/更新事件只触发 PR 检查（preview artifact），**不发布、不写历史**；公开协作数据的刷新通道为 main push / issues 事件 / 每周对账 / 手动触发。PR 合并即 push → 立即发布。
 - 静态站显示的 GitHub 协作数据是**构建时获取**（顶栏标「构建时数据」），非实时 WebSocket；实时协作仅在本地完整模式。
+
+
+---
+
+# v1.1 已知问题（2026-10-26）
+
+1. **Windows 文件监听默认 polling**：Windows fs.watch 在嵌套 watch root 下会静默丢事件（已实测），故 Windows 默认启用 polling（interval 1.2s）；`ARCHSYNC_WATCH_POLLING=0` 可关闭。CPU 成本随仓库规模上升，超大树建议缩小监听范围。
+2. **node:sqlite 为实验性内置**：Node ≥22.5 提供；升级 Node 大版本时需回归 db.ts。JSON 状态文件仍是快照/备注的真值来源（SQLite 目前承载注册表/ETag/事件，双存储将在后续统一）。
+3. **GitHub 轮询对私有仓库需 GITHUB_TOKEN 环境变量**（本地服务进程注入）；Token 不入库不落盘。UI 内配置 Token 的安全存储属后续任务。
+4. **事件时间线无自动清理**：sync_events 无限增长（MVP）；后续加保留窗口。
+5. **add-github-remote 为只读分析**：不自动克隆；克隆+初始化的手动流程已写 README。
