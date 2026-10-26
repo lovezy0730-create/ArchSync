@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRegistry } from './registry.js';
 import type { ProjectEntry } from './projects.js';
+import type { LocalDatabase } from './db.js';
 
 const AddLocalSchema = z.object({
   path: z.string().min(1).max(1024),
@@ -16,6 +17,18 @@ export interface RegistryRouteContext {
   registry: ProjectRegistry;
   scheduleRebuild: (entryId: string) => string;
   listEntries: () => ProjectEntry[];
+  db: LocalDatabase;
+}
+
+interface TimelineRow {
+  id: number;
+  project_id: string;
+  source: string;
+  event_type: string;
+  remote_id: string;
+  title: string;
+  detail_json: string;
+  occurred_at: string;
 }
 
 /**
@@ -94,6 +107,36 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     ctx.registry.reloadEntry(request.params.id);
     const jobId = ctx.scheduleRebuild(request.params.id);
     return reply.code(202).send({ jobId });
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    '/api/v1/registry/:id/timeline',
+    async (request, reply) => {
+      const limit = Math.min(Number(request.query.limit ?? 100) || 100, 300);
+      const rows = ctx.db
+        .prepare(
+          'SELECT * FROM sync_events WHERE project_id = ? ORDER BY occurred_at DESC, id DESC LIMIT ?',
+        )
+        .all(request.params.id, limit) as unknown as TimelineRow[];
+      return {
+        events: rows.map((r) => ({
+          id: r.id,
+          projectId: r.project_id,
+          source: r.source,
+          eventType: r.event_type,
+          remoteId: r.remote_id,
+          title: r.title,
+          detail: JSON.parse(r.detail_json || '{}') as Record<string, unknown>,
+          occurredAt: r.occurred_at,
+        })),
+      };
+    },
+  );
+
+  app.get('/api/v1/registry/sync-status', async (_request, _reply) => {
+    void _request;
+    void _reply;
+    return { ok: true };
   });
 
   app.post<{ Params: { id: string } }>('/api/v1/registry/:id/remove', async (request, reply) => {

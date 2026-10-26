@@ -13,6 +13,8 @@ import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
+import { GithubSyncWorker } from './sync/github-worker.js';
+import { GithubApiClient } from './sync/github-client.js';
 import { registerRoutes } from './routes.js';
 import { registerRegistryRoutes } from './registry-routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
@@ -177,6 +179,7 @@ export async function createServer(overrides?: {
 
   registerRegistryRoutes(app, {
     registry,
+    db,
     scheduleRebuild: (entryId: string) => scheduleRebuild(entryId),
     listEntries: () => [...liveEntries.values()],
   });
@@ -256,6 +259,23 @@ export async function createServer(overrides?: {
     log(`文件监听已重建（${liveEntries.size} 个项目）`);
   };
 
+  // ---- GitHub sync worker (阶段 B): budgeted polling with ETag cache ----
+  const syncClient = new GithubApiClient(db, () => env.githubToken);
+  const syncWorker = new GithubSyncWorker(
+    db,
+    syncClient,
+    () => registry.monitoredEntries(),
+    {
+      onRemoteChanged: (entry) => {
+        registry.markSync(entry.id, null);
+        scheduleRebuild(entry.id);
+      },
+      log,
+    },
+  );
+  syncWorker.start();
+  log(`GitHub 同步引擎已启动（${env.githubToken ? '授权模式 4800/h' : '匿名模式 55/h'}）`);
+
   // ---- initial snapshots ----
   await Promise.all(entries.map((e) => runRebuild(e.id, randomUUID()).catch(() => undefined)));
 
@@ -277,6 +297,7 @@ export async function createServer(overrides?: {
     url,
     close: async () => {
       clearInterval(sessionSweeper);
+      await syncWorker.stop();
       await watcher.stop();
       await hub.stop();
       await app.close();

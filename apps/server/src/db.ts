@@ -15,7 +15,7 @@ const { DatabaseSync } = (
  * database adds the registry, sync cursors and the event timeline.
  */
 export class LocalDatabase {
-  private db: DatabaseSync;
+  private db: InstanceType<typeof DatabaseSync>;
 
   constructor(filePath: string) {
     if (filePath !== ':memory:') mkdirSync(dirname(filePath), { recursive: true });
