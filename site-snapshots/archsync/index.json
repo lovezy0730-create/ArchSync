@@ -1,0 +1,19 @@
+{
+  "projectId": "archsync",
+  "versions": [
+    {
+      "version": 2,
+      "contentHash": "3e9d21e89fc641ec",
+      "generatedAt": "2026-10-25T16:03:58.591Z",
+      "sourceCommitSha": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+      "file": "v2.json"
+    },
+    {
+      "version": 1,
+      "contentHash": "0ba1cc6c07e97951",
+      "generatedAt": "2026-10-25T16:02:51.471Z",
+      "sourceCommitSha": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+      "file": "v1.json"
+    }
+  ]
+}

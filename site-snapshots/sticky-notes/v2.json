@@ -1,0 +1,965 @@
+{
+  "kind": "archsync-static-snapshot",
+  "snapshotVersion": 2,
+  "snapshot": {
+    "id": "static-sticky-notes",
+    "version": 2,
+    "generatedAt": "2026-10-25T16:03:58.591Z",
+    "contentHash": "ac44091d805afc1a",
+    "projectId": "sticky-notes",
+    "projectName": "Windows 便签 (Sticky Notes)",
+    "branch": "feat/v1.0",
+    "sourceCommitSha": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+    "configBlobSha": "0e98210c1c347efe25f13c64517de4324b8321078b07c94a249d32701959d8e4",
+    "scope": "local-workspace",
+    "githubFetchedAt": "2026-10-25T12:37:28.722Z",
+    "githubSource": "demo",
+    "githubDemo": true,
+    "freshness": "fresh",
+    "scanCompleteness": "complete",
+    "dependencyAnalysis": "partial",
+    "layers": [
+      {
+        "id": "ui",
+        "label": "前端界面",
+        "order": 1
+      },
+      {
+        "id": "services",
+        "label": "业务服务",
+        "order": 2
+      },
+      {
+        "id": "core",
+        "label": "核心能力",
+        "order": 3
+      },
+      {
+        "id": "infra",
+        "label": "数据与基础设施",
+        "order": 4
+      }
+    ],
+    "modules": [
+      {
+        "id": "notes-ui",
+        "label": "笔记主界面",
+        "layer": "ui",
+        "description": "笔记列表、编辑器与视图切换",
+        "plannedPaths": [
+          "src/ui/notes/**"
+        ],
+        "plannedDependsOn": [
+          "note-service",
+          "search-index",
+          "settings-store"
+        ],
+        "dependedOnBy": [],
+        "matchedBaselinePaths": [
+          "src/ui/notes/NoteEditor.tsx",
+          "src/ui/notes/NotesList.tsx",
+          "src/ui/notes/NotesViewModel.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/ui/notes/NoteEditor.tsx",
+          "src/ui/notes/NotesList.tsx",
+          "src/ui/notes/NotesViewModel.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [
+          "note-service"
+        ],
+        "implementation": "verified",
+        "workflow": "done",
+        "owners": [
+          "lin-xu"
+        ],
+        "assignees": [
+          "lin-xu"
+        ],
+        "contributors": [
+          "lin-xu"
+        ],
+        "issueNumbers": [
+          4
+        ],
+        "pullRequestNumbers": [
+          24
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 3,
+              "matchedWorkspace": 3
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#4 笔记主界面：列表 + 编辑器",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "completion": "completed"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #24 feat(ui): 笔记主界面",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "draft": false,
+              "merged": true,
+              "checks": "success"
+            }
+          },
+          {
+            "source": "manual-acceptance",
+            "ref": "由 lin-xu 确认",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {}
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "pomodoro-timer",
+        "label": "番茄钟",
+        "layer": "ui",
+        "description": "专注计时与提醒弹层",
+        "plannedPaths": [
+          "src/ui/pomodoro/**"
+        ],
+        "plannedDependsOn": [
+          "pomodoro-service",
+          "settings-store"
+        ],
+        "dependedOnBy": [],
+        "matchedBaselinePaths": [
+          "src/ui/pomodoro/PomodoroTimer.tsx"
+        ],
+        "matchedWorkspacePaths": [
+          "src/ui/pomodoro/PomodoroTimer.tsx"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "detected_unverified",
+        "workflow": "in_progress",
+        "owners": [
+          "wang-meng"
+        ],
+        "assignees": [
+          "wang-meng"
+        ],
+        "contributors": [],
+        "issueNumbers": [
+          41
+        ],
+        "pullRequestNumbers": [],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 1,
+              "matchedWorkspace": 1
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#41 番茄钟：计时与提醒",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "completion": "none"
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "settings-ui",
+        "label": "设置界面",
+        "layer": "ui",
+        "description": "外观、账户与同步设置面板（尚未开工）",
+        "plannedPaths": [
+          "src/ui/settings/**"
+        ],
+        "plannedDependsOn": [
+          "settings-store",
+          "sync-service"
+        ],
+        "dependedOnBy": [],
+        "matchedBaselinePaths": [],
+        "matchedWorkspacePaths": [],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "not_detected",
+        "workflow": "not_started",
+        "owners": [
+          "chen-qing"
+        ],
+        "assignees": [],
+        "contributors": [],
+        "issueNumbers": [],
+        "pullRequestNumbers": [],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 0,
+              "matchedWorkspace": 0
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "sticky-widget",
+        "label": "桌面便签组件",
+        "layer": "ui",
+        "description": "常驻桌面的快速便签窗口",
+        "plannedPaths": [
+          "src/ui/widget/**"
+        ],
+        "plannedDependsOn": [
+          "note-service",
+          "settings-store"
+        ],
+        "dependedOnBy": [],
+        "matchedBaselinePaths": [
+          "src/ui/widget/StickyWidget.tsx",
+          "src/ui/widget/WidgetDrag.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/ui/widget/StickyWidget.tsx",
+          "src/ui/widget/WidgetDrag.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "detected_unverified",
+        "workflow": "in_review",
+        "owners": [
+          "lin-xu"
+        ],
+        "assignees": [
+          "lin-xu"
+        ],
+        "contributors": [
+          "lin-xu"
+        ],
+        "issueNumbers": [
+          34
+        ],
+        "pullRequestNumbers": [
+          35
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 2,
+              "matchedWorkspace": 2
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#34 桌面便签组件：置顶与快速新建",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "completion": "none"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #35 feat(widget): 桌面便签窗口与拖拽",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "draft": false,
+              "merged": false,
+              "checks": "pending"
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "note-service",
+        "label": "笔记管理服务",
+        "layer": "services",
+        "description": "笔记的创建、编辑、归档与版本管理",
+        "plannedPaths": [
+          "src/services/note/**"
+        ],
+        "plannedDependsOn": [
+          "storage",
+          "search-index"
+        ],
+        "dependedOnBy": [
+          "notes-ui",
+          "sticky-widget",
+          "sync-service"
+        ],
+        "matchedBaselinePaths": [
+          "src/services/note/NoteRepository.ts",
+          "src/services/note/NoteService.ts",
+          "src/services/note/NoteVersioning.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/services/note/NoteRepository.ts",
+          "src/services/note/NoteService.ts",
+          "src/services/note/NoteVersioning.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "verified",
+        "workflow": "done",
+        "owners": [
+          "mu-ran"
+        ],
+        "assignees": [
+          "mu-ran"
+        ],
+        "contributors": [
+          "mu-ran"
+        ],
+        "issueNumbers": [
+          7
+        ],
+        "pullRequestNumbers": [
+          21
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 3,
+              "matchedWorkspace": 3
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#7 笔记管理服务与版本历史",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "completion": "completed"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #21 feat(note): 笔记服务与版本管理",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "draft": false,
+              "merged": true,
+              "checks": "success"
+            }
+          },
+          {
+            "source": "manual-acceptance",
+            "ref": "由 lin-xu 确认",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {}
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "pomodoro-service",
+        "label": "番茄钟服务",
+        "layer": "services",
+        "description": "计时调度、统计与通知节流（尚未开工）",
+        "plannedPaths": [
+          "src/services/pomodoro/**"
+        ],
+        "plannedDependsOn": [
+          "storage"
+        ],
+        "dependedOnBy": [
+          "pomodoro-timer"
+        ],
+        "matchedBaselinePaths": [],
+        "matchedWorkspacePaths": [],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "not_detected",
+        "workflow": "not_started",
+        "owners": [
+          "wang-meng"
+        ],
+        "assignees": [],
+        "contributors": [],
+        "issueNumbers": [],
+        "pullRequestNumbers": [],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 0,
+              "matchedWorkspace": 0
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "sync-service",
+        "label": "云同步服务",
+        "layer": "services",
+        "description": "多设备增量同步与冲突合并",
+        "plannedPaths": [
+          "src/services/sync/**"
+        ],
+        "plannedDependsOn": [
+          "note-service",
+          "storage"
+        ],
+        "dependedOnBy": [
+          "settings-ui"
+        ],
+        "matchedBaselinePaths": [
+          "src/services/sync/ConflictResolver.ts",
+          "src/services/sync/SyncEngine.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/services/sync/ConflictResolver.ts",
+          "src/services/sync/SyncEngine.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [
+          "note-service"
+        ],
+        "implementation": "detected_unverified",
+        "workflow": "blocked",
+        "owners": [
+          "chen-qing"
+        ],
+        "assignees": [
+          "chen-qing"
+        ],
+        "contributors": [
+          "chen-qing"
+        ],
+        "issueNumbers": [
+          12,
+          45
+        ],
+        "pullRequestNumbers": [
+          40
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 2,
+              "matchedWorkspace": 2
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#12 多设备增量同步协议",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "completion": "none"
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#45 同步服务被存储锁机制阻塞",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "completion": "none"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #40 fix(sync): 并发写冲突（已被要求返工）",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "draft": false,
+              "merged": false,
+              "checks": "failure"
+            }
+          }
+        ],
+        "warnings": [
+          "Issue #45 带有 blocked 标签"
+        ]
+      },
+      {
+        "id": "search-index",
+        "label": "全文搜索",
+        "layer": "core",
+        "description": "分词、倒排索引与增量更新",
+        "plannedPaths": [
+          "src/core/search/**"
+        ],
+        "plannedDependsOn": [
+          "storage"
+        ],
+        "dependedOnBy": [
+          "note-service",
+          "notes-ui"
+        ],
+        "matchedBaselinePaths": [
+          "src/core/search/Indexer.ts",
+          "src/core/search/Tokenizer.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/core/search/Indexer.ts",
+          "src/core/search/Tokenizer.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "detected_unverified",
+        "workflow": "in_progress",
+        "owners": [
+          "mu-ran"
+        ],
+        "assignees": [
+          "mu-ran"
+        ],
+        "contributors": [
+          "mu-ran"
+        ],
+        "issueNumbers": [
+          19
+        ],
+        "pullRequestNumbers": [
+          38
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 2,
+              "matchedWorkspace": 2
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#19 全文搜索：分词与倒排索引",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "completion": "none"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #38 wip(search): 倒排索引草稿",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "open",
+              "draft": true,
+              "merged": false,
+              "checks": "pending"
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "settings-store",
+        "label": "设置存储",
+        "layer": "infra",
+        "description": "应用设置读写与默认值管理（尚未开工）",
+        "plannedPaths": [
+          "src/infra/settings/**"
+        ],
+        "plannedDependsOn": [],
+        "dependedOnBy": [
+          "notes-ui",
+          "pomodoro-timer",
+          "settings-ui",
+          "sticky-widget"
+        ],
+        "matchedBaselinePaths": [],
+        "matchedWorkspacePaths": [],
+        "overlayChanges": [],
+        "observedDependsOn": [],
+        "implementation": "not_detected",
+        "workflow": "not_started",
+        "owners": [
+          "chen-qing"
+        ],
+        "assignees": [],
+        "contributors": [],
+        "issueNumbers": [],
+        "pullRequestNumbers": [],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 0,
+              "matchedWorkspace": 0
+            }
+          }
+        ],
+        "warnings": []
+      },
+      {
+        "id": "storage",
+        "label": "数据持久化",
+        "layer": "infra",
+        "description": "SQLite 存储与迁移脚本",
+        "plannedPaths": [
+          "src/infra/storage/**"
+        ],
+        "plannedDependsOn": [],
+        "dependedOnBy": [
+          "note-service",
+          "pomodoro-service",
+          "search-index",
+          "sync-service"
+        ],
+        "matchedBaselinePaths": [
+          "src/infra/storage/Database.ts",
+          "src/infra/storage/Migrations.ts"
+        ],
+        "matchedWorkspacePaths": [
+          "src/infra/storage/Database.ts",
+          "src/infra/storage/Migrations.ts"
+        ],
+        "overlayChanges": [],
+        "observedDependsOn": [
+          "note-service"
+        ],
+        "implementation": "verified",
+        "workflow": "done",
+        "owners": [
+          "mu-ran"
+        ],
+        "assignees": [
+          "mu-ran"
+        ],
+        "contributors": [
+          "mu-ran"
+        ],
+        "issueNumbers": [
+          3
+        ],
+        "pullRequestNumbers": [
+          28
+        ],
+        "evidence": [
+          {
+            "source": "yaml",
+            "ref": ".archsync/project.yaml",
+            "revision": "0e98210c1c34",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "plannedPaths": 1
+            }
+          },
+          {
+            "source": "git-tree",
+            "ref": "HEAD 5c3c1aa5",
+            "revision": "5c3c1aa5c97eb4499b8cbc4d34f58c6ccdf70de6",
+            "observedAt": "2026-10-25T16:03:58.591Z",
+            "demo": false,
+            "details": {
+              "matchedBaseline": 2,
+              "matchedWorkspace": 2
+            }
+          },
+          {
+            "source": "github-issue",
+            "ref": "#3 SQLite 存储层与迁移框架",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "completion": "completed"
+            }
+          },
+          {
+            "source": "github-pr",
+            "ref": "PR #28 feat(infra): SQLite 存储与迁移",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {
+              "state": "closed",
+              "draft": false,
+              "merged": true,
+              "checks": "success"
+            }
+          },
+          {
+            "source": "manual-acceptance",
+            "ref": "由 lin-xu 确认",
+            "observedAt": "2026-10-25T12:37:28.722Z",
+            "demo": true,
+            "details": {}
+          }
+        ],
+        "warnings": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "notes-ui->note-service",
+        "source": "notes-ui",
+        "target": "note-service",
+        "kind": "confirmed",
+        "demo": false
+      },
+      {
+        "id": "notes-ui->search-index",
+        "source": "notes-ui",
+        "target": "search-index",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "notes-ui->settings-store",
+        "source": "notes-ui",
+        "target": "settings-store",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "pomodoro-timer->pomodoro-service",
+        "source": "pomodoro-timer",
+        "target": "pomodoro-service",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "pomodoro-timer->settings-store",
+        "source": "pomodoro-timer",
+        "target": "settings-store",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "settings-ui->settings-store",
+        "source": "settings-ui",
+        "target": "settings-store",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "settings-ui->sync-service",
+        "source": "settings-ui",
+        "target": "sync-service",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "sticky-widget->note-service",
+        "source": "sticky-widget",
+        "target": "note-service",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "sticky-widget->settings-store",
+        "source": "sticky-widget",
+        "target": "settings-store",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "note-service->storage",
+        "source": "note-service",
+        "target": "storage",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "note-service->search-index",
+        "source": "note-service",
+        "target": "search-index",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "pomodoro-service->storage",
+        "source": "pomodoro-service",
+        "target": "storage",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "sync-service->note-service",
+        "source": "sync-service",
+        "target": "note-service",
+        "kind": "confirmed",
+        "demo": false
+      },
+      {
+        "id": "sync-service->storage",
+        "source": "sync-service",
+        "target": "storage",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "search-index->storage",
+        "source": "search-index",
+        "target": "storage",
+        "kind": "planned",
+        "demo": false
+      },
+      {
+        "id": "storage->note-service",
+        "source": "storage",
+        "target": "note-service",
+        "kind": "observed",
+        "demo": false
+      }
+    ],
+    "warnings": [
+      "GitHub 协作数据来自演示数据 (demo fixture)，非真实仓库状态"
+    ]
+  }
+}

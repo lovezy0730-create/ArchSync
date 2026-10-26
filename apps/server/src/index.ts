@@ -14,6 +14,7 @@ import { WorkspaceWatcher } from './sync/watcher.js';
 import { registerRoutes } from './routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
 import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
+import { LoginRateLimiter } from './auth-rate-limit.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -59,6 +60,7 @@ export async function createServer(overrides?: {
   const hub = new PresenceHub(env.presenceTtlSeconds);
   hub.start();
   const sessions = new SessionStore();
+  const loginLimiter = new LoginRateLimiter();
   const sessionSweeper = setInterval(() => sessions.sweep(), 10 * 60_000);
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
@@ -94,8 +96,11 @@ export async function createServer(overrides?: {
   // ---- plugins ----
   await app.register(cors, {
     origin: (origin, cb) => {
+      // disallowed origins get NO CORS headers (browser blocks the response);
+      // we must not throw here — that surfaces as a 500. Writes from
+      // disallowed origins are additionally rejected by isSameOrigin.
       if (allowedOrigin(origin, env.host)) cb(null, true);
-      else cb(new Error('Origin 不被允许'), false);
+      else cb(null, false);
     },
   });
   await app.register(websocket);
@@ -131,6 +136,7 @@ export async function createServer(overrides?: {
     authMode: env.authMode,
     authCode: env.authCode,
     sessions,
+    loginLimiter,
     secureCookies: env.nodeEnv === 'production',
     scheduleRebuild: (entry) => scheduleRebuild(entry.id),
     scheduleRebuildAndWait: async (entry) => {

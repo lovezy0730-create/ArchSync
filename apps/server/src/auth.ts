@@ -1,4 +1,5 @@
-import { timingSafeEqual, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
+
 import { newSessionToken } from './env.js';
 
 export const SESSION_COOKIE = 'archsync_session';
@@ -59,12 +60,6 @@ export class SessionStore {
   private hash(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
-}
-
-export function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(createHash('sha256').update(a).digest());
-  const bb = Buffer.from(createHash('sha256').update(b).digest());
-  return timingSafeEqual(ab, bb);
 }
 
 /** Parse a Cookie header into a flat record (no external dependency). */
