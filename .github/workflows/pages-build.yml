@@ -134,52 +134,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          HISTORY_SRC="bundle/site-snapshots/history"
-          if [ ! -d "$HISTORY_SRC" ] || [ -z "$(ls -A "$HISTORY_SRC" 2>/dev/null)" ]; then
-            echo "No history produced by build — nothing to archive."
-            exit 0
-          fi
-
-          WORK=$(mktemp -d)
-          git config --global user.name "archsync-snapshot-bot"
-          git config --global user.email "actions@users.noreply.github.com"
-          AUTH_URL="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
-
-          push_history() {
-            git -C "$1" add -A
-            if git -C "$1" diff --cached --quiet; then
-              echo "History unchanged — no commit needed."
-              return 0
-            fi
-            git -C "$1" commit -m "chore(snapshots): archive snapshot versions [skip ci]"
-            git -C "$1" push "$AUTH_URL" HEAD:site-snapshots
-          }
-
-          if git ls-remote --heads "$AUTH_URL" site-snapshots | grep -q site-snapshots; then
-            echo "Branch exists — fetching and updating."
-            git clone --depth 1 --single-branch --branch site-snapshots "$AUTH_URL" "$WORK/repo"
-            rm -rf "$WORK/repo/history"
-            mkdir -p "$WORK/repo/history"
-            cp -r "$HISTORY_SRC"/. "$WORK/repo/history/"
-            if ! push_history "$WORK/repo"; then
-              echo "Push rejected (concurrent update) — retrying once with a fresh clone."
-              rm -rf "$WORK/repo"
-              git clone --depth 1 --single-branch --branch site-snapshots "$AUTH_URL" "$WORK/repo"
-              rm -rf "$WORK/repo/history"
-              mkdir -p "$WORK/repo/history"
-              cp -r "$HISTORY_SRC"/. "$WORK/repo/history/"
-              push_history "$WORK/repo"
-            fi
-          else
-            echo "Branch missing — initializing orphan history-only repository."
-            git init -q --initial-branch=site-snapshots "$WORK/repo"
-            mkdir -p "$WORK/repo/history"
-            cp -r "$HISTORY_SRC"/. "$WORK/repo/history/"
-            push_history "$WORK/repo"
-          fi
-
-          echo "site-snapshots branch is up to date."
+          chmod +x scripts/archive-history.sh
+          scripts/archive-history.sh             "bundle/site-snapshots/history"             "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
 
   # ------------------------------------------------------------------
   # deploy: publishes the verified bundle. Runs only on trusted main
