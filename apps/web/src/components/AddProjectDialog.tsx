@@ -77,7 +77,7 @@ export function AddProjectDialog({ onClose, onAdded }: Props) {
               输入本机 Git 仓库的绝对路径（支持 worktree）。ArchSync 会读取分支/远端信息、
               注册并自动扫描架构；已有的 .archsync/project.yaml 将被直接采用。
             </p>
-            <div className="login-card form-row">
+            <div className="dialog-form-row">
               <input
                 autoFocus
                 value={localPath}
@@ -96,7 +96,7 @@ export function AddProjectDialog({ onClose, onAdded }: Props) {
               输入公开 GitHub 仓库进行<strong>只读远端分析</strong>（默认分支/语言/元数据）。
               远端分析无法观察未推送的本地修改；要持续监控请先克隆到本地，再用「本地 Git 仓库」添加。
             </p>
-            <div className="login-card form-row">
+            <div className="dialog-form-row">
               <input
                 autoFocus
                 value={githubUrl}

@@ -255,14 +255,43 @@ export function collabFromCache(cached: {
   error?: string | null;
 }): CollabData | null {
   if (!cached || (cached.issues === undefined && cached.pullRequests === undefined)) return null;
+  // worker caches raw GitHub shapes; normalize to contract fields so downstream
+  // consumers (changedFiles.some, checks comparisons) never see undefined
+  const pullRequests: CollabData['pullRequests'] = (cached.pullRequests ?? []).map((p) => ({
+    number: p.number,
+    title: p.title,
+    state: p.state,
+    draft: p.draft ?? false,
+    author: p.author ?? 'unknown',
+    assignees: p.assignees ?? [],
+    headRef: p.headRef ?? '',
+    mergedAt: p.mergedAt ?? null,
+    closedAt: p.closedAt ?? null,
+    createdAt: p.createdAt ?? '',
+    updatedAt: p.updatedAt ?? '',
+    changedFiles: p.changedFiles ?? [],
+    checks: p.checks ?? 'unknown',
+  }));
+  const issues: CollabData['issues'] = (cached.issues ?? []).map((i) => ({
+    number: i.number,
+    title: i.title,
+    state: i.state,
+    assignees: i.assignees ?? [],
+    labels: i.labels ?? [],
+    author: i.author ?? 'unknown',
+    createdAt: i.createdAt ?? '',
+    updatedAt: i.updatedAt ?? '',
+    closedAt: i.closedAt ?? null,
+    completion: i.completion ?? 'none',
+  }));
   return {
     source: 'live',
     demo: false,
     fetchedAt: cached.fetchedAt ?? new Date().toISOString(),
     error: cached.error ?? null,
     team: [],
-    issues: cached.issues ?? [],
-    pullRequests: cached.pullRequests ?? [],
+    issues,
+    pullRequests,
     moduleIssues: {},
     manualApprovals: {},
   };

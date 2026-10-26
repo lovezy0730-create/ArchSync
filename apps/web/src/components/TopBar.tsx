@@ -227,6 +227,14 @@ export function TopBar() {
         )}
       </div>
 
+      {importMessage && (
+        <div className={`import-toast ${importMessage.ok ? 'ok' : 'err'}`}>
+          {importMessage.ok
+            ? `已导入 ${importMessage.projectId}，已切换到导入预览${(importMessage.warnings?.length ?? 0) > 0 ? `（${importMessage.warnings!.length} 条警告）` : ''}`
+            : (importMessage.message ?? `配置无效: ${importMessage.errors?.[0]?.message ?? ''}`)}
+          <button onClick={() => setImportMessage(null)}>×</button>
+        </div>
+      )}
       {addOpen && (
         <AddProjectDialog
           onClose={() => setAddOpen(false)}
@@ -236,14 +244,8 @@ export function TopBar() {
           }}
         />
       )}
-      {timelineOpen && projectId && <TimelinePanel projectId={projectId} onClose={() => setTimelineOpen(false)} />}
-      {importMessage && (
-        <div className={`import-toast ${importMessage.ok ? 'ok' : 'err'}`}>
-          {importMessage.ok
-            ? `已导入 ${importMessage.projectId}，已切换到导入预览${(importMessage.warnings?.length ?? 0) > 0 ? `（${importMessage.warnings!.length} 条警告）` : ''}`
-            : (importMessage.message ?? `配置无效: ${importMessage.errors?.[0]?.message ?? ''}`)}
-          <button onClick={() => setImportMessage(null)}>×</button>
-        </div>
+      {timelineOpen && projectId && (
+        <TimelinePanel projectId={projectId} onClose={() => setTimelineOpen(false)} />
       )}
     </header>
   );

@@ -127,10 +127,17 @@ describe('GithubApiClient', () => {
     vi.unstubAllGlobals();
   });
 
-  it('collabFromCache rebuilds CollabData with live source', () => {
-    const collab = collabFromCache({ issues: [], pullRequests: [], fetchedAt: NOW.toISOString() });
+  it('collabFromCache normalizes raw GitHub shapes to contract fields', () => {
+    const collab = collabFromCache({
+      issues: [],
+      pullRequests: [{ number: 1, title: 't', state: 'open', updated_at: NOW.toISOString() }],
+      fetchedAt: NOW.toISOString(),
+    });
     expect(collab?.source).toBe('live');
     expect(collab?.error).toBeNull();
+    // raw pull without changedFiles/checks must be normalized, never undefined
+    expect(collab?.pullRequests[0]?.changedFiles).toEqual([]);
+    expect(collab?.pullRequests[0]?.checks).toBe('unknown');
     expect(collabFromCache({})).toBeNull();
   });
 });
