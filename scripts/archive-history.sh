@@ -22,6 +22,22 @@ if [ ! -d "$HISTORY_SRC" ] || [ -z "$(ls -A "$HISTORY_SRC" 2>/dev/null)" ]; then
   exit 0
 fi
 
+# Refuse to propagate corrupted history: every index.json must be valid JSON.
+# The build pipeline already ran SnapshotSchema + secret scans; this is the
+# last-line structural check before anything is pushed to the history branch.
+if ! command -v node >/dev/null 2>&1; then
+  echo "[archive] node 不可用，无法校验历史数据完整性" >&2
+  exit 78
+fi
+for INDEX in "$HISTORY_SRC"/*/index.json; do
+  [ -e "$INDEX" ] || continue
+  if ! node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$INDEX" 2>/dev/null; then
+    echo "[archive] 历史数据损坏（非法 JSON）: $INDEX — 拒绝归档" >&2
+    exit 65
+  fi
+done
+echo "[archive] 历史数据结构校验通过。"
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 

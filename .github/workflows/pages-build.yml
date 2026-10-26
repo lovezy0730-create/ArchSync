@@ -85,6 +85,9 @@ jobs:
       - name: Build GitHub Pages site at /ArchSync/
         run: pnpm --filter @archsync/web exec vite build --mode pages
 
+      - name: Workflow structure gate + conflict-marker scrub
+        run: pnpm verify:workflow
+
       - name: Verify published files and scrub secrets
         run: pnpm verify:pages
 
@@ -98,17 +101,26 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      # Trusted runs: hand dist + updated history to archive/deploy jobs.
-      - name: Upload site bundle (main/manual/schedule/issues)
+      # Trusted runs: hand the updated history to the archive job as its OWN
+      # artifact — downloading it yields exactly the history directory, with
+      # no reliance on upload-artifact's common-ancestor path logic.
+      - name: Upload snapshot history for archive (main/manual/schedule/issues)
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: site-bundle
-          path: |
-            apps/web/dist
-            site-snapshots/history
+          name: snapshot-history
+          path: site-snapshots/history
           retention-days: 7
           if-no-files-found: error
+
+      # Official GitHub Pages artifact (name: github-pages) — required by
+      # actions/deploy-pages@v4. Uploaded AFTER verify:pages so only validated
+      # output can ever reach the publisher. PR runs must never upload it.
+      - name: Upload official GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
 
   # ------------------------------------------------------------------
   # archive: the ONLY job with contents: write. Mechanically pushes the
@@ -123,19 +135,34 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download site bundle
+      # This job only runs on trusted default-branch events, so checking out
+      # the audited main revision for the script is safe — no PR code can
+      # reach this write-permission context.
+      - name: Checkout audited main (for the archive script)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # download-artifact with a dedicated history artifact: `incoming-history`
+      # IS the history directory (projectId subfolders inside), no path guessing.
+      - name: Download snapshot history
         uses: actions/download-artifact@v4
         with:
-          name: site-bundle
-          path: bundle
+          name: snapshot-history
+          path: incoming-history
 
       - name: Push history to site-snapshots branch (orphan, history-only)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+          if [ ! -f scripts/archive-history.sh ]; then
+            echo "::error::scripts/archive-history.sh missing in the checked-out main revision — refusing to continue"
+            exit 78
+          fi
           chmod +x scripts/archive-history.sh
-          scripts/archive-history.sh             "bundle/site-snapshots/history"             "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          scripts/archive-history.sh             "incoming-history"             "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
 
   # ------------------------------------------------------------------
   # deploy: publishes the verified bundle. Runs only on trusted main
@@ -145,7 +172,9 @@ jobs:
   # ------------------------------------------------------------------
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
+    # Full release chain: build → archive → deploy. A failed archive (or a
+    # versioning error) must not be published as a "complete" release.
+    needs: [build, archive]
     runs-on: ubuntu-latest
     permissions:
       contents: read

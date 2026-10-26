@@ -63,12 +63,25 @@ pnpm dev
 
 ## 项目配置示例
 
-<<<<<<< HEAD
-将 `.archsync/project.yaml` 放在项目根目录：
-=======
 ## 部署
 
-部署就绪能力已内置：**访问码鉴权**（`AUTH_CODE`，解除仅限本机的限制）、`pnpm start` 生产启动、Dockerfile / docker-compose、`WORKSPACE_ROOT` 挂载扫描。完整步骤（Docker、直跑、HTTPS 反向代理、安全清单）见 **[docs/deploy.md](docs/deploy.md)**。
+两种部署形态均已就绪（实际发布为人工步骤）：
+
+| 形态 | 说明 | 文档 |
+|---|---|---|
+| **GitHub Pages 静态版**（无后端） | `pnpm build:pages` 生成 /ArchSync/ 子路径静态站；构建时快照 + 公开数据门控 + YAML 本地导入预览 | [docs/pages-deploy.md](docs/pages-deploy.md) |
+| **服务器完整版**（Fastify + WS） | 访问码鉴权（`AUTH_CODE`）、`pnpm start`、Dockerfile、`WORKSPACE_ROOT` 挂载扫描 | [docs/deploy.md](docs/deploy.md) |
+
+静态版一键流水线：
+
+```bash
+pnpm snapshot:generate   # 构建时快照（只发布 publishStatic: true 的项目）
+pnpm build:pages         # /ArchSync/ base 生产构建
+pnpm verify:pages        # 产物验证：路径/schema/无 /api·/ws/无凭据
+pnpm preview:pages       # 本地预览 http://localhost:4173/ArchSync/
+```
+
+服务器完整版：
 
 ```bash
 export AUTH_CODE='你的访问码'        # ≥8 字符；设置后允许绑定非回环地址
@@ -80,7 +93,6 @@ docker compose up -d --build        # http://<服务器IP>:4310
 ## 连接你自己的项目
 
 在仓库根目录或任意子目录放一个 `.archsync/project.yaml`（服务会自动发现根目录与 `examples/*`）：
->>>>>>> ef893bc (docs(readme): deployment section and env reference)
 
 ```yaml
 schemaVersion: 1
