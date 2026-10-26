@@ -67,6 +67,18 @@ const fs = await import('node:fs');
     problems.push('archive job 必须显式 checkout 才能获得归档脚本');
   }
 
+  /* The generator outputs site-snapshots/<projectId>/index.json. The upload
+     action must take site-snapshots/ (not nonexistent site-snapshots/history).
+     Check literal adjacent YAML lines to avoid regex escaping fragility. */
+  const historyUploadLines = ['name: snapshot-history', '          path: site-snapshots/'].join('\n');
+  const historyDownloadLines = ['name: snapshot-history', '          path: incoming-history'].join('\n');
+  if (!buildSection.includes(historyUploadLines)) {
+    problems.push('snapshot-history must upload site-snapshots/ root, not site-snapshots/history');
+  }
+  if (!archiveSection.includes(historyDownloadLines)) {
+    problems.push('archive must download snapshot-history to incoming-history');
+  }
+
   /* official pages artifact + dependency chain */
   if (!text.includes('actions/upload-pages-artifact@v3')) {
     problems.push('缺少官方 actions/upload-pages-artifact（deploy-pages 依赖 github-pages artifact）');

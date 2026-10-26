@@ -102,14 +102,15 @@ jobs:
           if-no-files-found: error
 
       # Trusted runs: hand the updated history to the archive job as its OWN
-      # artifact — downloading it yields exactly the history directory, with
-      # no reliance on upload-artifact's common-ancestor path logic.
+      # artifact — the generator writes site-snapshots/<projectId>/index.json;
+      # uploading site-snapshots/ makes the artifact root equal to history/. 
+      # Downloading it to incoming-history creates incoming-history/<projectId>/.
       - name: Upload snapshot history for archive (main/manual/schedule/issues)
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: snapshot-history
-          path: site-snapshots/history
+          path: site-snapshots/
           retention-days: 7
           if-no-files-found: error
 
