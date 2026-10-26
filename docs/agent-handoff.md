@@ -46,3 +46,12 @@ f86e16e feat(init): public repo import wizard with real import-based module sugg
 - `feat/v1.0` 已 merge #3 全部内容 → **合并顺序：先 #3 后 #7，零冲突**
 - 集成态 86 用例全绿；鉴权五项 401/限流 429/跨源 403 实测；归档脚本四场景 bare-remote 验证
 - 待人工：合并两 PR → 首次 Actions 观察 archive/deploy → 线上复核（docs/pages-deploy.md）
+
+## Release Gate 轮（2026-10-26 第二轮 RC 修复，最终状态）
+
+- `feat/v1.0` @ **39aeb3e**（PR #7）：archive 显式 checkout 可信 main + 恢复官方 upload-pages-artifact + deploy needs [build,archive] + README 冲突解决 + verify:workflow / 冲突标记双 gate 进 CI
+- `feat/deploy-readiness` @ **1ffd468**（PR #3，保持独立，无需再同步）
+- 归档脚本错误场景：损坏 JSON exit 65、不可达 remote exit 128（明确失败）
+- **状态：Release Ready — Awaiting Merge & Production Verification**
+- 合并顺序：#3 → #7；合并后重点观察 archive job 首跑（site-snapshots 分支创建）与 deploy
+- **切勿**把 feat/v1.0 merge 进 feat/deploy-readiness（会污染 PR #3 的独立范围——本轮曾误操作并已 reset）
