@@ -63,7 +63,24 @@ pnpm dev
 
 ## 项目配置示例
 
+<<<<<<< HEAD
 将 `.archsync/project.yaml` 放在项目根目录：
+=======
+## 部署
+
+部署就绪能力已内置：**访问码鉴权**（`AUTH_CODE`，解除仅限本机的限制）、`pnpm start` 生产启动、Dockerfile / docker-compose、`WORKSPACE_ROOT` 挂载扫描。完整步骤（Docker、直跑、HTTPS 反向代理、安全清单）见 **[docs/deploy.md](docs/deploy.md)**。
+
+```bash
+export AUTH_CODE='你的访问码'        # ≥8 字符；设置后允许绑定非回环地址
+docker compose up -d --build        # http://<服务器IP>:4310
+```
+
+安全边界：无访问码且绑定非回环地址时服务拒绝启动；会话 Cookie 为 HttpOnly（`NODE_ENV=production` 时加 Secure）；GitHub 令牌仅存服务端。
+
+## 连接你自己的项目
+
+在仓库根目录或任意子目录放一个 `.archsync/project.yaml`（服务会自动发现根目录与 `examples/*`）：
+>>>>>>> ef893bc (docs(readme): deployment section and env reference)
 
 ```yaml
 schemaVersion: 1

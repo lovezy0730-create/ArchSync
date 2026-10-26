@@ -22,7 +22,7 @@ async function request<T>(path: string, init?: RequestInit & { user?: string }):
     // HTTP header values must be ISO-8859-1; display names can be any UTF-8.
     headers['x-archsync-user'] = encodeURIComponent(init.user);
   }
-  const res = await fetch(path, { ...init, headers });
+  const res = await fetch(path, { ...init, headers, credentials: 'same-origin' });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string; message?: string } }
@@ -38,7 +38,19 @@ async function request<T>(path: string, init?: RequestInit & { user?: string }):
   return (await res.json()) as T;
 }
 
+export interface MeInfo {
+  mode: 'mock' | 'code' | 'off';
+  authenticated: boolean;
+  identity: string | null;
+}
+
 export const api = {
+  me: () => request<MeInfo>('/api/v1/me'),
+  login: (code: string) =>
+    request<{ ok: boolean }>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
   projects: () => request<{ projects: ProjectSummary[] }>('/api/v1/projects'),
   snapshot: (projectId: string) => request<Snapshot>(`/api/v1/projects/${projectId}/snapshot`),
   module: (projectId: string, moduleId: string) =>

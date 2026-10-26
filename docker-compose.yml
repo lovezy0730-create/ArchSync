@@ -1,0 +1,18 @@
+services:
+  archsync:
+    build: .
+    ports:
+      - "4310:4310"
+    environment:
+      # 访问码鉴权（非回环部署必填，≥8 字符）
+      AUTH_CODE: ${AUTH_CODE:?请在 .env 或环境中设置 AUTH_CODE}
+      # 可选：接入真实 GitHub 协作数据（只读 PAT）
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      HOST: 0.0.0.0
+      PORT: 4310
+    volumes:
+      - archsync-data:/data
+    restart: unless-stopped
+
+volumes:
+  archsync-data:
