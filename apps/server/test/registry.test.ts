@@ -78,8 +78,11 @@ beforeAll(async () => {
 
   // repoC: git repo WITHOUT project.yaml (needsInit scenario)
   await execFileAsync('git', ['init', '-q'], { cwd: repoC });
-  await execFileAsync('git', ['-C', repoC, 'commit', '-q', '--allow-empty', '-m', 'init'],
-    { cwd: repoC });
+  await execFileAsync(
+    'git',
+    ['-c', 'user.name=t', '-c', 'user.email=t@e.c', 'commit', '-q', '--allow-empty', '-m', 'init'],
+    { cwd: repoC },
+  );
 
   db = new LocalDatabase(join(base, '.local', 'registry.sqlite'));
   liveEntries = new Map();
