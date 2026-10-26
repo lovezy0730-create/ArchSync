@@ -17,7 +17,7 @@ export interface ProjectEntry {
   demoCollabFetchedAt: string | null;
 }
 
-function loadEntry(configPath: string): ProjectEntry | { error: string } {
+export function loadEntry(configPath: string): ProjectEntry | { error: string } {
   if (!existsSync(configPath)) return { error: `${configPath}: 不存在` };
   const configText = readFileSync(configPath, 'utf8');
   const parsed = parseProjectConfig(configText);
