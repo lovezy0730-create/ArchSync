@@ -251,7 +251,7 @@ export class GithubApiClient {
 export function collabFromCache(cached: {
   issues?: CollabData['issues'];
   pullRequests?: CollabData['pullRequests'];
-  fetchedAt?: string;
+  fetchedAt?: string | null;
   error?: string | null;
 }): CollabData | null {
   if (!cached || (cached.issues === undefined && cached.pullRequests === undefined)) return null;

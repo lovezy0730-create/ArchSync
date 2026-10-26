@@ -114,7 +114,7 @@ export async function createServer(overrides?: {
     if (!entry) throw new Error(`项目不存在: ${entryId}`);
     const previous = inFlight.get(entryId);
     if (previous) await previous.catch(() => undefined);
-    const task = rebuildSnapshot(entry, store, env.githubToken, jobId).then((result) => {
+    const task = rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
       registry.markScan(
         entryId,
         result.snapshot?.version ?? 0,
@@ -261,6 +261,9 @@ export async function createServer(overrides?: {
 
   // ---- GitHub sync worker (阶段 B): budgeted polling with ETag cache ----
   const syncClient = new GithubApiClient(db, () => env.githubToken);
+  const syncCacheReader = {
+    readCache: <T>(projectId: string, kind: string): T | null => syncClient.readCache<T>(projectId, kind),
+  };
   const syncWorker = new GithubSyncWorker(
     db,
     syncClient,
