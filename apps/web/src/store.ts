@@ -153,11 +153,19 @@ export const useStore = create<AppState>((set, get) => ({
 
   boot: async () => {
     try {
+      // server mode may sit behind access-code auth: probe before data calls
+      const me = (await provider.probeAuth?.().catch(() => null)) ?? null;
+      const needsCode = me?.mode === 'code' && !me.authenticated;
+      const identity = needsCode ? null : provider.capabilities.identity ? loadIdentity() : null;
+      set({
+        authMode: (me?.mode as 'mock' | 'code' | 'off' | undefined) ?? 'mock',
+        codeAuthenticated: me?.mode === 'code' ? Boolean(me.authenticated) : false,
+        identity,
+      });
       const { projects } = await provider.listProjects();
-      const identity = provider.capabilities.identity ? loadIdentity() : null;
       const stored = readStoredProject();
       const fallback = projects.find((p) => p.id === stored) ?? projects[0];
-      set({ projects, identity, projectId: fallback?.id ?? null, loadError: null });
+      set({ projects, projectId: fallback?.id ?? null, loadError: null });
       if (fallback) {
         await loadProjectData(fallback.id, set);
         if (identity) connectPresence(fallback.id, identity.name, set, get);
@@ -327,6 +335,8 @@ export const useStore = create<AppState>((set, get) => ({
       modules: [],
       errors: ['浏览器导入预览不执行本地扫描：实现状态显示为 unknown，依赖仅有规划边'],
       scannedAt: now,
+      importAnalysisRan: false,
+      observedDependencies: [],
     };
     const snapshot = buildSnapshot({
       config: result.config,

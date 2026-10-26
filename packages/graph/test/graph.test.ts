@@ -61,6 +61,8 @@ const scanOf = (files: Record<string, string[]>): ScanResult => ({
   })),
   errors: [],
   scannedAt: NOW,
+  importAnalysisRan: false,
+  observedDependencies: [],
 });
 
 const issue = (n: number, over: Partial<DemoIssue> = {}): DemoIssue => ({
@@ -257,5 +259,53 @@ describe('snapshot metadata', () => {
     const snap = build(scanOf({ 'mod-a': [], 'mod-b': [] }), collabOf());
     expect(snap.modules.find((m) => m.id === 'mod-a')!.dependedOnBy).toEqual(['mod-b']);
     expect(snap.modules.find((m) => m.id === 'mod-b')!.dependedOnBy).toEqual([]);
+  });
+});
+
+describe('observed dependency edges (three-way classification)', () => {
+  const files = { 'mod-a': ['src/a/x.ts'], 'mod-b': ['src/b/y.ts'], 'mod-c': ['src/c/z.ts'] };
+  const observed = [
+    { source: 'mod-a', target: 'mod-b' }, // also planned → confirmed
+    { source: 'mod-a', target: 'mod-c' }, // not planned → observed (drift)
+  ];
+  const scan = {
+    ...scanOf(files),
+    importAnalysisRan: true,
+    observedDependencies: observed,
+  };
+
+  it('classifies confirmed vs planned-only vs observed drift edges', () => {
+    // fixture config: mod-b plannedDependsOn ['mod-a'] → planned pair mod-b->mod-a
+    // observed: mod-a->mod-b (planned? no → observed), mod-a->mod-c (drift)
+    // add an observed edge that IS planned: mod-b->mod-a
+    const scanConfirmed = {
+      ...scan,
+      observedDependencies: [...observed, { source: 'mod-b', target: 'mod-a' }],
+    };
+    const snap = build(scanConfirmed, collabOf());
+    const byId = new Map(snap.edges.map((e) => [e.id, e]));
+    // planned AND observed → confirmed
+    expect(byId.get('mod-b->mod-a')?.kind).toBe('confirmed');
+    // planned-only (config has it, code doesn't show it)
+    const snapPlannedOnly = build({ ...scan, observedDependencies: [] }, collabOf());
+    expect(
+      new Map(snapPlannedOnly.edges.map((e) => [e.id, e])).get('mod-b->mod-a')?.kind,
+    ).toBe('planned');
+    // observed drift edges (not in plan)
+    expect(byId.get('mod-a->mod-b')?.kind).toBe('observed');
+    expect(byId.get('mod-a->mod-c')?.kind).toBe('observed');
+    expect(snap.dependencyAnalysis).toBe('partial');
+  });
+
+  it('fills observedDependsOn from real import edges only when analysis ran', () => {
+    const snap = build(scan, collabOf());
+    const a = snap.modules.find((m) => m.id === 'mod-a')!;
+    expect(a.observedDependsOn).toEqual(['mod-b', 'mod-c']);
+    const b = snap.modules.find((m) => m.id === 'mod-b')!;
+    expect(b.observedDependsOn).toEqual([]);
+    // without analysis: null and not_supported (T07 unchanged)
+    const snap2 = build(scanOf(files), collabOf());
+    expect(snap2.modules[0]!.observedDependsOn).toBeNull();
+    expect(snap2.dependencyAnalysis).toBe('not_supported');
   });
 });

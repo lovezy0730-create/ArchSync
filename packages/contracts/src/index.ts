@@ -219,6 +219,11 @@ export interface ModuleScanResult {
   overlappedWith: string[];
 }
 
+export interface ObservedDependencyEdge {
+  source: string;
+  target: string;
+}
+
 export interface ScanResult {
   ok: boolean;
   /** null when the scan failed — callers must surface `unknown`, never guess */
@@ -232,6 +237,10 @@ export interface ScanResult {
   modules: ModuleScanResult[];
   errors: string[];
   scannedAt: string;
+  /** true when TS/JS import analysis actually ran on workspace sources */
+  importAnalysisRan: boolean;
+  /** module-level dependency edges observed from real import statements */
+  observedDependencies: ObservedDependencyEdge[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,7 +282,12 @@ export const SnapshotEdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
   target: z.string(),
-  kind: z.literal('planned'),
+  /**
+   * planned   = YAML plannedDependsOn, no import evidence yet
+   * observed  = real import edge the plan does not declare (drift)
+   * confirmed = planned AND observed in code
+   */
+  kind: z.enum(['planned', 'observed', 'confirmed']),
   demo: z.boolean().default(false),
 });
 export type SnapshotEdge = z.infer<typeof SnapshotEdgeSchema>;

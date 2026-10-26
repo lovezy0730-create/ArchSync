@@ -18,7 +18,11 @@
     "snapshot:generate": "tsx apps/server/src/pages/generate-static-snapshot.ts",
     "build:pages": "pnpm snapshot:generate && pnpm --filter @archsync/web exec vite build --mode pages",
     "preview:pages": "pnpm --filter @archsync/web exec vite preview --mode pages",
-    "verify:pages": "node scripts/verify-pages-dist.mjs"
+    "verify:pages": "node scripts/verify-pages-dist.mjs",
+    "agent": "tsx apps/server/src/agent/cli.ts",
+    "archsync:init": "tsx apps/server/src/init/init-wizard.ts",
+    "perf:inject": "node scripts/inject-perf-snapshot.mjs",
+    "verify:workflow": "node scripts/verify-workflow.mjs && node scripts/check-conflict-markers.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

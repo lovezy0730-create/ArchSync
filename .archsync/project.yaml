@@ -1,12 +1,16 @@
 schemaVersion: 1
 project:
   id: archsync
-  name: ArchSync 工作台（本仓库自描述）
+  name: ArchSync（本仓库真实自描述）
   github:
     owner: lovezy0730-create
     repo: ArchSync
     defaultBranch: main
   root: "."
+  # This repository is PUBLIC and dogfoods ArchSync: its own architecture and
+  # real GitHub issues/PRs are published to the static site.
+  publishStatic: true
+  publishPublicGithubData: true
 
 layers:
   - id: web
@@ -26,14 +30,40 @@ modules:
   - id: workbench-ui
     label: 架构工作台界面
     layer: web
-    description: React Flow 交互式架构图、模块详情与协作面板
+    description: React Flow 交互式架构图、模块详情、筛选与双模式数据层
     owners: []
     paths: ["apps/web/src/**"]
     issues: []
     plannedDependsOn: [snapshot-api, presence-ws]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck]
+      requiredChecks: [verify]
+      manualApproval: false
+
+  - id: static-snapshots
+    label: 静态快照生成器
+    layer: server
+    description: 构建时生成公开安全静态快照与历史索引
+    owners: []
+    paths: ["apps/server/src/pages/**"]
+    issues: []
+    plannedDependsOn: [graph-engine, scanner-core, config-contracts]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [verify]
+      manualApproval: false
+
+  - id: server-core
+    label: 服务端装配
+    layer: server
+    description: 服务入口、环境配置与项目发现
+    owners: []
+    paths: ["apps/server/src/index.ts", "apps/server/src/env.ts", "apps/server/src/projects.ts"]
+    plannedDependsOn: [graph-engine, scanner-core, config-contracts, github-adapter]
+    issues: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: snapshot-api
@@ -41,12 +71,12 @@ modules:
     layer: server
     description: 项目列表、快照、模块详情、备注与同步任务接口
     owners: []
-    paths: ["apps/server/src/routes/**"]
+    paths: ["apps/server/src/routes.ts"]
     issues: []
-    plannedDependsOn: [graph-engine, state-store]
+    plannedDependsOn: [graph-engine, state-store, server-core]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test]
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: presence-ws
@@ -54,12 +84,12 @@ modules:
     layer: server
     description: WebSocket 房间、光标/选中广播、心跳与会话超时
     owners: []
-    paths: ["apps/server/src/ws/**"]
+    paths: ["apps/server/src/ws.ts"]
     issues: []
     plannedDependsOn: [state-store]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test]
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: sync-engine
@@ -72,7 +102,33 @@ modules:
     plannedDependsOn: [graph-engine, scanner-core, state-store]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck]
+      requiredChecks: [verify]
+      manualApproval: false
+
+  - id: agent-api
+    label: Agent 接口
+    layer: server
+    description: 供 Codex/GLM/DSH 等 Agent 使用的 CLI 与结构化上下文接口
+    owners: []
+    paths: ["apps/server/src/agent/**"]
+    issues: []
+    plannedDependsOn: [graph-engine, scanner-core, config-contracts]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [verify]
+      manualApproval: false
+
+  - id: auth-sessions
+    label: 访问码鉴权
+    layer: server
+    description: 访问码登录、会话 Cookie 与统一 API 鉴权门
+    owners: []
+    paths: ["apps/server/src/auth.ts"]
+    issues: []
+    plannedDependsOn: []
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: config-contracts
@@ -85,20 +141,20 @@ modules:
     plannedDependsOn: []
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test]
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: scanner-core
     label: 本地扫描器
     layer: core
-    description: git 基线、工作区文件与未提交覆盖层检测
+    description: git 基线、工作区文件、未提交覆盖层与依赖导入分析
     owners: []
     paths: ["packages/scanner/src/**"]
     issues: []
     plannedDependsOn: [config-contracts]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test]
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: graph-engine
@@ -111,7 +167,7 @@ modules:
     plannedDependsOn: [config-contracts, scanner-core]
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test]
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: state-store
@@ -124,18 +180,31 @@ modules:
     plannedDependsOn: []
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck]
+      requiredChecks: [verify]
+      manualApproval: false
+
+  - id: github-adapter
+    label: GitHub 数据适配
+    layer: infra
+    description: 匿名公开 API 与令牌授权模式的 Issues/PR/Checks/文件适配
+    owners: []
+    paths: ["apps/server/src/github.ts"]
+    issues: []
+    plannedDependsOn: [config-contracts]
+    acceptance:
+      requiredIssues: []
+      requiredChecks: [verify]
       manualApproval: false
 
   - id: dev-tooling
     label: 开发与构建工具链
     layer: infra
-    description: monorepo 脚本、lint/typecheck/test/build 与 CI
+    description: monorepo 脚本、lint/typecheck/test/build 与产物验证
     owners: []
     paths: ["scripts/**", ".github/workflows/**"]
     issues: []
     plannedDependsOn: []
     acceptance:
       requiredIssues: []
-      requiredChecks: [lint, typecheck, test, build]
+      requiredChecks: [verify]
       manualApproval: false

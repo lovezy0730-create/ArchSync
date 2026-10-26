@@ -1,10 +1,22 @@
-name: GitHub Pages (build, verify and deploy)
+name: GitHub Pages (build, verify, archive, deploy)
 
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
+  # Real-data refresh channels. All of these run the SAME trusted main
+  # pipeline: no pull_request_target, no untrusted checkout, no extra secrets.
+  # PR-specific code is only ever checked out for PR *checks* (build job on
+  # pull_request), which never publish or write history.
+  issues:
+    types: [opened, edited, closed, reopened, assigned, unassigned, labeled]
+  schedule:
+    # Weekly reconciliation catch-up (03:17 UTC Sundays). Also the compensating
+    # channel for PR-creation/updates: public collaboration snapshots refresh
+    # on issue events and this schedule, not on PR publishes. Anonymous API
+    # usage is ~30 req/run — far below the 60 req/h limit.
+    - cron: '17 3 * * 0'
   workflow_dispatch:
 
 # Static snapshots are public. The generator only includes explicitly
@@ -14,9 +26,16 @@ permissions:
 
 concurrency:
   group: github-pages-release
+  # mid-flight issue/PR events queue behind the current release instead of
+  # stacking redundant builds; a queued run picks up the latest state anyway
   cancel-in-progress: false
 
 jobs:
+  # ------------------------------------------------------------------
+  # build: fully read-only. Runs tests, generates snapshots against the
+  # existing history (checked out read-only), builds and verifies the site,
+  # and uploads everything later jobs need as artifacts. It must never push.
+  # ------------------------------------------------------------------
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -39,14 +58,40 @@ jobs:
         run: pnpm typecheck
       - name: Tests
         run: pnpm test
+
+      - name: Restore snapshot history (read-only input for versioning)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: site-snapshots
+          path: site-snapshots-input
+          fetch-depth: 1
+        continue-on-error: true
+        # first run: branch does not exist yet; generator seeds an empty history
+
+      - name: Seed history dir from branch
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -d site-snapshots-input/history ]; then
+            mkdir -p site-snapshots
+            cp -r site-snapshots-input/history/. site-snapshots/
+          fi
+
       - name: Generate public-safe snapshots
         run: pnpm snapshot:generate
+
+      # Rebuild so history files ship inside the bundle (the generate call
+      # above refreshed apps/web/public/data from apps/web/public).
       - name: Build GitHub Pages site at /ArchSync/
-        run: pnpm build:pages
+        run: pnpm --filter @archsync/web exec vite build --mode pages
+
+      - name: Workflow structure gate + conflict-marker scrub
+        run: pnpm verify:workflow
+
       - name: Verify published files and scrub secrets
         run: pnpm verify:pages
 
-      # Keep the original ordinary ZIP artifact, useful for PR review.
+      # PR runs: zip preview only — no publish, no history write.
       - name: Upload preview artifact (PR only)
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
@@ -56,17 +101,80 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-      # GitHub Pages requires its specific tar/gzip artifact format.
-      # This runs only on trusted main/manual executions, never on PRs.
+      # Trusted runs: hand the updated history to the archive job as its OWN
+      # artifact — downloading it yields exactly the history directory, with
+      # no reliance on upload-artifact's common-ancestor path logic.
+      - name: Upload snapshot history for archive (main/manual/schedule/issues)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-history
+          path: site-snapshots/history
+          retention-days: 7
+          if-no-files-found: error
+
+      # Official GitHub Pages artifact (name: github-pages) — required by
+      # actions/deploy-pages@v4. Uploaded AFTER verify:pages so only validated
+      # output can ever reach the publisher. PR runs must never upload it.
       - name: Upload official GitHub Pages artifact
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist
 
-  deploy:
+  # ------------------------------------------------------------------
+  # archive: the ONLY job with contents: write. Mechanically pushes the
+  # versioned history produced by build to the `site-snapshots` branch,
+  # which is maintained as an orphan, history-only repository — it never
+  # contains main's source tree. Push conflicts retry once, then fail loudly.
+  # ------------------------------------------------------------------
+  archive:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # This job only runs on trusted default-branch events, so checking out
+      # the audited main revision for the script is safe — no PR code can
+      # reach this write-permission context.
+      - name: Checkout audited main (for the archive script)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # download-artifact with a dedicated history artifact: `incoming-history`
+      # IS the history directory (projectId subfolders inside), no path guessing.
+      - name: Download snapshot history
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-history
+          path: incoming-history
+
+      - name: Push history to site-snapshots branch (orphan, history-only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/archive-history.sh ]; then
+            echo "::error::scripts/archive-history.sh missing in the checked-out main revision — refusing to continue"
+            exit 78
+          fi
+          chmod +x scripts/archive-history.sh
+          scripts/archive-history.sh             "incoming-history"             "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+
+  # ------------------------------------------------------------------
+  # deploy: publishes the verified bundle. Runs only on trusted main
+  # (push, issues, schedule, dispatch) — never on PRs. A failed or cancelled
+  # deploy leaves the previously published version untouched (deploy-pages is
+  # atomic per environment).
+  # ------------------------------------------------------------------
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Full release chain: build → archive → deploy. A failed archive (or a
+    # versioning error) must not be published as a "complete" release.
+    needs: [build, archive]
     runs-on: ubuntu-latest
     permissions:
       contents: read

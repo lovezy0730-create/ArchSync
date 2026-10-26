@@ -12,5 +12,11 @@ Thumbs.db
 
 # generated static snapshot data (build-time artifact, not source)
 apps/web/public/data/
+<<<<<<< HEAD
+.archsync/agent-reports.jsonl
 
+# local static-snapshot history (CI manages the site-snapshots branch)
+=======
+
+>>>>>>> feat/deploy-readiness
 site-snapshots/

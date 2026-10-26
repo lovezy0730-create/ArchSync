@@ -8,6 +8,7 @@ import {
 } from './statusMeta.js';
 import type { ImplementationState, WorkflowState } from '@archsync/contracts';
 import type { YamlImportResult } from '../store.js';
+import { HistoryPanel } from './HistoryPanel.js';
 
 export function TopBar() {
   const projects = useStore((s) => s.projects);
@@ -29,6 +30,7 @@ export function TopBar() {
   const mode = useStore((s) => s.mode);
   const capabilities = useStore((s) => s.capabilities);
   const importYaml = useStore((s) => s.importYaml);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
@@ -133,6 +135,18 @@ export function TopBar() {
           <span className="static-hint" title="静态模式下重新扫描不可用：数据由构建时生成">构建时数据</span>
         )}
 
+        {isStatic && (
+          <button
+            className="import-btn"
+            onClick={() => setHistoryOpen(true)}
+            title="查看快照历史与架构差异"
+          >
+            ⏱ 历史 / 差异
+          </button>
+        )}
+        {isStatic && historyOpen && (
+          <HistoryPanel onClose={() => setHistoryOpen(false)} />
+        )}
         {capabilities.yamlImport && (
           <>
             <button className="import-btn" onClick={() => fileInputRef.current?.click()} title="导入本地 .archsync/project.yaml 预览（文件不会上传）">

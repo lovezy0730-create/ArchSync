@@ -4,7 +4,7 @@
 
 [**在线体验 · GitHub Pages**](https://lovezy0730-create.github.io/ArchSync/) · [施工设计](docs/CONSTRUCTION_PLAN.md) · [Pages 部署说明](docs/pages-deploy.md) · [API 文档](docs/api.md)
 
-> **当前版本：MVP v0.1，已提供 GitHub Pages 静态演示站和本地完整模式。** GitHub Actions 的正式 Pages `build` / `deploy` 已通过（[发布记录](https://github.com/lovezy0730-create/ArchSync/actions/runs/40204211709)）。在线站点的协作数据是明确标记的 **DEMO**，并非本仓库的实时任务状态；这不是已完成的生产级多人协作平台。
+> **项目版本：v1.0 候选功能集（真实公开 GitHub 数据、自举项目、TS/JS import 依赖分析、快照历史和 Agent CLI）。** 在线网站是否已更新到 v1.0，请以 [最新 main Pages 部署记录](https://github.com/lovezy0730-create/ArchSync/actions) 和网站快照中的 source SHA 为准；PR CI 成功不代表已上线。GitHub Pages 的数据来自**构建时快照**，不是实时同步。
 
 ![ArchSync 静态模式工作台截图](docs/screenshots/pages-static-mode.png)
 
@@ -21,7 +21,7 @@
 - 查看构建时生成的版本、时间和来源 SHA；识别 **DEMO 数据**与不可用的数据来源。
 - 点击「导入 YAML」，在浏览器内解析自己的架构规划并预览；文件**不会上传**，也**不会扫描本机代码**，因此无法确认的实现状态显示为「未知」。
 
-**网页演示数据：** 当前只发布示例工程 `Windows 便签 (Sticky Notes)` 的静态快照。示例中的成员、Issue 和 PR 均为虚构演示数据；源仓库自身的架构不会默认加入公开快照。
+**网页数据来源：** v1.0 默认提供 **ArchSync 自描述项目**（经显式公开允许配置、通过匿名公开 GitHub API 获取 PR/Issue 与文件证据）及 **Windows 便签 (Sticky Notes)** 虚构示例。前者是构建时真实公开数据，后者的成员、Issue、PR 属于 DEMO；具体以当前线上部署版本为准。若 GitHub API 限流，数据会标记 stale / unavailable。
 
 **静态模式边界：** 无 WebSocket 实时光标、服务器端备注编辑、本地文件监听和即时 GitHub 同步。网页展示的是**上一次构建时的数据**，不能将其当作实时 GitHub 状态。
 
@@ -61,14 +61,25 @@ pnpm dev
 | 协作备注写入与冲突检测 | — 只读 | ✅ |
 | 需要常驻 Node.js 服务 | 否 | 是 |
 
-## 项目配置示例
+## 部署方式
 
-<<<<<<< HEAD
-将 `.archsync/project.yaml` 放在项目根目录：
-=======
-## 部署
+两种部署形态均已就绪（实际发布为人工步骤）：
 
-部署就绪能力已内置：**访问码鉴权**（`AUTH_CODE`，解除仅限本机的限制）、`pnpm start` 生产启动、Dockerfile / docker-compose、`WORKSPACE_ROOT` 挂载扫描。完整步骤（Docker、直跑、HTTPS 反向代理、安全清单）见 **[docs/deploy.md](docs/deploy.md)**。
+| 形态 | 说明 | 文档 |
+|---|---|---|
+| **GitHub Pages 静态版**（无后端） | `pnpm build:pages` 生成 /ArchSync/ 子路径静态站；构建时快照 + 公开数据门控 + YAML 本地导入预览 | [docs/pages-deploy.md](docs/pages-deploy.md) |
+| **服务器完整版**（Fastify + WS） | 访问码鉴权（`AUTH_CODE`）、`pnpm start`、Dockerfile、`WORKSPACE_ROOT` 挂载扫描 | [docs/deploy.md](docs/deploy.md) |
+
+静态版一键流水线：
+
+```bash
+pnpm snapshot:generate   # 构建时快照（只发布 publishStatic: true 的项目）
+pnpm build:pages         # /ArchSync/ base 生产构建
+pnpm verify:pages        # 产物验证：路径/schema/无 /api·/ws/无凭据
+pnpm preview:pages       # 本地预览 http://localhost:4173/ArchSync/
+```
+
+服务器完整版：
 
 ```bash
 export AUTH_CODE='你的访问码'        # ≥8 字符；设置后允许绑定非回环地址
@@ -80,7 +91,6 @@ docker compose up -d --build        # http://<服务器IP>:4310
 ## 连接你自己的项目
 
 在仓库根目录或任意子目录放一个 `.archsync/project.yaml`（服务会自动发现根目录与 `examples/*`）：
->>>>>>> ef893bc (docs(readme): deployment section and env reference)
 
 ```yaml
 schemaVersion: 1
@@ -138,9 +148,9 @@ pnpm preview:pages     # 预览 http://localhost:4173/ArchSync/
 
 GitHub Actions 工作流 [`.github/workflows/pages-build.yml`](.github/workflows/pages-build.yml) 的行为：
 
-1. 对 PR：运行 lint、类型检查、测试、生成静态快照、构建、产物校验，并上传**预览 Artifact**；不发布线上网站。
-2. 对 `main` 的 push 或选择 `main` 的手动运行：同样完成校验后，上传 Pages Artifact，并用 `actions/deploy-pages` 自动发布。
-3. **GitHub Issue/PR 状态本身变化不会立即更新网页**：当前没有启用定时发布；需要一次新的 `main` 构建或手动运行工作流。
+1. 对 PR：运行 lint、类型检查、测试、静态快照、构建、发布结构与安全验证，仅上传**预览 Artifact**；不写历史、不发布线上网站。
+2. 对 `main` push、Issue 事件、每周对账或 main 的手动运行：按 `build → archive → deploy` 执行，归档到 `site-snapshots` 历史分支，再发布官方 Pages Artifact。
+3. **PR 创建/更新不会直接发布线上快照**；PR 合并触发 main push。静态站显示的只是最近一次成功发布时的数据，非实时 WebSocket。
 
 发布配置与隐私约束见 [GitHub Pages 部署及运维指南](docs/pages-deploy.md)。
 
@@ -173,16 +183,17 @@ examples/sticky-notes/ 演示项目及明确标记的协作模拟数据
 
 ## 当前限制与后续方向
 
-ArchSync 当前是一套可以体验、能够部署的 **MVP 工作台**，尚不是完整的源代码架构智能分析或生产级团队权限管理平台：
+ArchSync 已具备 v1.0 的主要功能，但仍有明确的技术边界，并非完整代码语义分析器或多租户协作平台：
 
-- 依赖连线目前主要来自 YAML **规划关系**；未实现 AST/跨语言实际调用关系识别，实际依赖为未知而非空。
-- 本地 GitHub 读取功能尚不拉取逐 PR 修改文件、完整 Reviews/Checks/Projects 状态；尚无 GitHub Webhook 和周期对账闭环。
+- TS/JS 常见 import 关系可检测并分成已证实/仅规划/代码观察三态；这是**部分分析**，并非完整 AST 调用链或所有语言的语义依赖。
+- 静态公开 GitHub 管线在预算内读取真实 Issue、PR、变更文件、提交和状态；本地 token 模式尚未完整支持逐 PR 变更文件；定期对账为每周，PR 未合并事件不会立即上线。
 - 静态站点不提供真正的多人实时协作；在线快照展示最新**成功发布的构建**，不等于当前工作区状态。
-- 本地状态存储主要使用单机 JSON 文件；SQLite、多版本历史快照、可靠多人身份与跨仓库权限隔离尚待实现。
+- 静态 Pages 提供最多近 20 个历史快照和差异对比；本地模式仍以单机 JSON 保存状态，SQLite 多版本历史和多租户身份/权限隔离尚待实现。
+- `pnpm archsync:init -- owner/repo` 可对公开仓库生成启发式 YAML 架构建议；`pnpm agent -- snapshot|module|impact|context|validate|report` 提供可审计 Agent CLI。
 - Pages 的公开数据安全依赖显式发布允许列表、验证与人工审核；**静态文件一经部署即对所有访问者可见**。
 
 [施工设计](docs/CONSTRUCTION_PLAN.md) · [运行手册](docs/runbook.md) · [API 参考](docs/api.md) · [Pages 发布指南](docs/pages-deploy.md)
 
 ---
 
-本项目仍在迭代中。**在线 Demo 用于展示交互体验，本地完整模式用于验证真实文件扫描与会话协作。**
+本项目仍在迭代中。**Pages 静态版可以呈现经允许公开的真实构建时数据，本地完整模式用于实时文件扫描与会话协作；发布版本请以 Actions 和快照 SHA 为准。**

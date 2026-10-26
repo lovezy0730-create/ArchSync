@@ -111,6 +111,19 @@ export function GraphCanvas() {
 
   const edges = useMemo<Edge[]>(() => {
     if (!snapshot) return [];
+    const baseStyle = (kind: string, on: boolean): React.CSSProperties => {
+      // planned = declared in YAML only; observed = real import, not planned;
+      // confirmed = declared AND backed by real import evidence
+      if (on) return { stroke: '#58a6ff', strokeWidth: 2.4 };
+      switch (kind) {
+        case 'confirmed':
+          return { stroke: '#3fb950', strokeWidth: 2 };
+        case 'observed':
+          return { stroke: '#d29922', strokeWidth: 1.8, strokeDasharray: '6 3' };
+        default:
+          return { stroke: '#3d4451', strokeWidth: 1.4, strokeDasharray: '4 4' };
+      }
+    };
     return snapshot.edges.map((edge) => {
       const onPath =
         selection !== null && isEdgeOnPath(edge, selection, closure.upstream, closure.downstream);
@@ -121,9 +134,8 @@ export function GraphCanvas() {
         target: edge.target,
         hidden: !endpointsVisible,
         className: onPath ? 'edge-path' : undefined,
-        style: onPath
-          ? { stroke: '#58a6ff', strokeWidth: 2.2 }
-          : { stroke: '#3d4451', strokeWidth: 1.4 },
+        type: 'smoothstep',
+        style: baseStyle(edge.kind, onPath),
       };
     });
   }, [snapshot, selection, closure, visible]);
@@ -169,6 +181,13 @@ export function GraphCanvas() {
       .map((l) => ({ id: l.id, label: l.label, color: layerColor(l.order) }));
   }, [snapshot]);
 
+  const dependencySummary = useMemo(() => {
+    if (!snapshot) return null;
+    const counts = { planned: 0, confirmed: 0, observed: 0 };
+    for (const e of snapshot.edges) counts[e.kind as keyof typeof counts] += 1;
+    return { counts, supported: snapshot.dependencyAnalysis !== 'not_supported' };
+  }, [snapshot]);
+
   return (
     <div className="canvas-wrap" ref={wrapperRef} onMouseMove={onMouseMove}>
       <ReactFlow
@@ -195,16 +214,25 @@ export function GraphCanvas() {
         />
       </ReactFlow>
       <RemoteCursors />
-      {layerLegend.length > 0 && (
-        <div className="layer-legend">
-          {layerLegend.map((l) => (
-            <span key={l.id} className="legend-item">
-              <i style={{ background: l.color }} />
-              {l.label}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className="legend-stack">
+        {layerLegend.length > 0 && (
+          <div className="layer-legend">
+            {layerLegend.map((l) => (
+              <span key={l.id} className="legend-item">
+                <i style={{ background: l.color }} />
+                {l.label}
+              </span>
+            ))}
+          </div>
+        )}
+        {dependencySummary?.supported && (
+          <div className="layer-legend edge-legend" title="依赖边证据分类（TS/JS import 分析）">
+            <span className="legend-item"><i className="lg lg-confirmed" />已确认 {dependencySummary.counts.confirmed}</span>
+            <span className="legend-item"><i className="lg lg-planned" />仅规划 {dependencySummary.counts.planned}</span>
+            <span className="legend-item"><i className="lg lg-observed" />代码漂移 {dependencySummary.counts.observed}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
