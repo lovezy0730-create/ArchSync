@@ -108,10 +108,11 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     const jobId = ctx.scheduleRebuild(request.params.id);
     return reply.code(202).send({ jobId });
   });
+  void 0;
 
   app.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
     '/api/v1/registry/:id/timeline',
-    async (request, reply) => {
+    async (request) => {
       const limit = Math.min(Number(request.query.limit ?? 100) || 100, 300);
       const rows = ctx.db
         .prepare(
