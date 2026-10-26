@@ -67,14 +67,16 @@ const fs = await import('node:fs');
     problems.push('archive job 必须显式 checkout 才能获得归档脚本');
   }
 
-  /* Protect the precise history layout emitted by generate-static-snapshot.ts:
-     site-snapshots/<projectId>/{index.json,vN.json}. Using
-     site-snapshots/history uploads zero files on the first production run. */
-  if (!/name:\\s*snapshot-history\\s*\\n\\s*path:\\s*site-snapshots\\/\\s*(?:\\n|$)/m.test(buildSection)) {
-    problems.push('snapshot-history artifact 必须上传 site-snapshots/ 根目录（包含 projectId 子目录），不能使用 site-snapshots/history');
+  /* The generator outputs site-snapshots/<projectId>/index.json. The upload
+     action must take site-snapshots/ (not nonexistent site-snapshots/history).
+     Check literal adjacent YAML lines to avoid regex escaping fragility. */
+  const historyUploadLines = ['name: snapshot-history', '          path: site-snapshots/'].join('\n');
+  const historyDownloadLines = ['name: snapshot-history', '          path: incoming-history'].join('\n');
+  if (!buildSection.includes(historyUploadLines)) {
+    problems.push('snapshot-history must upload site-snapshots/ root, not site-snapshots/history');
   }
-  if (!/name:\\s*snapshot-history\\s*\\n\\s*path:\\s*incoming-history(?:\\s|$)/m.test(archiveSection)) {
-    problems.push('archive 必须将 snapshot-history 下载到 incoming-history');
+  if (!archiveSection.includes(historyDownloadLines)) {
+    problems.push('archive must download snapshot-history to incoming-history');
   }
 
   /* official pages artifact + dependency chain */
