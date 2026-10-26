@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { registryApi } from '../lib/registry-api.js';
+import { useStore } from '../store.js';
 
 interface Props {
   onClose: () => void;
@@ -12,6 +12,8 @@ interface Props {
  * - GitHub 仓库 URL（只读远端分析：诚实说明需克隆后添加才能监控本地）
  */
 export function AddProjectDialog({ onClose, onAdded }: Props) {
+  const registryAddLocal = useStore((st) => st.registryAddLocal);
+  const registryAnalyzeGithub = useStore((st) => st.registryAnalyzeGithub);
   const [tab, setTab] = useState<'local' | 'github'>('local');
   const [localPath, setLocalPath] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
@@ -23,7 +25,8 @@ export function AddProjectDialog({ onClose, onAdded }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const result = await registryApi.addLocal(localPath.trim());
+      const result = await registryAddLocal(localPath.trim());
+      if (!result.project) throw new Error('添加成功但未返回项目');
       onAdded(result.project.id);
       onClose();
     } catch (err) {
@@ -47,7 +50,7 @@ export function AddProjectDialog({ onClose, onAdded }: Props) {
       const cleaned = githubUrl.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
       const [owner, repo] = cleaned.split('/');
       if (!owner || !repo) throw new Error('格式应为 owner/repo 或 GitHub 仓库 URL');
-      const result = await registryApi.analyzeGithub(owner, repo);
+      const result = await registryAnalyzeGithub(owner, repo);
       setHint(
         `${owner}/${repo}（默认分支 ${String(result.facts?.defaultBranch)}，${String(result.facts?.language)}，${result.facts?.isPrivate ? '私有' : '公开'}）——${String(result.facts?.note)}`,
       );

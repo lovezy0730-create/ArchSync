@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { registryApi, type RegistryProjectInfo, type TimelineEvent } from '../lib/registry-api.js';
+import type { TimelineEvent } from '../lib/data-provider-registry.js';
+import { useStore } from '../store.js';
 
 /** 项目动态时间线（v1.1）：GitHub 事件 + 本地变化 + 同步日志。 */
 export function TimelinePanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
@@ -7,12 +8,12 @@ export function TimelinePanel({ projectId, onClose }: { projectId: string; onClo
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
 
+  const loadTimeline = useStore((st) => st.loadTimeline);
   useEffect(() => {
-    registryApi
-      .timeline(projectId, 200)
-      .then((r) => setEvents(r.events))
+    void loadTimeline(projectId, 200)
+      .then((r) => setEvents(r.events as unknown as TimelineEvent[]))
       .catch((err) => setError((err as Error).message));
-  }, [projectId]);
+  }, [projectId, loadTimeline]);
 
   const filtered = useMemo(
     () => (filter === 'all' ? events : events.filter((e) => e.eventType.startsWith(filter))),
@@ -66,4 +67,3 @@ export function TimelinePanel({ projectId, onClose }: { projectId: string; onClo
   );
 }
 
-export type { RegistryProjectInfo };

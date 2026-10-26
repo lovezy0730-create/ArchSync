@@ -11,7 +11,7 @@ import type { YamlImportResult } from '../store.js';
 import { HistoryPanel } from './HistoryPanel.js';
 import { AddProjectDialog } from './AddProjectDialog.js';
 import { TimelinePanel } from './TimelinePanel.js';
-import { registryApi, type RegistryProjectInfo } from '../lib/registry-api.js';
+import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
 
 export function TopBar() {
   const projects = useStore((s) => s.projects);
@@ -33,11 +33,12 @@ export function TopBar() {
   const mode = useStore((s) => s.mode);
   const capabilities = useStore((s) => s.capabilities);
   const importYaml = useStore((s) => s.importYaml);
+  const loadRegistry = useStore((s) => s.loadRegistry);
+  const registryList = useStore((s) => s.registryList);
   const booted = useStore((s) => s.booted);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
-  const [registry, setRegistry] = useState<RegistryProjectInfo[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
@@ -51,15 +52,18 @@ export function TopBar() {
   // registry drives the project switcher in server mode (dynamic multi-repo)
   useEffect(() => {
     if (mode !== 'server' || !booted) return;
-    void registryApi.list().then((r) => setRegistry(r.projects)).catch(() => undefined);
-  }, [mode, booted, projectId]);
+    void loadRegistry();
+  }, [mode, booted, projectId, loadRegistry]);
 
   const projectOptions = useMemo(() => {
-    if (mode === 'server' && registry.length > 0) {
-      return registry.map((r) => ({ id: r.id, label: `${r.name}${r.repo ? `（${r.owner}/${r.repo}）` : ''}` }));
+    if (mode === 'server' && registryList.length > 0) {
+      return registryList.map((entry: unknown) => {
+        const r = entry as RegistryProjectInfo;
+        return { id: r.id, label: `${r.name}${r.repo ? `（${r.owner}/${r.repo}）` : ''}` };
+      });
     }
     return projects.map((p) => ({ id: p.id, label: `${p.name}${p.demoCollab ? '（示例）' : ''}` }));
-  }, [mode, registry, projects]);
+  }, [mode, registryList, projects]);
 
   const handleYamlFile = async (file: File): Promise<void> => {
     const text = await file.text();
@@ -239,7 +243,7 @@ export function TopBar() {
         <AddProjectDialog
           onClose={() => setAddOpen(false)}
           onAdded={(newId) => {
-            void registryApi.list().then((r) => setRegistry(r.projects)).catch(() => undefined);
+            void loadRegistry();
             void switchProject(newId);
           }}
         />
