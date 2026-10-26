@@ -67,6 +67,16 @@ const fs = await import('node:fs');
     problems.push('archive job 必须显式 checkout 才能获得归档脚本');
   }
 
+  /* Protect the precise history layout emitted by generate-static-snapshot.ts:
+     site-snapshots/<projectId>/{index.json,vN.json}. Using
+     site-snapshots/history uploads zero files on the first production run. */
+  if (!/name:\\s*snapshot-history\\s*\\n\\s*path:\\s*site-snapshots\\/\\s*(?:\\n|$)/m.test(buildSection)) {
+    problems.push('snapshot-history artifact 必须上传 site-snapshots/ 根目录（包含 projectId 子目录），不能使用 site-snapshots/history');
+  }
+  if (!/name:\\s*snapshot-history\\s*\\n\\s*path:\\s*incoming-history(?:\\s|$)/m.test(archiveSection)) {
+    problems.push('archive 必须将 snapshot-history 下载到 incoming-history');
+  }
+
   /* official pages artifact + dependency chain */
   if (!text.includes('actions/upload-pages-artifact@v3')) {
     problems.push('缺少官方 actions/upload-pages-artifact（deploy-pages 依赖 github-pages artifact）');
