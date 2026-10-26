@@ -76,9 +76,10 @@ beforeAll(async () => {
   await initGit(repoB, 'lib/b.ts', YAML_B);
   await mkdir(join(repoC, '.archsync'), { recursive: true });
 
-  // repoB becomes a real git WORKTREE: .git is a FILE pointing at repoA's worktrees dir
-  // git worktree requires the source repo; create worktree from repoA and re-point YAML
-  await execFileAsync('git', ['-C', repoA, 'worktree', 'add', '-q', repoB + '-wt', '-b', 'wt-branch'], {}).catch(() => undefined);
+  // repoC: git repo WITHOUT project.yaml (needsInit scenario)
+  await execFileAsync('git', ['init', '-q'], { cwd: repoC });
+  await execFileAsync('git', ['-C', repoC, 'commit', '-q', '--allow-empty', '-m', 'init'],
+    { cwd: repoC });
 
   db = new LocalDatabase(join(base, '.local', 'registry.sqlite'));
   liveEntries = new Map();
@@ -96,7 +97,8 @@ describe('ProjectRegistry: multi-repo across different parent directories', () =
     const a = await registry.addLocal(repoA);
     expect(a.ok).toBe(true);
     expect(a.project?.id).toBe('repo-a');
-    expect(a.project?.defaultBranch).toBe('main');
+    // git's default branch name depends on local configuration (main/master)
+    expect(['main', 'master']).toContain(a.project?.defaultBranch);
     expect(liveEntries.has('repo-a')).toBe(true);
 
     const b = await registry.addLocal(repoB);

@@ -1,4 +1,10 @@
-import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+// node:sqlite is an experimental builtin that bundler resolvers (vite/vitest)
+// cannot resolve statically; process.getBuiltinModule bypasses that entirely.
+const { DatabaseSync } = (
+  process as NodeJS.Process & { getBuiltinModule?: (id: string) => unknown }
+).getBuiltinModule?.('node:sqlite') as { DatabaseSync: typeof import('node:sqlite').DatabaseSync };
 
 /**
  * SQLite persistence for the local agent (v1.1).
@@ -12,7 +18,7 @@ export class LocalDatabase {
   private db: DatabaseSync;
 
   constructor(filePath: string) {
-    // caller guarantees the parent directory exists (store layer does this)
+    if (filePath !== ':memory:') mkdirSync(dirname(filePath), { recursive: true });
     this.db = new DatabaseSync(filePath);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.migrate();
