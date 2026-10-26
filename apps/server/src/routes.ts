@@ -5,6 +5,14 @@ import type { ModuleDetail, ProjectSummary } from '@archsync/contracts';
 import { parseProjectConfig } from '@archsync/config';
 import type { ProjectEntry } from './projects.js';
 import { emptyProjectState, type StateStore } from './store/index.js';
+import type { AuthMode } from './env.js';
+import {
+  SessionStore,
+  buildClearedSessionCookie,
+  buildSessionCookie,
+  sessionTokenFromRequest,
+} from './auth.js';
+import { LoginRateLimiter, constantTimeEquals } from './auth-rate-limit.js';
 
 const AnnotationPatchSchema = z.object({
   text: z.string().max(2000),
@@ -12,19 +20,63 @@ const AnnotationPatchSchema = z.object({
 });
 
 const ValidateConfigSchema = z.object({ config: z.string().max(1024 * 1024) });
+const LoginSchema = z.object({ code: z.string().min(1).max(256) });
 
 export interface RouteContext {
   entries: Map<string, ProjectEntry>;
   store: StateStore;
-  devAuthMode: 'mock' | 'off';
+  authMode: AuthMode;
+  authCode: string | null;
+  sessions: SessionStore;
+  loginLimiter: LoginRateLimiter;
+  /** true when the deployment serves over HTTPS (adds the Secure cookie flag) */
+  secureCookies: boolean;
   /** enqueue a rebuild in the background; returns the job id immediately */
   scheduleRebuild: (entry: ProjectEntry) => string;
   /** used when a request needs the rebuild finished before replying */
   scheduleRebuildAndWait?: (entry: ProjectEntry) => Promise<{ jobId: string }>;
 }
 
+/**
+ * Resolve the acting display name:
+ * - mock/off: x-archsync-user header only (loopback dev demo).
+ * - code: valid session cookie AND the display-name header.
+ * Returns null when unauthenticated; callers must reject with 401.
+ */
+/**
+ * CSRF hardening for state-changing requests: same-origin assertion.
+ * SameSite=Lax already keeps the session cookie off cross-site POSTs in
+ * modern browsers; this adds an explicit check for clients that send an
+ * Origin header (all browsers do on cross-origin writes).
+ */
+export function isSameOrigin(
+  request: { headers: Record<string, unknown>; protocol?: string; host?: unknown; ip?: string },
+): boolean {
+  const origin = request.headers.origin;
+  if (typeof origin !== 'string' || origin.length === 0) return true; // non-browser clients
+  try {
+    const originHost = new URL(origin).host;
+    const hostRaw = request.headers.host;
+    const hostHeader = String(Array.isArray(hostRaw) ? hostRaw[0] ?? '' : hostRaw).trim();
+    if (hostHeader.length === 0) return false;
+    if (originHost === hostHeader) return true;
+    // loopback pairs allowed in local deployments (mirrors the CORS layer)
+    const base = (h: string): string => h.toLowerCase().split(':')[0] ?? '';
+    const isLoopback = (h: string): boolean => ['localhost', '127.0.0.1', '::1'].includes(base(h));
+    if (isLoopback(originHost) && isLoopback(hostHeader)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function requireIdentity(ctx: RouteContext, request: { headers: Record<string, unknown> }): string | null {
-  if (ctx.devAuthMode !== 'mock') return null;
+  if (ctx.authMode === 'code') {
+    const token = sessionTokenFromRequest(request);
+    if (!ctx.sessions.validate(token)) return null;
+  } else if (ctx.authMode !== 'mock') {
+    return null;
+  }
   const raw = request.headers['x-archsync-user'];
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > 192) return null;
@@ -41,6 +93,57 @@ function requireIdentity(ctx: RouteContext, request: { headers: Record<string, u
 }
 
 export function registerRoutes(app: FastifyInstance, ctx: RouteContext): void {
+  app.get('/api/v1/me', async (request, reply) => {
+    const token = sessionTokenFromRequest(request);
+    const authenticated =
+      ctx.authMode === 'code'
+        ? ctx.sessions.validate(token)
+        : ctx.authMode === 'mock'; // mock: identity comes per-request via header
+    const identity = requireIdentity(ctx, request);
+    return reply
+      .headers({ 'cache-control': 'no-store' })
+      .send({ mode: ctx.authMode, authenticated, identity });
+  });
+
+  app.post('/api/v1/auth/login', async (request, reply) => {
+    if (!isSameOrigin(request)) {
+      return reply.code(403).send({ error: { code: 'cross_origin_blocked', message: '跨源写请求被拒绝' } });
+    }
+    if (ctx.authMode !== 'code' || ctx.authCode === null) {
+      return reply.code(400).send({
+        error: { code: 'auth_mode_disabled', message: '当前部署未启用访问码鉴权' },
+      });
+    }
+    const parsed = LoginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: { code: 'invalid_body', message: 'expected { code: string }' } });
+    }
+    if (ctx.loginLimiter.isBlocked(request.ip)) {
+      return reply.code(429).send({
+        error: { code: 'too_many_attempts', message: '尝试次数过多，请 15 分钟后再试' },
+      });
+    }
+    if (!constantTimeEquals(parsed.data.code, ctx.authCode)) {
+      // constant-time compare via hashed digests prevents timing oracles
+      ctx.loginLimiter.recordFailure(request.ip);
+      return reply.code(401).send({ error: { code: 'invalid_code', message: '访问码不正确' } });
+    }
+    ctx.loginLimiter.recordSuccess(request.ip);
+    const token = ctx.sessions.issue();
+    reply.headers({ 'set-cookie': buildSessionCookie(token, ctx.secureCookies) });
+    return { ok: true };
+  });
+
+  app.post('/api/v1/auth/logout', async (request, reply) => {
+    if (!isSameOrigin(request)) {
+      return reply.code(403).send({ error: { code: 'cross_origin_blocked', message: '跨源写请求被拒绝' } });
+    }
+    const token = sessionTokenFromRequest(request);
+    ctx.sessions.revoke(token);
+    reply.headers({ 'set-cookie': buildClearedSessionCookie() });
+    return { ok: true };
+  });
+
   app.get('/api/v1/projects', async () => {
     const summaries: ProjectSummary[] = [...ctx.entries.values()].map((entry) => {
       const state = ctx.store.project(entry.id);
@@ -134,6 +237,9 @@ export function registerRoutes(app: FastifyInstance, ctx: RouteContext): void {
         return reply
           .code(400)
           .send({ error: { code: 'invalid_body', message: parsed.error.issues[0]?.message ?? 'invalid' } });
+      }
+      if (!isSameOrigin(request)) {
+        return reply.code(403).send({ error: { code: 'cross_origin_blocked', message: '跨源写请求被拒绝' } });
       }
       const identity = requireIdentity(ctx, request);
       if (!identity) {

@@ -8,7 +8,7 @@ import type {
   ImplementationState,
   ConfigError,
 } from '@archsync/contracts';
-import { ApiError } from './lib/api.js';
+
 import { loadIdentity, saveIdentity, type Identity } from './lib/identity.js';
 import { PresenceClient, type PresenceStatus } from './lib/presence-client.js';
 import {
@@ -63,7 +63,10 @@ interface AppState {
   teamDemo: boolean;
   syncing: boolean;
   annotationConflict: string | null;
+  authMode: 'mock' | 'code' | 'off';
+  codeAuthenticated: boolean;
   boot: () => Promise<void>;
+  submitAccessCode: (code: string) => Promise<string | null>;
   setIdentity: (identity: Identity) => void;
   switchProject: (projectId: string) => Promise<void>;
   select: (moduleId: string | null) => Promise<void>;
@@ -145,6 +148,8 @@ export const useStore = create<AppState>((set, get) => ({
   teamDemo: false,
   syncing: false,
   annotationConflict: null,
+  authMode: 'mock',
+  codeAuthenticated: false,
 
   boot: async () => {
     try {
@@ -166,6 +171,16 @@ export const useStore = create<AppState>((set, get) => ({
     } finally {
       set({ booted: true });
     }
+  },
+
+  submitAccessCode: async (code) => {
+    const result = await provider.submitAccessCode?.(code);
+    if (!result) return '当前模式不支持访问码登录。';
+    if (result.ok) {
+      set({ codeAuthenticated: true });
+      return null;
+    }
+    return result.message;
   },
 
   setIdentity: (identity) => {
@@ -259,24 +274,15 @@ export const useStore = create<AppState>((set, get) => ({
       return false;
     }
     if (!identity) return false;
-    try {
-      const result = await provider.saveAnnotation(projectId, moduleId, text, expectedRevision, identity.name);
-      if (!result.ok) {
-        set({ annotationConflict: result.message ?? '保存失败' });
-        return false;
-      }
-      set({ annotationConflict: null });
-      await get().select(moduleId); // refresh detail with new revision
-      return true;
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        set({ annotationConflict: '备注已被其他成员修改，已为你加载最新版本，请基于最新内容重试。' });
-        await get().select(moduleId);
-      } else {
-        set({ annotationConflict: `保存失败: ${(err as Error).message}` });
-      }
+    const result = await provider.saveAnnotation(projectId, moduleId, text, expectedRevision, identity.name);
+    if (!result.ok) {
+      set({ annotationConflict: result.message ?? '保存失败' });
+      if (result.conflict) await get().select(moduleId); // reload latest revision
       return false;
     }
+    set({ annotationConflict: null });
+    await get().select(moduleId); // refresh detail with new revision
+    return true;
   },
 
   dismissConflict: () => set({ annotationConflict: null }),

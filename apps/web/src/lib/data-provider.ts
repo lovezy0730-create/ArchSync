@@ -33,9 +33,19 @@ export interface AnnotationWriteResult {
   message?: string;
 }
 
+export interface AuthProbe {
+  mode: 'mock' | 'code' | 'off';
+  authenticated: boolean;
+  identity: string | null;
+}
+
 export interface DataProvider {
   readonly mode: 'server' | 'static';
   readonly capabilities: DataCapabilities;
+  /** server mode: probe access-code auth state; static returns null */
+  probeAuth?(): Promise<AuthProbe | null>;
+  /** server mode: exchange access code for a session cookie */
+  submitAccessCode?(code: string): Promise<{ ok: true } | { ok: false; message: string }>;
   listProjects(): Promise<{ projects: ProjectSummary[] }>;
   loadSnapshot(projectId: string): Promise<Snapshot>;
   loadModule(projectId: string, moduleId: string): Promise<ModuleDetail>;

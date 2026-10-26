@@ -1,18 +1,20 @@
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { loadEnv, isLoopbackHost } from './env.js';
+import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
 import { discoverProjects } from './projects.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
 import { registerRoutes } from './routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
+import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
+import { LoginRateLimiter } from './auth-rate-limit.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -26,15 +28,28 @@ export async function createServer(overrides?: {
   repoRoot?: string;
   databasePath?: string;
   quiet?: boolean;
+  authMode?: AuthMode;
+  authCode?: string | null;
+  port?: number;
 }): Promise<ServerHandle> {
   const root = overrides?.repoRoot ?? repoRoot;
-  const env = loadEnv(root);
+  const env = overrides?.authMode || overrides?.authCode !== undefined
+    ? { ...loadEnv(root), ...(overrides.authMode ? { authMode: overrides.authMode } : {}), ...(overrides.authCode !== undefined ? { authCode: overrides.authCode } : {}), ...(overrides.port ? { port: overrides.port } : {}) }
+    : loadEnv(root);
   const databasePath = overrides?.databasePath ?? join(root, env.databasePath.replace(/^\.?\//, ''));
   const log = (...args: unknown[]) => {
     if (!overrides?.quiet) console.log('[archsync]', ...args);
   };
 
-  const { projects: entries, skipped } = discoverProjects(root);
+  // Projects are discovered from WORKSPACE_ROOT (deployment mount point) or
+  // the repository root itself; code/dist always resolve from `root`.
+  const workspaceRoot = process.env.WORKSPACE_ROOT
+    ? resolve(process.env.WORKSPACE_ROOT)
+    : root;
+  if (workspaceRoot !== root) {
+    log(`项目发现目录: ${workspaceRoot} (WORKSPACE_ROOT)`);
+  }
+  const { projects: entries, skipped } = discoverProjects(workspaceRoot);
   for (const reason of skipped) log('跳过项目:', reason);
   if (entries.length === 0) throw new Error('未发现任何有效的 .archsync/project.yaml 项目');
 
@@ -44,6 +59,9 @@ export async function createServer(overrides?: {
   const app = Fastify({ logger: false, bodyLimit: 4 * 1024 * 1024 });
   const hub = new PresenceHub(env.presenceTtlSeconds);
   hub.start();
+  const sessions = new SessionStore();
+  const loginLimiter = new LoginRateLimiter();
+  const sessionSweeper = setInterval(() => sessions.sweep(), 10 * 60_000);
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
   const inFlight = new Map<string, Promise<RebuildResult>>();
@@ -78,18 +96,48 @@ export async function createServer(overrides?: {
   // ---- plugins ----
   await app.register(cors, {
     origin: (origin, cb) => {
+      // disallowed origins get NO CORS headers (browser blocks the response);
+      // we must not throw here — that surfaces as a 500. Writes from
+      // disallowed origins are additionally rejected by isSameOrigin.
       if (allowedOrigin(origin, env.host)) cb(null, true);
-      else cb(new Error('Origin 不被允许'), false);
+      else cb(null, false);
     },
   });
   await app.register(websocket);
 
   app.get('/healthz', async () => ({ ok: true, time: new Date().toISOString() }));
 
+  // ---- unified auth gate (code mode) -------------------------------------
+  // Every /api/v1/* request — reads included — requires a valid session.
+  // Only the auth endpoints themselves and /healthz stay reachable so the
+  // login page can bootstrap. This closes the gap where GET endpoints
+  // (projects/snapshot/team/jobs) leaked data anonymously in code mode.
+  const PUBLIC_API_PATHS = new Set([
+    '/api/v1/me',
+    '/api/v1/auth/login',
+    '/api/v1/auth/logout',
+  ]);
+  if (env.authMode === 'code') {
+    app.addHook('onRequest', async (request, reply) => {
+      const path = request.url.split('?')[0] ?? request.url;
+      if (!path.startsWith('/api/') || PUBLIC_API_PATHS.has(path)) return;
+      const token = sessionTokenFromRequest(request);
+      if (!sessions.validate(token)) {
+        return reply.code(401).send({
+          error: { code: 'unauthorized', message: '需要访问码会话（请先登录）' },
+        });
+      }
+    });
+  }
+
   registerRoutes(app, {
     entries: entryById,
     store,
-    devAuthMode: env.devAuthMode,
+    authMode: env.authMode,
+    authCode: env.authCode,
+    sessions,
+    loginLimiter,
+    secureCookies: env.nodeEnv === 'production',
     scheduleRebuild: (entry) => scheduleRebuild(entry.id),
     scheduleRebuildAndWait: async (entry) => {
       const jobId = randomUUID();
@@ -106,7 +154,16 @@ export async function createServer(overrides?: {
       socket.close(4004, 'project_not_found');
       return;
     }
-    if (env.devAuthMode !== 'mock' || user.length === 0 || user.length > 64) {
+    // display name is a per-connection label; authentication depends on mode
+    const nameOk = user.length > 0 && user.length <= 64;
+    let authed = false;
+    if (env.authMode === 'code') {
+      const cookies = parseCookies(request.headers.cookie);
+      authed = sessions.validate(cookies[SESSION_COOKIE]);
+    } else if (env.authMode === 'mock') {
+      authed = true; // loopback dev demo only (enforced by env validation)
+    }
+    if (!nameOk || !authed) {
       socket.close(4003, 'unauthorized');
       return;
     }
@@ -147,16 +204,18 @@ export async function createServer(overrides?: {
   const displayHost = env.host === '0.0.0.0' || env.host === '::' ? '127.0.0.1' : env.host;
   const url = `http://${displayHost}:${actualPort}`;
   log(`ArchSync 服务已启动 ${url}`);
+  log(`鉴权模式: ${env.authMode}${env.authMode === 'code' ? '（访问码）' : env.authMode === 'mock' ? '（演示，仅限本机）' : '（无鉴权，仅限本机）'}`);
   if (env.githubToken === null) {
     log('未配置 GITHUB_TOKEN：含演示数据的项目将使用 demo fixtures（界面会标记「演示数据」）');
   }
   if (!isLoopbackHost(env.host)) {
-    log('警告：服务绑定在非回环地址；mock 身份模式已被禁用');
+    log(`服务绑定在非回环地址 ${env.host} —— 局域网/服务器部署请使用 HTTPS 反向代理（见 docs/deploy.md）`);
   }
 
   return {
     url,
     close: async () => {
+      clearInterval(sessionSweeper);
       await watcher.stop();
       await hub.stop();
       await app.close();
