@@ -1,0 +1,12 @@
+{
+  "projectId": "archsync",
+  "versions": [
+    {
+      "version": 1,
+      "contentHash": "0357f538ff7ee262",
+      "generatedAt": "2026-10-26T05:43:54.871Z",
+      "sourceCommitSha": "cc67806600b00c058449bce7edd6d77ba551c720",
+      "file": "v1.json"
+    }
+  ]
+}
