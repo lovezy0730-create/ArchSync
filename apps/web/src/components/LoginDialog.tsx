@@ -7,6 +7,7 @@ export function LoginDialog() {
   const team = useStore((s) => s.team);
   const teamDemo = useStore((s) => s.teamDemo);
   const booted = useStore((s) => s.booted);
+  const mode = useStore((s) => s.mode);
   const authMode = useStore((s) => s.authMode);
   const codeAuthenticated = useStore((s) => s.codeAuthenticated);
   const submitAccessCode = useStore((s) => s.submitAccessCode);
@@ -16,7 +17,8 @@ export function LoginDialog() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codePending, setCodePending] = useState(false);
 
-  if (!booted || identity) return null;
+  // static mode has no identity/presence concepts at all
+  if (!booted || identity || mode === 'static') return null;
 
   return (
     <div className="login-overlay" role="dialog" aria-label="进入工作台">
