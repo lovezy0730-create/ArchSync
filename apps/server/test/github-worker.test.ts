@@ -130,7 +130,7 @@ describe('GithubApiClient', () => {
   it('collabFromCache normalizes raw GitHub shapes to contract fields', () => {
     const collab = collabFromCache({
       issues: [],
-      pullRequests: [{ number: 1, title: 't', state: 'open', updated_at: NOW.toISOString() }],
+      pullRequests: [{ number: 1, title: 't', state: 'open', updated_at: NOW.toISOString() }] as unknown as import('@archsync/contracts').CollabData['pullRequests'],
       fetchedAt: NOW.toISOString(),
     });
     expect(collab?.source).toBe('live');

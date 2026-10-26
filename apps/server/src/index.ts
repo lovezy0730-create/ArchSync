@@ -242,6 +242,8 @@ export async function createServer(overrides?: {
   }
 
   // ---- watcher (dynamic: rebuilt when the registry changes) ----
+  const watchRoots = [...new Set([...liveEntries.values()].map((e) => e.rootDir))];
+  log(`文件监听启动: ${liveEntries.size} 个项目 / ${watchRoots.length} 个根`);
   let watcher = new WorkspaceWatcher(
     [...liveEntries.values()],
     { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
