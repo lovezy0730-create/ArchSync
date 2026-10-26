@@ -34,8 +34,18 @@ pnpm preview:pages
 
 # GitHub Pages 部署指南（Pages Ready → 上线）
 
-> **当前状态：GitHub Pages Ready — All Checks Passed — Not Deployed。**
-> 本文说明剩余的上线操作。执行前请阅读「数据安全边界」。
+> **当前状态（2026-10-26）：**
+> - 线上 https://lovezy0730-create.github.io/ArchSync/ 跑的是 **main 上的 v0.x 版本**（已部署）。
+> - **v1.0（PR #7）尚未合并/发布**：RC 已通过全部本地与 CI 验证，等待人工合并。
+> - 本文说明合并 #7 后的上线操作与首次生产运行检查。执行前请阅读「数据安全边界」。
+
+## v1.0 发布流水线（PR #7 交付）
+
+**build（只读）→ archive（唯一写权限）→ deploy（Pages 发布）**：
+
+- build：lint/typecheck/test → 快照生成（历史只读输入）→ 构建 → `verify:workflow` + `verify:pages` → 上传官方 `github-pages` artifact + `snapshot-history` artifact。PR 事件只出 preview artifact。
+- archive：显式 checkout **可信 main** 获取归档脚本（PR 代码永远到不了这个写权限上下文），用孤儿 `git init` 维护 site-snapshots 分支（只含 history/）；推送冲突 fresh-clone 重试一次；历史 JSON 损坏拒绝归档。
+- deploy：`needs: [build, archive]`，deploy-pages 原子发布；失败保留上一个成功版本。
 
 ## 已具备的能力（本分支交付）
 
