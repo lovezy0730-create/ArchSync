@@ -148,6 +148,14 @@ export function parseProjectViews(text: string, moduleIds: readonly string[]): V
       }
     }
 
+    if (view.direction === 'TB' && view.groups.length > 4) {
+      warnings.push({
+        path: `${viewPath}.direction`,
+        code: 'tall_tb_view',
+        message: `${viewPath}: 纵向视图包含 ${view.groups.length} 个分组，Fit View 后可能缩小；建议使用 LR 或拆分为多个视图`,
+      });
+    }
+
     const missing = moduleIds.filter((id) => !assigned.has(id));
     if (missing.length > 0) {
       warnings.push({

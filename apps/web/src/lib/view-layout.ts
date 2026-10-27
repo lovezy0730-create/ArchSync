@@ -11,6 +11,11 @@ export const VIEW_GROUP_WIDTH = NODE_WIDTH + VIEW_GROUP_PADDING * 2;
 export const VIEW_GROUP_GAP = 72;
 export const VIEW_NODE_GAP = 28;
 export const VIEW_HEADER_HEIGHT = 62;
+export const VIEW_TB_COLUMNS = 3;
+export const VIEW_TB_HEADER_HEIGHT = 54;
+export const VIEW_TB_NODE_GAP = 16;
+export const VIEW_TB_GROUP_GAP = 16;
+export const VIEW_TB_PADDING = 14;
 
 export const VIEW_TONE_COLORS: Record<ViewTone, string> = {
   blue: '#58a6ff',
@@ -151,17 +156,24 @@ export function layoutProjectView(
 
   if (view.direction === 'TB') {
     let y = 36;
-    let maxWidth = 0;
+    const width =
+      VIEW_TB_COLUMNS * NODE_WIDTH +
+      (VIEW_TB_COLUMNS - 1) * VIEW_TB_NODE_GAP +
+      VIEW_TB_PADDING * 2;
+
     for (const group of groups) {
-      const width = Math.max(
-        VIEW_GROUP_WIDTH,
-        VIEW_GROUP_PADDING * 2 + group.moduleIds.length * NODE_WIDTH + Math.max(0, group.moduleIds.length - 1) * VIEW_NODE_GAP,
-      );
-      const height = VIEW_HEADER_HEIGHT + NODE_HEIGHT + 26;
+      const rows = Math.max(1, Math.ceil(group.moduleIds.length / VIEW_TB_COLUMNS));
+      const height =
+        VIEW_TB_HEADER_HEIGHT +
+        rows * NODE_HEIGHT +
+        Math.max(0, rows - 1) * VIEW_TB_NODE_GAP +
+        10;
       group.moduleIds.forEach((moduleId, index) => {
+        const column = index % VIEW_TB_COLUMNS;
+        const row = Math.floor(index / VIEW_TB_COLUMNS);
         positions.set(moduleId, {
-          x: 40 + VIEW_GROUP_PADDING + index * (NODE_WIDTH + VIEW_NODE_GAP),
-          y: y + VIEW_HEADER_HEIGHT,
+          x: 40 + VIEW_TB_PADDING + column * (NODE_WIDTH + VIEW_TB_NODE_GAP),
+          y: y + VIEW_TB_HEADER_HEIGHT + row * (NODE_HEIGHT + VIEW_TB_NODE_GAP),
         });
       });
       groupBoxes.push({
@@ -175,10 +187,9 @@ export function layoutProjectView(
         height,
         moduleIds: group.moduleIds,
       });
-      maxWidth = Math.max(maxWidth, 40 + width + 40);
-      y += height + 48;
+      y += height + VIEW_TB_GROUP_GAP;
     }
-    return { groups, groupBoxes, positions, canvasSize: { width: maxWidth, height: y } };
+    return { groups, groupBoxes, positions, canvasSize: { width: width + 80, height: y } };
   }
 
   let maxHeight = 0;

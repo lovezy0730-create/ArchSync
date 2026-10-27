@@ -81,6 +81,26 @@ describe('parseProjectViews', () => {
     expect(result.warnings.some((warning) => warning.code === 'unassigned_view_modules')).toBe(true);
   });
 
+  it('warns when a tall top-to-bottom view is likely to shrink on fit', () => {
+    const text = `
+schemaVersion: 1
+views:
+  - id: tall
+    label: 纵向视图
+    kind: layer
+    direction: TB
+    groups:
+      - {id: g1, label: G1, order: 1, moduleIds: [ui]}
+      - {id: g2, label: G2, order: 2, moduleIds: [api]}
+      - {id: g3, label: G3, order: 3, moduleIds: [store]}
+      - {id: g4, label: G4, order: 4, moduleIds: []}
+      - {id: g5, label: G5, order: 5, moduleIds: []}
+`;
+    const result = parseProjectViews(text, moduleIds);
+    expect(result.ok).toBe(true);
+    expect(result.warnings.some((warning) => warning.code === 'tall_tb_view')).toBe(true);
+  });
+
   it('rejects oversized or malformed YAML without throwing', () => {
     expect(parseProjectViews('views: [', moduleIds).ok).toBe(false);
     expect(parseProjectViews(`schemaVersion: 1\nviews: []\n# ${'x'.repeat(300_000)}`, moduleIds).ok).toBe(false);

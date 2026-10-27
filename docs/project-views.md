@@ -43,7 +43,8 @@ views:
 - `moduleIds` 必须引用 `project.yaml` 中存在的模块。
 - 未分组模块会自动进入“其他模块”，并产生警告。
 - `defaultView` 必须引用现有视图；缺省时使用第一个视图。
-- `views.yaml` 无效时，项目仍可加载，但会回退到自动层级视图并在快照中显示视图警告。
+- `views.yaml` 无效时，项目仍可加载，但会回退到自动层级视图；快照的 `warnings` 和 `viewDiagnostics` 都会保留文件、字段、错误码与原因。
+- UI 会在视图选择器旁显示“视图配置无效，已回退”，并可展开查看具体诊断；仅有提示时显示为黄色提示。
 
 ## Agent 工作流
 
@@ -75,6 +76,11 @@ Agent 根据 `layout-context` 输出 `.archsync/views.yaml`，只决定：
 ## 兼容与安全
 
 - 旧快照没有 `views` 字段时，前端按层级自动生成视图。
+- `LR` 是推荐默认方向；6 个及以上分组的 `TB` 视图会产生可读性提示，并采用每行最多 3 个模块、更紧凑的分组高度。
+
+![无效视图回退与结构化诊断](screenshots/project-views-invalid.png)
+
+![紧凑纵向视图](screenshots/project-views-tb-compact.png)
 - 视图配置只允许结构化字段，不接受 HTML、CSS 或任意脚本。
 - 分组与模块引用经过独立校验；无效配置不会让画布白屏。
 - 视图配置参与快照内容哈希，因此团队默认视图变更会产生新快照版本。

@@ -92,4 +92,30 @@ describe('project view layout', () => {
     expect(layout.groupBoxes[1]!.y).toBeGreaterThan(layout.groupBoxes[0]!.y);
     expect(layout.positions.get('a')!.x).toBeLessThan(layout.positions.get('b')!.x);
   });
+
+  it('wraps modules and keeps TB group rows compact', () => {
+    const oneGroup = layoutProjectView({
+      ...view,
+      direction: 'TB',
+      groups: [{ id: 'all', label: '全部', order: 1, tone: 'blue', moduleIds: ['a', 'b', 'c', 'd'] }],
+    }, modules);
+    expect(oneGroup.positions.get('a')!.y).toBe(oneGroup.positions.get('c')!.y);
+    expect(oneGroup.positions.get('d')!.y).toBeGreaterThan(oneGroup.positions.get('a')!.y);
+
+    const tallView: ProjectViewConfig = {
+      ...view,
+      direction: 'TB',
+      groups: [
+        { id: 'g1', label: 'G1', order: 1, tone: 'blue', moduleIds: ['a'] },
+        { id: 'g2', label: 'G2', order: 2, tone: 'purple', moduleIds: ['b'] },
+        { id: 'g3', label: 'G3', order: 3, tone: 'cyan', moduleIds: ['c'] },
+        { id: 'g4', label: 'G4', order: 4, tone: 'green', moduleIds: ['d'] },
+        { id: 'g5', label: 'G5', order: 5, tone: 'amber', moduleIds: [] },
+        { id: 'g6', label: 'G6', order: 6, tone: 'gray', moduleIds: [] },
+      ],
+    };
+    const compact = layoutProjectView(tallView, modules);
+    expect(compact.canvasSize.height).toBeLessThan(1120);
+    expect(compact.groupBoxes[1]!.y - compact.groupBoxes[0]!.y).toBeLessThan(180);
+  });
 });
