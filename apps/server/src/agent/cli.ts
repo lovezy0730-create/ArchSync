@@ -85,7 +85,7 @@ async function buildOfflineSnapshot(entry: ProjectEntry): Promise<Snapshot> {
   return buildSnapshot({
     config: entry.config,
     configWarnings: entry.configWarnings,
-    viewWarnings: entry.viewWarnings,
+    viewDiagnostics: entry.viewDiagnostics,
     views: entry.views,
     defaultViewId: entry.defaultViewId,
     configBlobSha: entry.configBlobSha,
@@ -194,6 +194,7 @@ async function main(): Promise<void> {
       edges: snapshot.edges.map((edge) => ({ source: edge.source, target: edge.target, kind: edge.kind })),
       currentViews: snapshot.views ?? [],
       defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
     });
     return;
   }
@@ -247,6 +248,7 @@ async function main(): Promise<void> {
       githubDemo: snapshot.githubDemo,
       viewCount: snapshot.views?.length ?? 1,
       defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
       moduleStats: {
         total: snapshot.modules.length,
         implementation: tally(snapshot.modules.map((m) => m.implementation)),
@@ -332,6 +334,7 @@ async function main(): Promise<void> {
       layers: snapshot.layers,
       views: snapshot.views ?? [],
       defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
       modules: modules.map((m) => ({
         id: m.id,
         label: m.label,

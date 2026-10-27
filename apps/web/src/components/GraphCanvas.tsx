@@ -50,6 +50,8 @@ export function GraphCanvas() {
     [snapshot, activeViewId],
   );
   const viewOverride = currentView ? viewOrderOverrides[currentView.id] : undefined;
+  const viewDiagnostics = snapshot?.viewDiagnostics ?? [];
+  const viewErrorCount = viewDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
 
   const baseLayout = useMemo(() => {
     if (!snapshot || !currentView) return null;
@@ -253,6 +255,14 @@ export function GraphCanvas() {
             {views.map((view) => <option key={view.id} value={view.id}>{view.label}</option>)}
           </select>
           <span className={`view-kind view-kind-${currentView.kind}`}>{VIEW_KIND_LABEL[currentView.kind]}</span>
+          {viewDiagnostics.length > 0 && (
+            <span
+              className={`view-diagnostic-badge ${viewErrorCount > 0 ? 'error' : 'warning'}`}
+              title={viewDiagnostics.map((diagnostic) => `${diagnostic.path}: ${diagnostic.message}`).join('\n')}
+            >
+              ⚠ {viewErrorCount > 0 ? '视图回退' : `${viewDiagnostics.length} 条提示`}
+            </span>
+          )}
           <button
             className="view-reset-btn"
             type="button"

@@ -26,6 +26,7 @@ import type {
   ScanResult,
   Snapshot,
   SnapshotEdge,
+  ViewDiagnostic,
   WorkflowState,
 } from '@archsync/contracts';
 import { matchPaths } from '@archsync/scanner/pure';
@@ -42,8 +43,8 @@ export interface BuildSnapshotInput {
   /** optional project-specific presentation views */
   views?: ProjectViewConfig[];
   defaultViewId?: string | null;
-  /** non-fatal errors while reading .archsync/views.yaml */
-  viewWarnings?: ConfigError[];
+  /** structured non-fatal diagnostics while reading .archsync/views.yaml */
+  viewDiagnostics?: ViewDiagnostic[];
 }
 
 /**
@@ -243,6 +244,15 @@ export function snapshotContentHash(snapshot: Omit<Snapshot, 'id' | 'version' | 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
   const { config, scan, collab, now } = input;
   const warnings: string[] = [...input.configWarnings.map((w) => `配置警告: ${w.message}`)];
+  for (const diagnostic of input.viewDiagnostics ?? []) {
+    const label = diagnostic.severity === 'error' ? '视图配置错误' : '视图配置警告';
+    const location = [
+      diagnostic.file,
+      diagnostic.path,
+      diagnostic.line ? `line ${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : null,
+    ].filter(Boolean).join(':');
+    warnings.push(`${label}: ${diagnostic.message}${location ? ` (${location})` : ''}`);
+  }
   if (!scan.ok) warnings.push('本轮扫描未成功，实现状态标记为 unknown');
   for (const e of scan.errors) warnings.push(`扫描: ${e}`);
   if (collab.source === 'demo') {
@@ -443,6 +453,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     layers: config.layers,
     views: resolvedViews,
     defaultViewId,
+    viewDiagnostics: input.viewDiagnostics ?? [],
     modules,
     edges,
     warnings,

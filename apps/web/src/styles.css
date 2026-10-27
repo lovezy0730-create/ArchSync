@@ -628,3 +628,34 @@ textarea:focus { outline: none; border-color: var(--accent); }
   .view-toolbar-label, .view-kind { display: none; }
   .view-select { max-width: 138px; }
 }
+/* ---------- view configuration diagnostics ---------- */
+.view-diagnostic-badge {
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.view-diagnostic-badge.error { color: #ff9d98; background: #f8514b14; border: 1px solid #f8514b3d; }
+.view-diagnostic-badge.warning { color: #e3b341; background: #d2992212; border: 1px solid #d2992238; }
+.view-diagnostics {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: #ffffff03;
+}
+.view-diagnostics.error { border-color: #f8514b44; background: #f8514b0b; }
+.view-diagnostics.warning { border-color: #d2992244; background: #d299220a; }
+.view-diagnostics-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.view-diagnostics-head strong { color: #ffb4ae; font-size: 10.5px; font-weight: 600; }
+.view-diagnostics.warning .view-diagnostics-head strong { color: #e3b341; }
+.view-diagnostics-head span { color: var(--text-dim); font-size: 9px; }
+.view-diagnostics > p { margin: 5px 0 0; color: var(--text-dim); font-size: 9.5px; line-height: 1.45; }
+.view-diagnostics details { margin-top: 6px; }
+.view-diagnostics summary { color: var(--accent); cursor: pointer; font-size: 9.5px; }
+.view-diagnostics ul { display: grid; gap: 6px; margin: 7px 0 0; padding: 0; list-style: none; }
+.view-diagnostics li { padding-top: 6px; border-top: 1px dashed #242c38; }
+.view-diagnostic-location { display: flex; flex-direction: column; gap: 2px; }
+.view-diagnostic-location code { color: #d4deea; font-family: Consolas, 'Cascadia Mono', monospace; font-size: 9px; }
+.view-diagnostic-location span { color: var(--text-dim); font-family: Consolas, 'Cascadia Mono', monospace; font-size: 8.5px; overflow-wrap: anywhere; }
+.view-diagnostics li p { margin: 4px 0 0; color: #aeb9c8; font-size: 9.5px; line-height: 1.45; }

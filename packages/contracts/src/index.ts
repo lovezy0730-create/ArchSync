@@ -138,6 +138,18 @@ export interface ConfigParseResult {
   warnings: ConfigError[];
 }
 
+/** Structured, UI-readable diagnostics for optional project view files. */
+export const ViewDiagnosticSchema = z.object({
+  severity: z.enum(['error', 'warning']),
+  file: z.string().min(1),
+  path: z.string(),
+  code: z.string(),
+  message: z.string(),
+  line: z.number().int().positive().optional(),
+  column: z.number().int().positive().optional(),
+});
+export type ViewDiagnostic = z.infer<typeof ViewDiagnosticSchema>;
+
 /* ------------------------------------------------------------------ */
 /* Runtime states                                                     */
 /* ------------------------------------------------------------------ */
@@ -361,6 +373,8 @@ export const SnapshotSchema = z.object({
   /** Project-specific presentation views. Optional for older snapshots. */
   views: z.array(ProjectViewConfigSchema).optional(),
   defaultViewId: z.string().nullable().optional(),
+  /** Non-fatal views.yaml errors/warnings. Errors imply the auto-layer fallback was used. */
+  viewDiagnostics: z.array(ViewDiagnosticSchema).optional(),
   modules: z.array(ModuleStateSchema),
   edges: z.array(SnapshotEdgeSchema),
   warnings: z.array(z.string()),

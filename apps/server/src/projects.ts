@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import type { ProjectConfigFile, ConfigError, ProjectViewConfig } from '@archsync/contracts';
+import type { ProjectConfigFile, ConfigError, ProjectViewConfig, ViewDiagnostic } from '@archsync/contracts';
 import { parseProjectConfig, parseProjectViews } from '@archsync/config';
 
 export interface ProjectEntry {
@@ -14,7 +14,7 @@ export interface ProjectEntry {
   configWarnings: ConfigError[];
   views: ProjectViewConfig[];
   defaultViewId: string;
-  viewWarnings: ConfigError[];
+  viewDiagnostics: ViewDiagnostic[];
   /** path of collab.demo.json when the project ships demo collaboration data */
   demoCollabPath: string | null;
   demoCollabFetchedAt: string | null;
@@ -37,9 +37,18 @@ export function loadProjectEntry(configPath: string): ProjectEntry | { error: st
   const parsedViews = viewsText
     ? parseProjectViews(viewsText, parsed.config.modules.map((module) => module.id))
     : { ok: true, errors: [], warnings: [] as ConfigError[], file: undefined };
-  const viewWarnings = parsedViews.ok
-    ? parsedViews.warnings
-    : [...parsedViews.errors, ...parsedViews.warnings];
+  const viewDiagnostics: ViewDiagnostic[] = [
+    ...(parsedViews.ok ? [] : parsedViews.errors).map((error) => ({
+      ...error,
+      severity: 'error' as const,
+      file: '.archsync/views.yaml',
+    })),
+    ...parsedViews.warnings.map((warning) => ({
+      ...warning,
+      severity: 'warning' as const,
+      file: '.archsync/views.yaml',
+    })),
+  ];
   const demoCollabPath = join(rootDir, '.archsync', 'collab.demo.json');
   const hasDemo = existsSync(demoCollabPath);
   return {
@@ -52,7 +61,7 @@ export function loadProjectEntry(configPath: string): ProjectEntry | { error: st
     configWarnings: parsed.warnings,
     views: parsedViews.ok ? parsedViews.file?.views ?? [] : [],
     defaultViewId: parsedViews.ok ? parsedViews.file?.defaultView ?? '' : '',
-    viewWarnings,
+    viewDiagnostics,
     demoCollabPath: hasDemo ? demoCollabPath : null,
     demoCollabFetchedAt: hasDemo ? statSync(demoCollabPath).mtime.toISOString() : null,
   };

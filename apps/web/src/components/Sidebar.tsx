@@ -27,6 +27,8 @@ export function Sidebar() {
   );
   const views = useMemo(() => (snapshot ? snapshotViews(snapshot) : []), [snapshot]);
   const override = view ? viewOrderOverrides[view.id] : undefined;
+  const viewDiagnostics = snapshot?.viewDiagnostics ?? [];
+  const viewErrorCount = viewDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length;
 
   const groups = useMemo(() => {
     if (!snapshot || !view) return [];
@@ -87,6 +89,33 @@ export function Sidebar() {
         >
           {views.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
+        {viewDiagnostics.length > 0 && (
+          <div className={`view-diagnostics ${viewErrorCount > 0 ? 'error' : 'warning'}`}>
+            <div className="view-diagnostics-head">
+              <strong>{viewErrorCount > 0 ? '视图配置无效，已回退' : '视图配置有提示'}</strong>
+              <span>{viewDiagnostics.length} 条</span>
+            </div>
+            <p>
+              {viewErrorCount > 0
+                ? '当前使用自动生成的技术分层视图。修正 views.yaml 后重新扫描即可恢复。'
+                : '视图仍可使用，但建议检查分组是否遗漏模块或布局是否过于纵向。'}
+            </p>
+            <details>
+              <summary>查看具体文件和字段</summary>
+              <ul>
+                {viewDiagnostics.map((diagnostic, index) => (
+                  <li key={`${diagnostic.code}-${diagnostic.path}-${index}`}>
+                    <div className="view-diagnostic-location">
+                      <code>{diagnostic.file}</code>
+                      <span>{diagnostic.path}{diagnostic.line ? `:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : ''}</span>
+                    </div>
+                    <p>{diagnostic.message}</p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
+        )}
         <div className="view-picker-actions">
           <button
             type="button"
