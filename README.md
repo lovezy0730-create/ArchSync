@@ -61,6 +61,17 @@ pnpm dev
 | 协作备注写入与冲突检测 | — 只读 | ✅ |
 | 需要常驻 Node.js 服务 | 否 | 是 |
 
+## 灵活项目视图
+
+项目可以在 `.archsync/views.yaml` 中定义多个展示视图，例如系统全景、业务流程图和技术分层。视图只决定分组与顺序，不修改模块依赖；未提供该文件时自动回退为层级视图。
+
+```bash
+pnpm agent -- layout-context --project archsync
+pnpm agent -- layout-validate .archsync/views.yaml --project archsync
+```
+
+Agent 只生成可审查的分组与顺序配置，像素坐标由前端布局引擎计算。完整字段、校验规则和交互说明见 [项目视图与灵活布局](docs/project-views.md)。
+
 ## 部署方式
 
 两种部署形态均已就绪（实际发布为人工步骤）：

@@ -27,10 +27,21 @@ describe('publishStaticSnapshots (against the real repo)', () => {
 
     const snapshotText = await readFile(join(outDir, 'snapshot-sticky-notes.json'), 'utf8');
     const payload = JSON.parse(snapshotText) as {
-      snapshot: { githubSource: string; githubDemo: boolean; projectId: string };
+      snapshot: {
+        githubSource: string;
+        githubDemo: boolean;
+        projectId: string;
+        defaultViewId?: string;
+        views?: Array<{ id: string; groups: unknown[] }>;
+        viewDiagnostics?: Array<{ severity: string; code: string }>;
+      };
     };
     expect(payload.snapshot.githubSource).toBe('demo');
     expect(payload.snapshot.githubDemo).toBe(true);
+    expect(payload.snapshot.defaultViewId).toBe('product-systems');
+    expect(payload.snapshot.views?.map((view) => view.id)).toEqual(['product-systems', 'user-journey']);
+    expect(payload.snapshot.views?.[0]?.groups.length).toBe(4);
+    expect(payload.snapshot.viewDiagnostics).toEqual([]);
 
     const manifest = JSON.parse(await readFile(join(outDir, 'index.json'), 'utf8')) as {
       projects: Array<{ id: string }>;

@@ -22,9 +22,11 @@ import type {
   ModuleScanResult,
   ModuleState,
   ProjectConfigFile,
+  ProjectViewConfig,
   ScanResult,
   Snapshot,
   SnapshotEdge,
+  ViewDiagnostic,
   WorkflowState,
 } from '@archsync/contracts';
 import { matchPaths } from '@archsync/scanner/pure';
@@ -38,6 +40,33 @@ export interface BuildSnapshotInput {
   version: number;
   snapshotId: string;
   now: string;
+  /** optional project-specific presentation views */
+  views?: ProjectViewConfig[];
+  defaultViewId?: string | null;
+  /** structured non-fatal diagnostics while reading .archsync/views.yaml */
+  viewDiagnostics?: ViewDiagnostic[];
+}
+
+/**
+ * Backwards-compatible fallback: one deterministic column per configured layer.
+ * Projects without views.yaml remain fully usable.
+ */
+export function deriveDefaultView(config: ProjectConfigFile): ProjectViewConfig {
+  const layers = [...config.layers].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return {
+    id: 'auto-layers',
+    label: '技术分层',
+    kind: 'layer',
+    direction: 'LR',
+    description: '按 project.yaml 的层级顺序自动生成的默认视图',
+    groups: layers.map((layer, index) => ({
+      id: layer.id,
+      label: layer.label,
+      order: index + 1,
+      tone: 'blue',
+      moduleIds: config.modules.filter((module) => module.layer === layer.id).map((module) => module.id),
+    })),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -215,6 +244,15 @@ export function snapshotContentHash(snapshot: Omit<Snapshot, 'id' | 'version' | 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
   const { config, scan, collab, now } = input;
   const warnings: string[] = [...input.configWarnings.map((w) => `配置警告: ${w.message}`)];
+  for (const diagnostic of input.viewDiagnostics ?? []) {
+    const label = diagnostic.severity === 'error' ? '视图配置错误' : '视图配置警告';
+    const location = [
+      diagnostic.file,
+      diagnostic.path,
+      diagnostic.line ? `line ${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ''}` : null,
+    ].filter(Boolean).join(':');
+    warnings.push(`${label}: ${diagnostic.message}${location ? ` (${location})` : ''}`);
+  }
   if (!scan.ok) warnings.push('本轮扫描未成功，实现状态标记为 unknown');
   for (const e of scan.errors) warnings.push(`扫描: ${e}`);
   if (collab.source === 'demo') {
@@ -387,6 +425,14 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       }),
   ];
 
+  const resolvedViews = input.views && input.views.length > 0
+    ? input.views
+    : [deriveDefaultView(config)];
+  const defaultViewId =
+    input.defaultViewId && resolvedViews.some((view) => view.id === input.defaultViewId)
+      ? input.defaultViewId
+      : resolvedViews[0]!.id;
+
   const base = {
     projectId: config.project.id,
     projectName: config.project.name,
@@ -405,6 +451,9 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       : ('unknown' as const),
     dependencyAnalysis: scan.importAnalysisRan ? ('partial' as const) : ('not_supported' as const),
     layers: config.layers,
+    views: resolvedViews,
+    defaultViewId,
+    viewDiagnostics: input.viewDiagnostics ?? [],
     modules,
     edges,
     warnings,
