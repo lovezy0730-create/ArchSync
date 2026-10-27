@@ -36,7 +36,7 @@ export function TopBar() {
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
 
   const gh = githubSourceLabel(snapshot?.githubSource ?? 'unavailable', snapshot?.githubDemo ?? false);
-  const filterCount = filters.workflow.size + filters.implementation.size + filters.layers.size;
+  const filterCount = filters.workflow.size + filters.implementation.size + filters.groups.size;
   const isStatic = mode === 'static';
 
   const online = useMemo(() => [...participants.values()], [participants]);
