@@ -287,3 +287,5 @@ export function parseProjectConfig(text: string): ConfigParseResult {
 }
 
 export type { ModuleConfig };
+export { parseProjectViews, MAX_VIEWS_BYTES, MAX_VIEWS, MAX_VIEW_GROUPS } from './views.js';
+export type { ViewsParseResult } from './views.js';

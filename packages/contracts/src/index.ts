@@ -74,6 +74,54 @@ export const ProjectConfigFileSchema = z.object({
 });
 export type ProjectConfigFile = z.infer<typeof ProjectConfigFileSchema>;
 
+/* ------------------------------------------------------------------ */
+/* Project views (.archsync/views.yaml)                               */
+/* ------------------------------------------------------------------ */
+
+export const ViewKindSchema = z.enum(['system', 'flow', 'layer']);
+export type ViewKind = z.infer<typeof ViewKindSchema>;
+
+export const ViewDirectionSchema = z.enum(['LR', 'TB']);
+export type ViewDirection = z.infer<typeof ViewDirectionSchema>;
+
+export const ViewToneSchema = z.enum([
+  'blue',
+  'purple',
+  'cyan',
+  'orange',
+  'green',
+  'amber',
+  'red',
+  'gray',
+]);
+export type ViewTone = z.infer<typeof ViewToneSchema>;
+
+export const ViewGroupConfigSchema = z.object({
+  id: z.string().regex(MODULE_ID_PATTERN),
+  label: z.string().min(1),
+  order: z.number().int().min(1),
+  tone: ViewToneSchema.default('blue'),
+  moduleIds: z.array(z.string().regex(MODULE_ID_PATTERN)).default([]),
+});
+export type ViewGroupConfig = z.infer<typeof ViewGroupConfigSchema>;
+
+export const ProjectViewConfigSchema = z.object({
+  id: z.string().regex(MODULE_ID_PATTERN),
+  label: z.string().min(1),
+  kind: ViewKindSchema.default('system'),
+  direction: ViewDirectionSchema.default('LR'),
+  description: z.string().default(''),
+  groups: z.array(ViewGroupConfigSchema).min(1),
+});
+export type ProjectViewConfig = z.infer<typeof ProjectViewConfigSchema>;
+
+export const ProjectViewsFileSchema = z.object({
+  schemaVersion: z.literal(1),
+  defaultView: z.string().regex(MODULE_ID_PATTERN).optional(),
+  views: z.array(ProjectViewConfigSchema).min(1),
+});
+export type ProjectViewsFile = z.infer<typeof ProjectViewsFileSchema>;
+
 /** Result of parsing + validating a project.yaml file. */
 export interface ConfigError {
   path: string;
@@ -310,6 +358,9 @@ export const SnapshotSchema = z.object({
   scanCompleteness: z.enum(['complete', 'partial', 'unknown']),
   dependencyAnalysis: z.enum(['not_supported', 'partial', 'complete']),
   layers: z.array(LayerConfigSchema),
+  /** Project-specific presentation views. Optional for older snapshots. */
+  views: z.array(ProjectViewConfigSchema).optional(),
+  defaultViewId: z.string().nullable().optional(),
   modules: z.array(ModuleStateSchema),
   edges: z.array(SnapshotEdgeSchema),
   warnings: z.array(z.string()),

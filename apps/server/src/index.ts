@@ -7,7 +7,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
-import { discoverProjects } from './projects.js';
+import { discoverProjects, loadProjectEntry } from './projects.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
@@ -190,7 +190,17 @@ export async function createServer(overrides?: {
   // ---- watcher ----
   const watcher = new WorkspaceWatcher(
     entries,
-    { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
+    {
+      onProjectChanged: (entry) => {
+        const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
+        if ('error' in reloaded) {
+          log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+          return;
+        }
+        entryById.set(reloaded.id, reloaded);
+        scheduleRebuild(reloaded.id);
+      },
+    },
     env.watchDebounceMs,
   );
   watcher.start();

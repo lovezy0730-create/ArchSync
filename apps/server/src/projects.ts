@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import type { ProjectConfigFile, ConfigError } from '@archsync/contracts';
-import { parseProjectConfig } from '@archsync/config';
+import type { ProjectConfigFile, ConfigError, ProjectViewConfig } from '@archsync/contracts';
+import { parseProjectConfig, parseProjectViews } from '@archsync/config';
 
 export interface ProjectEntry {
   id: string;
@@ -12,12 +12,15 @@ export interface ProjectEntry {
   configBlobSha: string;
   config: ProjectConfigFile;
   configWarnings: ConfigError[];
+  views: ProjectViewConfig[];
+  defaultViewId: string;
+  viewWarnings: ConfigError[];
   /** path of collab.demo.json when the project ships demo collaboration data */
   demoCollabPath: string | null;
   demoCollabFetchedAt: string | null;
 }
 
-function loadEntry(configPath: string): ProjectEntry | { error: string } {
+export function loadProjectEntry(configPath: string): ProjectEntry | { error: string } {
   if (!existsSync(configPath)) return { error: `${configPath}: 不存在` };
   const configText = readFileSync(configPath, 'utf8');
   const parsed = parseProjectConfig(configText);
@@ -29,6 +32,14 @@ function loadEntry(configPath: string): ProjectEntry | { error: string } {
   }
   // project root is the parent of .archsync/ (where project.yaml lives)
   const rootDir = dirnameOf(dirnameOf(configPath));
+  const viewsPath = join(rootDir, '.archsync', 'views.yaml');
+  const viewsText = existsSync(viewsPath) ? readFileSync(viewsPath, 'utf8') : '';
+  const parsedViews = viewsText
+    ? parseProjectViews(viewsText, parsed.config.modules.map((module) => module.id))
+    : { ok: true, errors: [], warnings: [] as ConfigError[], file: undefined };
+  const viewWarnings = parsedViews.ok
+    ? parsedViews.warnings
+    : [...parsedViews.errors, ...parsedViews.warnings];
   const demoCollabPath = join(rootDir, '.archsync', 'collab.demo.json');
   const hasDemo = existsSync(demoCollabPath);
   return {
@@ -36,9 +47,12 @@ function loadEntry(configPath: string): ProjectEntry | { error: string } {
     name: parsed.config.project.name,
     rootDir,
     configText,
-    configBlobSha: createHash('sha256').update(configText).digest('hex'),
+    configBlobSha: createHash('sha256').update(configText).update('\n').update(viewsText).digest('hex'),
     config: parsed.config,
     configWarnings: parsed.warnings,
+    views: parsedViews.ok ? parsedViews.file?.views ?? [] : [],
+    defaultViewId: parsedViews.ok ? parsedViews.file?.defaultView ?? '' : '',
+    viewWarnings,
     demoCollabPath: hasDemo ? demoCollabPath : null,
     demoCollabFetchedAt: hasDemo ? statSync(demoCollabPath).mtime.toISOString() : null,
   };
@@ -68,7 +82,7 @@ export function discoverProjects(workspaceRoot: string): {
     }
   }
   for (const path of candidates) {
-    const entry = loadEntry(path);
+    const entry = loadProjectEntry(path);
     if ('error' in entry) {
       skipped.push(entry.error);
       continue;

@@ -1,0 +1,57 @@
+schemaVersion: 1
+defaultView: system-overview
+
+views:
+  - id: system-overview
+    label: 系统全景
+    kind: system
+    direction: LR
+    description: 按产品工作台、服务端能力、核心分析与基础设施组织模块
+    groups:
+      - id: workbench
+        label: 架构工作台
+        order: 1
+        tone: blue
+        moduleIds: [workbench-ui]
+      - id: app-server
+        label: 应用服务
+        order: 2
+        tone: purple
+        moduleIds: [server-core, snapshot-api, presence-ws, sync-engine, agent-api, auth-sessions]
+      - id: architecture-core
+        label: 架构核心
+        order: 3
+        tone: cyan
+        moduleIds: [config-contracts, scanner-core, graph-engine, static-snapshots]
+      - id: infrastructure
+        label: 基础设施
+        order: 4
+        tone: orange
+        moduleIds: [state-store, github-adapter, dev-tooling]
+
+  - id: delivery-flow
+    label: 交付流程
+    kind: flow
+    direction: LR
+    description: 从规划与扫描到快照发布、协作消费的交付链路
+    groups:
+      - id: plan-and-scan
+        label: 规划与扫描
+        order: 1
+        tone: cyan
+        moduleIds: [config-contracts, scanner-core, github-adapter]
+      - id: merge
+        label: 合并与构建
+        order: 2
+        tone: purple
+        moduleIds: [graph-engine, state-store, static-snapshots]
+      - id: serve
+        label: 服务与协作
+        order: 3
+        tone: blue
+        moduleIds: [server-core, snapshot-api, presence-ws, sync-engine, auth-sessions, agent-api]
+      - id: experience
+        label: 使用与维护
+        order: 4
+        tone: green
+        moduleIds: [workbench-ui, dev-tooling]

@@ -22,6 +22,7 @@ import type {
   ModuleScanResult,
   ModuleState,
   ProjectConfigFile,
+  ProjectViewConfig,
   ScanResult,
   Snapshot,
   SnapshotEdge,
@@ -38,6 +39,33 @@ export interface BuildSnapshotInput {
   version: number;
   snapshotId: string;
   now: string;
+  /** optional project-specific presentation views */
+  views?: ProjectViewConfig[];
+  defaultViewId?: string | null;
+  /** non-fatal errors while reading .archsync/views.yaml */
+  viewWarnings?: ConfigError[];
+}
+
+/**
+ * Backwards-compatible fallback: one deterministic column per configured layer.
+ * Projects without views.yaml remain fully usable.
+ */
+export function deriveDefaultView(config: ProjectConfigFile): ProjectViewConfig {
+  const layers = [...config.layers].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return {
+    id: 'auto-layers',
+    label: '技术分层',
+    kind: 'layer',
+    direction: 'LR',
+    description: '按 project.yaml 的层级顺序自动生成的默认视图',
+    groups: layers.map((layer, index) => ({
+      id: layer.id,
+      label: layer.label,
+      order: index + 1,
+      tone: 'blue',
+      moduleIds: config.modules.filter((module) => module.layer === layer.id).map((module) => module.id),
+    })),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -387,6 +415,14 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       }),
   ];
 
+  const resolvedViews = input.views && input.views.length > 0
+    ? input.views
+    : [deriveDefaultView(config)];
+  const defaultViewId =
+    input.defaultViewId && resolvedViews.some((view) => view.id === input.defaultViewId)
+      ? input.defaultViewId
+      : resolvedViews[0]!.id;
+
   const base = {
     projectId: config.project.id,
     projectName: config.project.name,
@@ -405,6 +441,8 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       : ('unknown' as const),
     dependencyAnalysis: scan.importAnalysisRan ? ('partial' as const) : ('not_supported' as const),
     layers: config.layers,
+    views: resolvedViews,
+    defaultViewId,
     modules,
     edges,
     warnings,
