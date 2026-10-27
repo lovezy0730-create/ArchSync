@@ -7,6 +7,10 @@ ArchSync 将**架构事实**和**展示视图**分开：
 
 视图不会新增、删除或修改模块，也不会改变依赖关系。删除 `views.yaml` 后，ArchSync 会自动按层级生成一个兼容视图。
 
+![系统全景视图](screenshots/project-views-system.png)
+
+![交付流程视图](screenshots/project-views-flow.png)
+
 ## views.yaml
 
 ```yaml
