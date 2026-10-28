@@ -127,9 +127,16 @@ f86e16e feat(init): public repo import wizard with real import-based module sugg
 - 关键修复：watcher 最长前缀根匹配（嵌套 root 归属）+ Windows polling 默认；worker 缓存→CollabData shape 规范化
 - 剩余：Agent MCP 化、UI 内 Token 安全存储、事件保留窗口、SQLite/JSON 双存储统一
 
-## v1.1 最终状态（2026-10-26 深夜）
+## v1.1 前一轮状态（已被 Sync 正确性轮取代，见下）
 
 - 分支 `feat/v1.1-local-agent` @ 6173443 → **PR #9**（CI build/verify 全绿）
 - 合并顺序：#3 → #9（相互独立）
 - 本轮关键修复：watcher 最长前缀根匹配 + Windows polling 默认；**verify:pages 回归修复**（TopBar 直接 import registryApi 打破 DCE → provider 注入 RegistrySurface + pages 模式 stub alias）
 - 剩余：MCP 化、Token UI 安全存储、事件保留窗口、SQLite/JSON 统一、v1.2 Desktop（Tauri）
+
+## v1.1 Sync 正确性修复轮（2026-10-28，最终）
+
+- 分支 `feat/v1.1-local-agent` 推送至 dfcbdb7 之后（PR #9）
+- P0 修复：PR 状态机（state=all + 基线 + merged/closed/reopened/head_changed）、PR 文件缓存以 HEAD SHA 失效（支持分页/renamed/映射增删）、collabFromCache 规范化、手动 sync-github 端点、Checks（combined status + check-runs + pending→终态轮询）、ETag canonical 键、Registry 写接口统一同源门
+- 测试：104 用例全绿（server 49→57 新增 8：状态机 9 场景/304 fallback/分页/规范化 + security 3）
+- 合并顺序：#3 → #9
