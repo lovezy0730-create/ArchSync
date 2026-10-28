@@ -11,7 +11,7 @@
     "package:portable": "node build.mjs --package"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
+    "electron": "^35.7.5",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.0"
   }

@@ -16,26 +16,40 @@ export interface SyncEvent {
 
 export type PullPhase = 'open' | 'closed' | 'merged';
 
-export interface LastPullState {
-  phase: PullPhase;
-  headSha: string;
+/** 规范化后的 PR 状态模型：Worker 持久化、Snapshot、UI 共用同一份字段。 */
+export interface NormalizedPull {
+  number: number;
   title: string;
-  mergedAt: string | null;
-  draft: boolean;
+  /** 状态机相位：open | closed | merged（closed ≠ merged） */
+  phase: PullPhase;
+  state: 'open' | 'closed';
+  headSha: string;
+  headRef: string;
   author: string;
+  draft: boolean;
+  mergedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/** Classify a raw GitHub PR payload into a stable phase; closed ≠ merged. */
-export function classifyPull(pr: PullSummary): LastPullState {
+/** Classify + normalize a raw GitHub PR payload into the shared model. */
+export function classifyPull(pr: PullSummary): NormalizedPull {
   const merged = pr.merged_at ?? null;
   const phase: PullPhase = merged ? 'merged' : pr.state === 'closed' ? 'closed' : 'open';
   return {
-    phase,
-    headSha: pr.head?.sha ?? '',
+    number: pr.number,
     title: pr.title,
-    mergedAt: merged,
-    draft: Boolean(pr.draft),
+    phase,
+    state: pr.state,
+    headSha: pr.head?.sha ?? '',
+    headRef: pr.head?.ref ?? '',
     author: pr.user?.login ?? 'unknown',
+    draft: Boolean(pr.draft),
+    mergedAt: merged,
+    closedAt: pr.closed_at ?? null,
+    createdAt: pr.created_at ?? '',
+    updatedAt: pr.updated_at ?? '',
   };
 }
 
@@ -123,6 +137,8 @@ interface PullSummary {
   draft?: boolean;
   user?: { login?: string };
   merged_at?: string | null;
+  created_at?: string;
+  closed_at?: string | null;
   updated_at?: string;
   head?: { sha?: string; ref?: string };
 }
@@ -391,8 +407,8 @@ export class GithubSyncWorker {
       `${base}/issues?state=all&sort=updated&direction=desc&per_page=30${since ? `&since=${encodeURIComponent(since)}` : ''}`,
     );
     if (issues.ok && issues.data) {
-      const prevIssues = this.client.readCache<IssueSummary[]>(projectId, 'issues-previous') ?? [];
-      const prevById = new Map(prevIssues.map((i) => [i.number, i]));
+      const prevIssuesState = this.client.readCache<Record<string, IssueSummary>>(projectId, 'issues-state') ?? {};
+      const prevById = new Map(Object.entries(prevIssuesState).map(([n, i]) => [Number(n), i]));
       for (const issue of issues.data.filter((i) => !i.pull_request).slice(0, 20)) {
         const before = prevById.get(issue.number);
         if (before) {
@@ -416,7 +432,10 @@ export class GithubSyncWorker {
           changed = true;
         }
       }
-      this.client.writeCache(projectId, 'issues-previous', issues.data);
+      // 增量合并：本轮未返回的 Issue 保留上次可信状态（对齐 pulls-state 修复）
+      const mergedIssues: Record<string, IssueSummary> = { ...prevIssuesState };
+      for (const issue of issues.data) mergedIssues[String(issue.number)] = issue;
+      this.client.writeCache(projectId, 'issues-state', mergedIssues);
       this.writeSince(projectId, issues.data[0]?.updated_at ?? null);
     } else if (issues.error) {
       errors.push(issues.error);

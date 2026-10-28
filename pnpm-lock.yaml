@@ -33,8 +33,8 @@ importers:
   apps/desktop:
     devDependencies:
       electron:
-        specifier: ^33.2.0
-        version: 33.2.0(supports-color@7.1.0)
+        specifier: ^35.7.5
+        version: 35.7.5(supports-color@7.1.0)
       electron-builder:
         specifier: ^25.1.8
         version: 25.1.8(bluebird@3.7.2)(electron-builder-squirrel-windows@25.1.8)(supports-color@7.1.0)
@@ -1222,9 +1222,6 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
-  '@types/node@20.19.43':
-    resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
-
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
 
@@ -1895,8 +1892,8 @@ packages:
   electron-to-chromium@1.5.464:
     resolution: {integrity: sha512-nRa65aFge40viPAKxMKULIY8tcXKwKboJWNn4RoKwyWXJ6SP7BnrDGKUTzc64818jIciH0PK7LSF8QzZes19GA==}
 
-  electron@33.2.0:
-    resolution: {integrity: sha512-PVw1ICAQDPsnnsmpNFX/b1i/49h67pbSPxuIENd9K9WpGO1tsRaQt+K2bmXqTuoMJsbzIc75Ce8zqtuwBPqawA==}
+  electron@35.7.5:
+    resolution: {integrity: sha512-dnL+JvLraKZl7iusXTVTGYs10TKfzUi30uEDTqsmTm0guN9V2tbOjTzyIZbh9n3ygUjgEYyo+igAwMRXIi3IPw==}
     engines: {node: '>= 12.20.55'}
     hasBin: true
 
@@ -4318,10 +4315,6 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@20.19.43':
-    dependencies:
-      undici-types: 6.21.0
-
   '@types/node@22.20.5':
     dependencies:
       undici-types: 6.21.0
@@ -4910,7 +4903,7 @@ snapshots:
   cli-truncate@2.1.0:
     dependencies:
       slice-ansi: 3.0.0
-      string-width: 4.2.0
+      string-width: 4.2.3
     optional: true
 
   cliui@8.0.1:
@@ -5178,10 +5171,10 @@ snapshots:
 
   electron-to-chromium@1.5.464: {}
 
-  electron@33.2.0(supports-color@7.1.0):
+  electron@35.7.5(supports-color@7.1.0):
     dependencies:
       '@electron/get': 2.0.0(supports-color@7.1.0)
-      '@types/node': 20.19.43
+      '@types/node': 22.20.5
       extract-zip: 2.0.1(supports-color@7.1.0)
     transitivePeerDependencies:
       - supports-color
@@ -6043,7 +6036,7 @@ snapshots:
 
   minipass-collect@1.0.2:
     dependencies:
-      minipass: 3.1.6
+      minipass: 3.0.0
 
   minipass-fetch@1.4.1:
     dependencies:
@@ -6055,15 +6048,15 @@ snapshots:
 
   minipass-flush@1.0.7:
     dependencies:
-      minipass: 3.1.6
+      minipass: 3.0.0
 
   minipass-pipeline@1.2.4:
     dependencies:
-      minipass: 3.1.6
+      minipass: 3.0.0
 
   minipass-sized@1.0.3:
     dependencies:
-      minipass: 3.1.6
+      minipass: 3.0.0
 
   minipass@3.0.0:
     dependencies:

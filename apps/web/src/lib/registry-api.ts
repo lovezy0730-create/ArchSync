@@ -56,6 +56,16 @@ export const registryApi = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  initApply: (path: string, yaml: string) =>
+    req<{ ok: boolean; project: RegistryProjectInfo }>('/api/v1/registry/init-apply', {
+      method: 'POST',
+      body: JSON.stringify({ path, yaml }),
+    }),
+  syncGithub: (id: string) =>
+    req<{ ok: boolean; state: string; events: number; errors: string[] }>(
+      `/api/v1/registry/${encodeURIComponent(id)}/sync-github`,
+      { method: 'POST' },
+    ),
   analyzeGithub: (owner: string, repo: string) =>
     req<{ ok: boolean; remoteOnly?: boolean; facts?: Record<string, unknown> }>(
       '/api/v1/registry/add-github-remote',

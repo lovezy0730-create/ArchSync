@@ -25,8 +25,10 @@ export async function loadCollab(
   // SyncWorker 缓存优先：worker 轮询已把 issues/pulls 写入 github_cache，
   // 复用它避免同一轮询窗口内的重复匿名请求。
   if (cacheReader) {
-    const cachedIssues = cacheReader.readCache<CollabData['issues']>(entry.id, 'issues-previous');
-    const cachedPulls = cacheReader.readCache<CollabData['pullRequests']>(entry.id, 'pulls-previous');
+    // 统一数据源：读取 SyncWorker 维护的规范化模型（pulls-state/issues-state），
+    // 与时间线、模块映射使用同一份事实；旧键 pulls/issues-previous 已废弃
+    const cachedIssues = cacheReader.readCache<CollabData['issues']>(entry.id, 'issues-state');
+    const cachedPulls = cacheReader.readCache<Array<Record<string, unknown>>>(entry.id, 'pulls-state');
     if (Array.isArray(cachedPulls) && cachedPulls.length > 0) {
       const fromWorker = collabFromCache({
         pullRequests: cachedPulls,

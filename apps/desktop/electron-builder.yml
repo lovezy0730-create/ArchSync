@@ -4,33 +4,29 @@ copyright: ArchSync contributors
 
 directories:
   output: release
-  buildResources: .
 
+# Electron 运行时只需要 main 进程 bundle 与 package 元数据；
+# agent.cjs / web-dist / 内置示例通过 extraResources 放到 resources 目录（asar 外），
+# 与 main.cjs 的 process.resourcesPath 查找路径一一对应。
 files:
-  - dist-electron/**/*
-  - src/main.cjs
+  - dist-electron/main.cjs
+  - package.json
   - icon.png
-  - ../../apps/web/dist/**/*
-  - ../../apps/server/src/**/*
-  - ../../packages/contracts/src/**/*
-  - ../../packages/config/src/**/*
-  - ../../packages/scanner/src/**/*
-  - ../../packages/graph/src/**/*
-  - ../../package.json
-  - ../../pnpm-workspace.yaml
-  - ../../apps/server/package.json
-  - ../../apps/web/package.json
-  - ../../packages/contracts/package.json
-  - ../../packages/config/package.json
-  - ../../packages/scanner/package.json
-  - ../../packages/graph/package.json
-  - ../../tsconfig.base.json
-  - ../../.archsync/project.yaml
-  - ../../examples/**/*
-  - ../../node_modules/**/*
 
-extraMetadata:
-  main: dist-electron/main.cjs
+asar: true
+
+extraResources:
+  # 独立 Agent（esbuild 单文件 bundle，Electron utilityProcess 运行）
+  - from: dist-electron/agent/agent.cjs
+    to: agent.cjs
+  # 前端静态资源
+  - from: ../../apps/web/dist
+    to: web-dist
+  # 内置示例项目（ArchSync 自描述 + sticky-notes）
+  - from: ../../examples
+    to: builtin-projects/examples
+  - from: ../../.archsync
+    to: builtin-projects/.archsync
 
 win:
   target:
@@ -47,6 +43,3 @@ nsis:
 
 portable:
   artifactName: ArchSync-Portable-${version}.exe
-
-asarUnpack:
-  - "**/*.node"

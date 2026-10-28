@@ -16,6 +16,11 @@ const AddGithubRemoteSchema = z.object({
   repo: z.string().regex(/^[A-Za-z0-9_.-]+$/, 'invalid repo'),
 });
 
+const InitApplySchema = z.object({
+  path: z.string().min(1).max(1024),
+  yaml: z.string().min(1).max(1024 * 1024),
+});
+
 export interface RegistryRouteContext {
   registry: ProjectRegistry;
   scheduleRebuild: (entryId: string) => string;
@@ -135,6 +140,23 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
       errors: result.errors,
       syncedAt: new Date().toISOString(),
     };
+  });
+
+  // 一键接入闭环（P0 4.1）：用户确认建议后写入 .archsync/project.yaml 并注册监控。
+  // 不覆盖已有有效配置；写入失败如实报错。
+  app.post('/api/v1/registry/init-apply', { preHandler: requireSameOrigin }, async (request, reply) => {
+    const parsed = InitApplySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: { code: 'invalid_body', message: 'expected { path, yaml }' } });
+    }
+    const result = await ctx.registry.initApply(parsed.data.path, parsed.data.yaml);
+    if (result.ok && result.project) {
+      ctx.scheduleRebuild(result.project.id);
+      return reply.code(201).send({ ok: true, project: { ...result.project, entry: undefined } });
+    }
+    return reply.code(result.needsInit ? 422 : 400).send({
+      error: { code: result.needsInit ? 'needs_init' : 'init_failed', message: result.error ?? '初始化失败' },
+    });
   });
 
   app.post<{ Params: { id: string } }>('/api/v1/registry/:id/resync', { preHandler: requireSameOrigin }, async (request, reply) => {

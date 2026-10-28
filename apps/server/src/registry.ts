@@ -225,6 +225,91 @@ export class ProjectRegistry {
     }
   }
 
+  /**
+   * 远端只读监控注册（P0 一键接入模式 A）：持久化 GitHub 仓库到注册表，
+   * 无需本地克隆。Worker 按周期轮询 PR/Issue/Commit/Checks；无法观察
+   * 未推送的本地修改——UI 需明确标注 remote-only 限制。
+   */
+  async addRemoteOnly(
+    owner: string,
+    repo: string,
+    defaultBranch = 'main',
+  ): Promise<{ ok: boolean; error?: string; project?: RegistryProject }> {
+    const id = `remote-${owner}-${repo}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    if (this.get(id)) return { ok: false, error: `仓库已注册: ${owner}/${repo}` };
+    // 元数据探测：404 = 不存在或私有不可达
+    let probeOk = true;
+    try {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry' },
+      });
+      if (res.status === 404) {
+        return { ok: false, error: `${owner}/${repo} 不存在或为私有（远端只读模式仅支持公开仓库）` };
+      }
+      if (!res.ok) return { ok: false, error: `GitHub 查询失败: HTTP ${res.status}` };
+    } catch (err) {
+      return { ok: false, error: `GitHub 网络请求失败: ${(err as Error).message}` };
+    }
+    const now = new Date().toISOString();
+    const sentinelPath = `remote:${owner}/${repo}`;
+    this.db
+      .prepare(
+        `INSERT INTO registry_projects
+         (id, name, local_path, owner, repo, default_branch, monitoring_enabled,
+          sync_interval_seconds, last_scan_at, last_sync_at, last_error, snapshot_version,
+          created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 300, NULL, NULL, NULL, 0, ?, ?)`,
+      )
+      .run(id, `${owner}/${repo}`, sentinelPath, owner, repo, defaultBranch, now, now);
+    // 远端项目无本地文件树：entry.rootDir 置空，扫描诚实输出 unknown
+    this.liveEntries.set(id, {
+      id,
+      name: `${owner}/${repo}`,
+      rootDir: '',
+      configText: '',
+      configBlobSha: '',
+      config: {
+        schemaVersion: 1,
+        project: { id, name: `${owner}/${repo}`, github: { owner, repo, defaultBranch }, root: '.' },
+        layers: [{ id: 'remote', label: '远端', order: 1 }],
+        modules: [],
+      },
+      configWarnings: [],
+      views: [],
+      defaultViewId: '',
+      viewDiagnostics: [],
+      demoCollabPath: null,
+      demoCollabFetchedAt: null,
+    });
+    this.onRegistryChanged('added');
+    return { ok: true, project: this.get(id)! };
+  }
+
+  /**
+   * 一键接入闭环：用户确认架构建议后写入 .archsync/project.yaml 并注册。
+   * 不覆盖已有有效配置；YAML 先经过严格校验，写入失败不产生半成品注册。
+   */
+  async initApply(rawPath: string, yamlText: string): Promise<AddLocalResult> {
+    const inspected = await inspectGitRepo(rawPath);
+    if (!inspected.ok) return { ok: false, error: inspected.error };
+    const { absPath } = inspected;
+    if (this.findByPath(absPath)) return { ok: false, error: `该路径已注册: ${absPath}` };
+
+    const configPath = join(absPath, '.archsync', 'project.yaml');
+    if (existsSync(configPath)) {
+      return { ok: false, error: `${absPath} 已存在 .archsync/project.yaml，为避免覆盖请使用「添加已有配置」` };
+    }
+    const parsed = parseProjectConfig(yamlText);
+    if (!parsed.ok || !parsed.config) {
+      const first = parsed.errors[0];
+      return { ok: false, error: `YAML 校验失败: ${first?.message ?? '未知'}` };
+    }
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(join(absPath, '.archsync'), { recursive: true });
+    await import('node:fs/promises').then((m) => m.writeFile(configPath, yamlText, 'utf8'));
+    return this.addLocal(absPath);
+  }
+
   /** Add by GitHub owner/repo: remote-only analysis (no clone) — read-only. */
   async addGithubRemote(
     owner: string,

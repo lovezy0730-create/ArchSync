@@ -41,6 +41,31 @@ jobs:
       - name: Smoke test bundled agent
         run: node scripts/agent-smoke.cjs
 
+      # 真实 EXE 启动冒烟：运行 electron-builder 产出的 win-unpacked/ArchSync.exe，
+      # 验证 Electron main + utilityProcess agent + healthz 全链路（与用户双击的启动逻辑一致）
+      - name: Smoke test packaged EXE
+        run: |
+          $exe = 'apps/desktop/release/win-unpacked/ArchSync.exe'
+          if (-not (Test-Path $exe)) { throw "packaged exe missing: $exe" }
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 20
+          $passed = $false
+          try {
+            $h = Invoke-WebRequest -Uri 'http://127.0.0.1:4310/healthz' -UseBasicParsing -TimeoutSec 15
+            if ($h.StatusCode -eq 200) {
+              $passed = $true
+              Write-Host 'packaged EXE smoke: healthz 200 OK (Electron + utilityProcess agent)'
+            }
+          } catch {
+            Write-Host "healthz probe: $($_.Exception.Message)"
+          } finally {
+            Get-Process -Name ArchSync -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 3
+            $left = Get-Process -Name ArchSync -ErrorAction SilentlyContinue
+            if ($left) { Write-Host 'WARNING: ArchSync processes remain after kill' }
+          }
+          if (-not $passed) { throw 'packaged EXE smoke test failed: healthz not reachable' }
+
       - name: Record versions
         run: |
           "commit=$(git rev-parse HEAD)" | Out-File -Append $env:GITHUB_STEP_SUMMARY
