@@ -10,15 +10,20 @@
  *
  * Security: contextIsolation on, nodeIntegration off, no remote content.
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require('electron');
-const { spawn } = require('node:child_process');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, utilityProcess } = require('electron');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const ROOT = path.join(__dirname, '..');
-const AGENT_ENTRY = path.join(ROOT, 'apps', 'server', 'src', 'index.ts');
-const DIST_INDEX = path.join(ROOT, 'apps', 'web', 'dist', 'index.html');
+// 打包态：agent.cjs 位于 resources（asar 外）；开发态：位于 dist-electron。
+const isPackaged = app.isPackaged;
+const AGENT_CJS = isPackaged
+  ? path.join(process.resourcesPath, 'agent.cjs')
+  : path.join(__dirname, 'agent', 'agent.cjs');
+// 内置示例项目（resources/examples）；开发态为仓库根
+const BUILTIN_ROOT = isPackaged
+  ? path.join(process.resourcesPath, 'builtin-projects')
+  : path.join(__dirname, '..', '..');
 
 let mainWindow = null;
 let tray = null;
@@ -26,6 +31,7 @@ let agentProcess = null;
 let agentPort = 4310;
 let quitting = false;
 let monitorPaused = false;
+let restartCount = 0;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -51,34 +57,45 @@ function findFreePort(startPort) {
 }
 
 function agentEnv() {
-  const env = { ...process.env, PORT: String(agentPort), HOST: '127.0.0.1', ELECTRON_RUN: '1' };
+  const userData = app.getPath('userData');
+  const env = {
+    ...process.env,
+    PORT: String(agentPort),
+    HOST: '127.0.0.1',
+    ARCHSYNC_DATA_DIR: path.join(userData, 'data'), // SQLite/状态/日志 → 用户数据目录
+    ARCHSYNC_WEB_DIST: isPackaged
+      ? path.join(process.resourcesPath, 'web-dist')
+      : path.join(__dirname, '..', '..', 'apps', 'web', 'dist'),
+    WORKSPACE_ROOT: BUILTIN_ROOT,
+  };
   if (monitorPaused) env.ARCHSYNC_MONITOR_PAUSED = '1';
   return env;
 }
 
 function startAgent() {
-  const tsxDir = path.join(ROOT, 'node_modules', '.bin');
-  const tsxCmd = process.platform === 'win32' ? path.join(tsxDir, 'tsx.cmd') : path.join(tsxDir, 'tsx');
-  const agent = spawn(tsxCmd, [AGENT_ENTRY], {
-    cwd: ROOT,
+  // 打包态与开发态共用同一 agent.cjs bundle（Electron utilityProcess 提供
+  // Node 运行时，不依赖系统 Node/pnpm/tsx）。debug 端口仅崩溃排查用。
+  const agent = utilityProcess.fork(AGENT_CJS, [], {
     env: agentEnv(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
+    serviceName: 'archsync-agent',
+    stdio: 'ignore',
   });
-  agent.stdout.on('data', (d) => process.stdout.write(`[agent] ${d}`));
-  agent.stderr.on('data', (d) => process.stderr.write(`[agent] ${d}`));
   agent.on('exit', (code) => {
     agentProcess = null;
     if (!quitting) {
-      // 后台异常恢复：3 秒后重启 agent
-      setTimeout(() => {
-        if (!quitting) {
-          agentPort = agentPort % 65535 === 0 ? 4310 : agentPort + 1;
-          startAgent();
-        }
-      }, 3000);
+      // 后台异常恢复：3 秒后重启 agent；连续崩溃 5 次后停止避免风暴
+      restartCount += 1;
+      if (restartCount <= 5) {
+        setTimeout(() => {
+          if (!quitting) startAgent();
+        }, 3000);
+      } else {
+        console.error('[desktop] agent 连续崩溃超过 5 次，停止自动重启');
+      }
     }
   });
+  // restartCount 在 agent 稳定运行 60s 后归零（无崩溃计时器）
+  setTimeout(() => { restartCount = 0; }, 60000);
   agentProcess = agent;
 }
 

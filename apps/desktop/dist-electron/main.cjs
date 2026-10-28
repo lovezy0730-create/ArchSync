@@ -1,18 +1,18 @@
 // apps/desktop/src/main.cjs
-var { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } = require("electron");
-var { spawn } = require("node:child_process");
+var { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, utilityProcess } = require("electron");
 var net = require("node:net");
 var path = require("node:path");
 var fs = require("node:fs");
-var ROOT = path.join(__dirname, "..");
-var AGENT_ENTRY = path.join(ROOT, "apps", "server", "src", "index.ts");
-var DIST_INDEX = path.join(ROOT, "apps", "web", "dist", "index.html");
+var isPackaged = app.isPackaged;
+var AGENT_CJS = isPackaged ? path.join(process.resourcesPath, "agent.cjs") : path.join(__dirname, "agent", "agent.cjs");
+var BUILTIN_ROOT = isPackaged ? path.join(process.resourcesPath, "builtin-projects") : path.join(__dirname, "..", "..");
 var mainWindow = null;
 var tray = null;
 var agentProcess = null;
 var agentPort = 4310;
 var quitting = false;
 var monitorPaused = false;
+var restartCount = 0;
 var gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -35,32 +35,41 @@ function findFreePort(startPort) {
   });
 }
 function agentEnv() {
-  const env = { ...process.env, PORT: String(agentPort), HOST: "127.0.0.1", ELECTRON_RUN: "1" };
+  const userData = app.getPath("userData");
+  const env = {
+    ...process.env,
+    PORT: String(agentPort),
+    HOST: "127.0.0.1",
+    ARCHSYNC_DATA_DIR: path.join(userData, "data"),
+    // SQLite/状态/日志 → 用户数据目录
+    ARCHSYNC_WEB_DIST: isPackaged ? path.join(process.resourcesPath, "web-dist") : path.join(__dirname, "..", "..", "apps", "web", "dist"),
+    WORKSPACE_ROOT: BUILTIN_ROOT
+  };
   if (monitorPaused) env.ARCHSYNC_MONITOR_PAUSED = "1";
   return env;
 }
 function startAgent() {
-  const tsxDir = path.join(ROOT, "node_modules", ".bin");
-  const tsxCmd = process.platform === "win32" ? path.join(tsxDir, "tsx.cmd") : path.join(tsxDir, "tsx");
-  const agent = spawn(tsxCmd, [AGENT_ENTRY], {
-    cwd: ROOT,
+  const agent = utilityProcess.fork(AGENT_CJS, [], {
     env: agentEnv(),
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true
+    serviceName: "archsync-agent",
+    stdio: "ignore"
   });
-  agent.stdout.on("data", (d) => process.stdout.write(`[agent] ${d}`));
-  agent.stderr.on("data", (d) => process.stderr.write(`[agent] ${d}`));
   agent.on("exit", (code) => {
     agentProcess = null;
     if (!quitting) {
-      setTimeout(() => {
-        if (!quitting) {
-          agentPort = agentPort % 65535 === 0 ? 4310 : agentPort + 1;
-          startAgent();
-        }
-      }, 3e3);
+      restartCount += 1;
+      if (restartCount <= 5) {
+        setTimeout(() => {
+          if (!quitting) startAgent();
+        }, 3e3);
+      } else {
+        console.error("[desktop] agent \u8FDE\u7EED\u5D29\u6E83\u8D85\u8FC7 5 \u6B21\uFF0C\u505C\u6B62\u81EA\u52A8\u91CD\u542F");
+      }
     }
   });
+  setTimeout(() => {
+    restartCount = 0;
+  }, 6e4);
   agentProcess = agent;
 }
 function waitForAgent(maxWaitMs = 3e4) {

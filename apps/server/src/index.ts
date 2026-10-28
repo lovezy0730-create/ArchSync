@@ -53,7 +53,17 @@ export async function createServer(overrides?: {
   const env = overrides?.authMode || overrides?.authCode !== undefined
     ? { ...loadEnv(root), ...(overrides.authMode ? { authMode: overrides.authMode } : {}), ...(overrides.authCode !== undefined ? { authCode: overrides.authCode } : {}), ...(overrides.port ? { port: overrides.port } : {}) }
     : loadEnv(root);
-  const databasePath = overrides?.databasePath ?? join(root, env.databasePath.replace(/^\.?\//, ''));
+  // 打包桌面模式：ARCHSYNC_DATA_DIR 重定向可写数据，ARCHSYNC_WEB_DIST 重定向静态资源
+  const dataDir = process.env.ARCHSYNC_DATA_DIR
+    ? resolve(process.env.ARCHSYNC_DATA_DIR)
+    : root;
+  const webDist = process.env.ARCHSYNC_WEB_DIST
+    ? resolve(process.env.ARCHSYNC_WEB_DIST)
+    : join(root, 'apps', 'web', 'dist');
+  const databasePath = overrides?.databasePath
+    ?? (dataDir !== root
+      ? join(dataDir, 'archsync-state.json')
+      : join(root, env.databasePath.replace(/^\.?\//, '')));
   const log = (...args: unknown[]) => {
     if (!overrides?.quiet) console.log('[archsync]', ...args);
   };
@@ -70,7 +80,7 @@ export async function createServer(overrides?: {
 
   const store = new StateStore(databasePath);
   await store.load();
-  const db = new LocalDatabase(join(root, '.local', 'registry.sqlite'));
+  const db = new LocalDatabase(join(dataDir, 'registry.sqlite'));
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -251,7 +261,7 @@ export async function createServer(overrides?: {
   });
 
   // ---- static web dist (production-style single-port mode) ----
-  const distDir = join(root, 'apps', 'web', 'dist');
+  const distDir = webDist;
   if (existsSync(join(distDir, 'index.html'))) {
     await app.register(fastifyStatic, { root: distDir, prefix: '/' });
     app.setNotFoundHandler((request, reply) => {
@@ -281,15 +291,28 @@ export async function createServer(overrides?: {
 
     env.watchDebounceMs,
   );
-  watcher.start();
+  const monitorPaused = process.env.ARCHSYNC_MONITOR_PAUSED === '1';
+  if (monitorPaused) {
+    log('监控已暂停（ARCHSYNC_MONITOR_PAUSED）——文件监听未启动');
+  } else {
+    watcher.start();
+  }
   dynamicRefs.rewatch = async () => {
     await watcher.stop();
     watcher = new WorkspaceWatcher(
       [...liveEntries.values()],
-      { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
+      { onProjectChanged: (entry) => {
+          const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
+          if ('error' in reloaded) {
+            log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+            return;
+          }
+          liveEntries.set(reloaded.id, reloaded);
+          scheduleRebuild(reloaded.id);
+        } },
       env.watchDebounceMs,
     );
-    watcher.start();
+    if (!monitorPaused) watcher.start();
     log(`文件监听已重建（${liveEntries.size} 个项目）`);
   };
 
@@ -310,8 +333,10 @@ export async function createServer(overrides?: {
       log,
     },
   );
-  syncWorker.start();
-  log(`GitHub 同步引擎已启动（${env.githubToken ? '授权模式 4800/h' : '匿名模式 55/h'}）`);
+  if (process.env.ARCHSYNC_MONITOR_PAUSED !== '1') {
+    syncWorker.start();
+  }
+  log(`GitHub 同步引擎${process.env.ARCHSYNC_MONITOR_PAUSED === '1' ? '已暂停' : '已启动'}（${env.githubToken ? '授权模式 4800/h' : '匿名模式 55/h'}）`);
 
   // ---- initial snapshots ----
   await Promise.all(entries.map((e) => runRebuild(e.id, randomUUID()).catch(() => undefined)));
@@ -343,9 +368,12 @@ export async function createServer(overrides?: {
   };
 }
 
-// Direct execution (pnpm start / tsx apps/server/src/index.ts)
-if (process.argv[1] && existsSync(process.argv[1]) &&
-    process.argv[1].replace(/\\/g, '/').endsWith('apps/server/src/index.ts')) {
+// Direct execution (pnpm start / tsx / bundled desktop agent.cjs).
+// The bundled agent sets ARCHSYNC_AGENT_ENTRY=1 via esbuild define.
+const bundledEntry = process.env.ARCHSYNC_AGENT_ENTRY === '1';
+const tsxEntry = process.argv[1] !== undefined && existsSync(process.argv[1]) &&
+    process.argv[1].replace(/\\/g, '/').endsWith('apps/server/src/index.ts');
+if (bundledEntry || tsxEntry) {
   createServer().catch((err) => {
     console.error('[archsync] 启动失败:', err.message);
     process.exit(1);

@@ -45,6 +45,26 @@ await esbuildBuild({
 // 2. web production build
 run('pnpm', ['--filter', '@archsync/web', 'build']);
 
+// 2b. bundle the Fastify agent into a standalone CJS unit runnable by any
+// Node ≥22.5 runtime (Electron utilityProcess / system node) — no tsx/pnpm.
+fs.mkdirSync(path.join(distElectron, 'agent'), { recursive: true });
+await esbuildBuild({
+  entryPoints: [path.join(root, 'apps', 'server', 'src', 'index.ts')],
+  outfile: path.join(distElectron, 'agent', 'agent.cjs'),
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  external: ['electron'],
+  logLevel: 'error',
+  // CJS 输出下 import.meta.url 不可用：banner 注入等价值并 define 替换；
+  // ARCHSYNC_AGENT_ENTRY=1 让 index.ts 的入口检测在 bundle 内触发启动
+  banner: { js: "const __import_meta_url = require('node:url').pathToFileURL(__filename).href;" },
+  define: {
+    'import.meta.url': '__import_meta_url',
+    'process.env.ARCHSYNC_AGENT_ENTRY': '"1"',
+  },
+});
+
 // 3. desktop package
 if (process.argv.includes('--package')) {
   run('pnpm', ['--filter', '@archsync/desktop', 'exec', 'electron-builder', '--win', 'portable', 'nsis', `--config=${path.join(desktop, 'electron-builder.yml')}`]);
