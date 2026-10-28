@@ -57,7 +57,7 @@
 
 - 匿名 GitHub API：issues/PR/PR files/checks/commits（预算器 40 请求，限流降级 stale）—— 见 git 历史 PR #7 验证记录
 - 第三方导入：pmndrs/zustand → 2 模块建议（高置信度、真实 import 边）
-- Agent CLI 六命令：snapshot/module/impact（9 下游）/context/validate/report
+- Agent CLI 八命令：snapshot/module/impact（9 下游）/context/validate/layout-context/layout-validate/report
 
 ## 未运行 / 尚未生产验证（如实）
 

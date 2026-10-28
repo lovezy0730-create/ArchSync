@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { ProjectConfigFile } from '@archsync/contracts';
 import { parseProjectConfig } from '@archsync/config';
-import { loadEntry, type ProjectEntry } from './projects.js';
+import { loadProjectEntry, type ProjectEntry } from './projects.js';
 import type { LocalDatabase } from './db.js';
 
 const execFileAsync = promisify(execFile);
@@ -166,7 +166,7 @@ export class ProjectRegistry {
       return { ok: false, error: `project.yaml 无效: ${first?.message ?? '未知错误'}` };
     }
 
-    const entry = loadEntry(join(absPath, '.archsync', 'project.yaml'));
+    const entry = loadProjectEntry(join(absPath, '.archsync', 'project.yaml'));
     if ('error' in entry) return { ok: false, error: entry.error };
 
     const ownerRepo = parseOwnerRepo(facts.remoteOriginUrl);
@@ -303,10 +303,16 @@ export class ProjectRegistry {
   }
 
   /** Reload an entry from disk (e.g. after project.yaml edits). */
-  reloadEntry(id: string): ProjectEntry | null {
+  /** Replace the live entry for a registered project (hot config reload). */
+  updateEntry(id: string, entry: ProjectEntry): void {
+    if (!this.get(id)) return;
+    this.liveEntries.set(id, entry);
+  }
+
+  reloadProjectEntry(id: string): ProjectEntry | null {
     const registered = this.get(id);
     if (!registered) return null;
-    const entry = loadEntry(join(registered.localPath, '.archsync', 'project.yaml'));
+    const entry = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
     if ('error' in entry) return null;
     this.liveEntries.set(id, entry);
     return entry;

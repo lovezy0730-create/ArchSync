@@ -18,6 +18,9 @@ const entry: ProjectEntry = {
     modules: [{ id: 'm', label: 'M', layer: 'core', description: '', owners: [], paths: ['src/**'], issues: [], plannedDependsOn: [], acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false } }],
   },
   configWarnings: [],
+  views: [],
+  defaultViewId: '',
+  viewDiagnostics: [],
   demoCollabPath: null,
   demoCollabFetchedAt: null,
 };

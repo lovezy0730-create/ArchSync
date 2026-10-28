@@ -7,7 +7,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
-import { discoverProjects, loadEntry } from './projects.js';
+import { discoverProjects, loadProjectEntry } from './projects.js';
 import { LocalDatabase } from './db.js';
 import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
@@ -34,7 +34,7 @@ function loadExternalEntry(registered: {
   id: string;
   localPath: string;
 }): import('./projects.js').ProjectEntry | null {
-  const entry = loadEntry(join(registered.localPath, '.archsync', 'project.yaml'));
+  const entry = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
   return 'error' in entry ? null : entry;
 }
 
@@ -263,12 +263,22 @@ export async function createServer(overrides?: {
     log('已启用内置前端静态服务 (apps/web/dist)');
   }
 
-  // ---- watcher (dynamic: rebuilt when the registry changes) ----
+  // ---- watcher (dynamic: rebuilt when the registry changes; config reload on edit) ----
   const watchRoots = [...new Set([...liveEntries.values()].map((e) => e.rootDir))];
   log(`文件监听启动: ${liveEntries.size} 个项目 / ${watchRoots.length} 个根`);
   let watcher = new WorkspaceWatcher(
     [...liveEntries.values()],
-    { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
+    { onProjectChanged: (entry) => {
+        // project.yaml/views 变更时热重载配置；失败保留上一份有效配置
+        const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
+        if ('error' in reloaded) {
+          log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+          return;
+        }
+        liveEntries.set(reloaded.id, reloaded);
+        scheduleRebuild(reloaded.id);
+      } },
+
     env.watchDebounceMs,
   );
   watcher.start();

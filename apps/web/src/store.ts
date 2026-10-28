@@ -21,11 +21,12 @@ import { createStaticProvider } from './lib/static-provider.js';
 import { parseProjectConfig } from '@archsync/config';
 import { buildSnapshot } from '@archsync/graph';
 import type { ScanResult } from '@archsync/contracts';
+import { activeView, resolveViewGroups, snapshotViews, type ViewOrderOverride } from './lib/view-layout.js';
 
 export interface Filters {
   workflow: Set<WorkflowState>;
   implementation: Set<ImplementationState>;
-  layers: Set<string>;
+  groups: Set<string>;
 }
 
 export interface Me {
@@ -53,6 +54,8 @@ interface AppState {
   moduleDetail: ModuleDetail | null;
   detailLoading: boolean;
   selection: string | null;
+  activeViewId: string | null;
+  viewOrderOverrides: Record<string, ViewOrderOverride>;
   search: string;
   filters: Filters;
   participants: Map<string, PresenceParticipant>;
@@ -77,9 +80,13 @@ interface AppState {
   switchProject: (projectId: string) => Promise<void>;
   select: (moduleId: string | null) => Promise<void>;
   setSearch: (q: string) => void;
+  setActiveView: (viewId: string) => void;
+  moveViewGroup: (groupId: string, direction: -1 | 1) => void;
+  moveViewModule: (groupId: string, moduleId: string, direction: -1 | 1) => void;
+  resetViewOrder: () => void;
   toggleWorkflowFilter: (state: WorkflowState) => void;
   toggleImplementationFilter: (state: ImplementationState) => void;
-  toggleLayerFilter: (layerId: string) => void;
+  toggleViewGroupFilter: (groupId: string) => void;
   clearFilters: () => void;
   resync: () => Promise<void>;
   saveAnnotation: (moduleId: string, text: string, expectedRevision: number) => Promise<boolean>;
@@ -98,6 +105,66 @@ function readStoredProject(): string | null {
   } catch {
     return null;
   }
+}
+
+function activeViewStorageKey(projectId: string): string {
+  return `archsync-view:${projectId}`;
+}
+
+function viewOrderStorageKey(projectId: string, viewId: string): string {
+  return `archsync-view-order:${projectId}:${viewId}`;
+}
+
+function readStoredView(projectId: string): string | null {
+  try {
+    return localStorage.getItem(activeViewStorageKey(projectId));
+  } catch {
+    return null;
+  }
+}
+
+function readViewOverride(projectId: string, viewId: string): ViewOrderOverride | undefined {
+  try {
+    const raw = localStorage.getItem(viewOrderStorageKey(projectId, viewId));
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as ViewOrderOverride;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeViewOverride(projectId: string, viewId: string, override: ViewOrderOverride | null): void {
+  try {
+    const key = viewOrderStorageKey(projectId, viewId);
+    if (override) localStorage.setItem(key, JSON.stringify(override));
+    else localStorage.removeItem(key);
+  } catch { /* storage unavailable: session-only layout */ }
+}
+
+function initialViewState(snapshot: Snapshot, projectId: string): {
+  activeViewId: string;
+  viewOrderOverrides: Record<string, ViewOrderOverride>;
+} {
+  const views = snapshotViews(snapshot);
+  const stored = readStoredView(projectId);
+  const selected = views.find((view) => view.id === stored)
+    ?? views.find((view) => view.id === snapshot.defaultViewId)
+    ?? views[0]!;
+  const override = readViewOverride(projectId, selected.id);
+  return {
+    activeViewId: selected.id,
+    viewOrderOverrides: override ? { [selected.id]: override } : {},
+  };
+}
+
+function moveInList<T>(items: T[], index: number, direction: -1 | 1): T[] {
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= items.length) return items;
+  const next = [...items];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  return next;
 }
 
 function connectPresence(
@@ -144,8 +211,10 @@ export const useStore = create<AppState>((set, get) => ({
   moduleDetail: null,
   detailLoading: false,
   selection: null,
+  activeViewId: null,
+  viewOrderOverrides: {},
   search: '',
-  filters: { workflow: new Set(), implementation: new Set(), layers: new Set() },
+  filters: { workflow: new Set(), implementation: new Set(), groups: new Set() },
   participants: new Map(),
   me: null,
   identity: null,
@@ -230,7 +299,10 @@ export const useStore = create<AppState>((set, get) => ({
       snapshot: null,
       moduleDetail: null,
       selection: null,
+      activeViewId: null,
+      viewOrderOverrides: {},
       search: '',
+      filters: { workflow: new Set(), implementation: new Set(), groups: new Set() },
       participants: new Map(),
       annotationConflict: null,
       loadError: null,
@@ -260,6 +332,63 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setSearch: (q) => set({ search: q }),
+
+  setActiveView: (viewId) => {
+    const { snapshot, projectId } = get();
+    if (!snapshot || !projectId) return;
+    if (!snapshotViews(snapshot).some((view) => view.id === viewId)) return;
+    const override = readViewOverride(projectId, viewId);
+    set({
+      activeViewId: viewId,
+      filters: { ...get().filters, groups: new Set() },
+      viewOrderOverrides: override ? { ...get().viewOrderOverrides, [viewId]: override } : get().viewOrderOverrides,
+    });
+    try {
+      localStorage.setItem(activeViewStorageKey(projectId), viewId);
+    } catch { /* session-only */ }
+  },
+
+  moveViewGroup: (groupId, direction) => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const override = viewOrderOverrides[view.id] ?? {};
+    const groups = resolveViewGroups(view, snapshot.modules, override);
+    const ids = groups.map((group) => group.id);
+    const nextIds = moveInList(ids, ids.indexOf(groupId), direction);
+    if (nextIds === ids) return;
+    const next: ViewOrderOverride = { ...override, groupOrder: nextIds };
+    set({ viewOrderOverrides: { ...viewOrderOverrides, [view.id]: next } });
+    writeViewOverride(projectId, view.id, next);
+  },
+
+  moveViewModule: (groupId, moduleId, direction) => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const override = viewOrderOverrides[view.id] ?? {};
+    const groups = resolveViewGroups(view, snapshot.modules, override);
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) return;
+    const nextIds = moveInList(group.moduleIds, group.moduleIds.indexOf(moduleId), direction);
+    if (nextIds === group.moduleIds) return;
+    const next: ViewOrderOverride = {
+      ...override,
+      moduleOrder: { ...(override.moduleOrder ?? {}), [groupId]: nextIds },
+    };
+    set({ viewOrderOverrides: { ...viewOrderOverrides, [view.id]: next } });
+    writeViewOverride(projectId, view.id, next);
+  },
+
+  resetViewOrder: () => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const next = { ...viewOrderOverrides };
+    delete next[view.id];
+    set({ viewOrderOverrides: next });
+    writeViewOverride(projectId, view.id, null);
+  },
   toggleWorkflowFilter: (state) => {
     const filters = get().filters;
     const next = new Set(filters.workflow);
@@ -274,14 +403,14 @@ export const useStore = create<AppState>((set, get) => ({
     else next.add(state);
     set({ filters: { ...filters, implementation: next } });
   },
-  toggleLayerFilter: (layerId) => {
+  toggleViewGroupFilter: (groupId) => {
     const filters = get().filters;
-    const next = new Set(filters.layers);
-    if (next.has(layerId)) next.delete(layerId);
-    else next.add(layerId);
-    set({ filters: { ...filters, layers: next } });
+    const next = new Set(filters.groups);
+    if (next.has(groupId)) next.delete(groupId);
+    else next.add(groupId);
+    set({ filters: { ...filters, groups: next } });
   },
-  clearFilters: () => set({ filters: { workflow: new Set(), implementation: new Set(), layers: new Set() } }),
+  clearFilters: () => set({ filters: { workflow: new Set(), implementation: new Set(), groups: new Set() } }),
 
   resync: async () => {
     if (!provider.capabilities.resync) return; // static mode: hidden in UI
@@ -326,7 +455,9 @@ export const useStore = create<AppState>((set, get) => ({
     const current = get().snapshot;
     const snapshot = await provider.loadSnapshot(projectId);
     if (!current || snapshot.version >= current.version) {
-      set({ snapshot });
+      const views = snapshotViews(snapshot);
+      const keepView = views.some((view) => view.id === get().activeViewId);
+      set(keepView ? { snapshot } : { snapshot, ...initialViewState(snapshot, projectId) });
       if (get().selection) {
         const fresh = snapshot.modules.find((m) => m.id === get().selection);
         if (fresh) {
@@ -417,7 +548,14 @@ async function loadProjectData(
       provider.loadSnapshot(projectId),
       provider.loadTeam(projectId),
     ]);
-    set({ snapshot, team: teamRes.team, teamDemo: teamRes.demo, loadError: null });
+    const viewState = initialViewState(snapshot, projectId);
+    set({
+      snapshot,
+      team: teamRes.team,
+      teamDemo: teamRes.demo,
+      loadError: null,
+      ...viewState,
+    });
   } catch (err) {
     set({ loadError: (err as Error).message });
     console.error('failed to load project', err);

@@ -43,6 +43,9 @@ export async function rebuildSnapshot(
     const candidate = buildSnapshot({
       config: entry.config,
       configWarnings: entry.configWarnings,
+      viewDiagnostics: entry.viewDiagnostics,
+      views: entry.views,
+      defaultViewId: entry.defaultViewId,
       configBlobSha: entry.configBlobSha,
       scan,
       collab,

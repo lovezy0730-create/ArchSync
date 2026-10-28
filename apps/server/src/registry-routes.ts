@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRegistry } from './registry.js';
+import { loadProjectEntry } from './projects.js';
+import { join } from 'node:path';
 import type { ProjectEntry } from './projects.js';
 import type { LocalDatabase } from './db.js';
 import { isSameOrigin } from './routes.js';
@@ -141,7 +143,11 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     if (!registered || !entry) {
       return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     }
-    ctx.registry.reloadEntry(request.params.id);
+    const reloaded = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
+    if ('error' in reloaded) {
+      return reply.code(409).send({ error: { code: 'reload_failed', message: reloaded.error } });
+    }
+    ctx.registry.updateEntry(request.params.id, reloaded);
     const jobId = ctx.scheduleRebuild(request.params.id);
     return reply.code(202).send({ jobId });
   });

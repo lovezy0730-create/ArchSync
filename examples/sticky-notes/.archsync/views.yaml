@@ -1,0 +1,57 @@
+schemaVersion: 1
+defaultView: product-systems
+
+views:
+  - id: product-systems
+    label: 产品系统
+    kind: system
+    direction: LR
+    description: 按桌面体验、笔记服务、搜索能力与基础设施分组
+    groups:
+      - id: desktop-experience
+        label: 桌面体验
+        order: 1
+        tone: blue
+        moduleIds: [notes-ui, sticky-widget, settings-ui, pomodoro-timer]
+      - id: note-domain
+        label: 笔记与同步
+        order: 2
+        tone: purple
+        moduleIds: [note-service, sync-service, pomodoro-service]
+      - id: search-core
+        label: 搜索能力
+        order: 3
+        tone: cyan
+        moduleIds: [search-index]
+      - id: storage-infra
+        label: 数据与设置
+        order: 4
+        tone: orange
+        moduleIds: [storage, settings-store]
+
+  - id: user-journey
+    label: 用户旅程
+    kind: flow
+    direction: LR
+    description: 从打开便签到编辑、搜索与跨设备同步的主要路径
+    groups:
+      - id: open
+        label: 打开与记录
+        order: 1
+        tone: blue
+        moduleIds: [notes-ui, sticky-widget]
+      - id: edit
+        label: 编辑与保存
+        order: 2
+        tone: purple
+        moduleIds: [note-service, storage]
+      - id: find
+        label: 搜索与设置
+        order: 3
+        tone: cyan
+        moduleIds: [search-index, settings-ui, settings-store]
+      - id: extend
+        label: 同步与专注
+        order: 4
+        tone: green
+        moduleIds: [sync-service, pomodoro-service, pomodoro-timer]

@@ -44,6 +44,9 @@ const entry: ProjectEntry = {
     ],
   },
   configWarnings: [],
+  views: [],
+  defaultViewId: '',
+  viewDiagnostics: [],
   demoCollabPath: null,
   demoCollabFetchedAt: null,
 };

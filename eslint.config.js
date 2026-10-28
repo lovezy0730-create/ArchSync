@@ -3,7 +3,7 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/*.mjs', '**/*.js', '**/.local/**', '**/site-snapshots/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/*.mjs', '**/*.js', '**/.local/**', '**/site-snapshots/**', '**/sandbox/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
