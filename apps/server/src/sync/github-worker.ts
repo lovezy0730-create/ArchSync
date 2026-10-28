@@ -158,7 +158,9 @@ export class GithubSyncWorker {
   private timer: ReturnType<typeof setInterval> | null = null;
   private idleMultiplier = new Map<string, number>();
   private lastHeadSha = new Map<string, string>();
-  private running = false;
+  /** 项目级互斥：同一项目任意时刻只允许一个同步在途（P0 3.1） */
+  private inFlight = new Map<string, Promise<RemoteChangeSummary>>();
+  private ticking = false;
   private readonly baseIntervalMs: number;
   private readonly minIntervalMs = 60 * 1000;
   private readonly maxIntervalMs = 15 * 60 * 1000;
@@ -180,27 +182,46 @@ export class GithubSyncWorker {
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    // 等待在途同步结束，避免服务退出时写一半状态
+    const pending = [...this.inFlight.values()];
+    if (pending.length > 0) await Promise.allSettled(pending);
+    this.inFlight.clear();
+  }
+
+  /** 串行执行单个项目的同步：相同项目重复调用合并到同一在途 Promise。 */
+  private async runSerialized(
+    entry: ProjectEntry,
+    run: () => Promise<RemoteChangeSummary>,
+  ): Promise<RemoteChangeSummary> {
+    const existing = this.inFlight.get(entry.id);
+    if (existing) return existing; // 连续点击合并，不并发请求
+    const task = run().finally(() => {
+      this.inFlight.delete(entry.id);
+    });
+    this.inFlight.set(entry.id, task);
+    return task;
   }
 
   /** Immediate synchronous pass for one project (user-facing "立即同步"). */
   async syncNow(entry: ProjectEntry): Promise<RemoteChangeSummary> {
     this.idleMultiplier.set(entry.id, 1);
-    return this.syncProject(entry);
+    return this.runSerialized(entry, () => this.syncProject(entry));
   }
 
   private async tick(): Promise<void> {
-    if (this.running) return; // never overlap ticks
+    if (this.ticking) return; // never overlap ticks
     if (!this.client.hasBudget()) return;
-    this.running = true;
+    this.ticking = true;
     try {
       for (const { entry, intervalSeconds } of this.monitored()) {
+        if (this.inFlight.has(entry.id)) continue; // 该项目已有手动同步在途，跳过本轮
         const idle = this.idleMultiplier.get(entry.id) ?? 1;
         const last = this.lastTickAt.get(entry.id);
         const dueMs = Math.max(this.minIntervalMs, intervalSeconds * 1000 * idle);
         if (last !== undefined && Date.now() - last < dueMs) continue;
         this.lastTickAt.set(entry.id, Date.now());
         if (!this.client.hasBudget()) break; // shared budget: leave some for others
-        const summary = await this.syncProject(entry);
+        const summary = await this.runSerialized(entry, () => this.syncProject(entry));
         if (summary.changed) {
           this.idleMultiplier.set(entry.id, 1); // active again
           this.callbacks.onRemoteChanged(entry);
@@ -210,7 +231,7 @@ export class GithubSyncWorker {
         }
       }
     } finally {
-      this.running = false;
+      this.ticking = false;
     }
   }
 
@@ -313,9 +334,12 @@ export class GithubSyncWorker {
     if (pulls.ok && Array.isArray(pulls.data)) {
       const lastKnown = this.client.readCache<Record<string, LastPullState>>(projectId, 'pulls-state') ?? {};
       const hadBaseline = this.client.readCache<boolean>(projectId, 'pulls-seeded') === true;
+      // 增量合并而非覆盖：本轮未返回的 PR 保留其上次可信状态（P0 2.2）
+      const mergedState: Record<string, LastPullState> = { ...lastKnown };
       for (const pr of pulls.data.slice(0, 30)) {
         const before = lastKnown[String(pr.number)];
         const nowState = classifyPull(pr);
+        mergedState[String(pr.number)] = nowState;
         if (!before) {
           if (hadBaseline) {
             // appeared after our first observation → genuinely new
@@ -352,9 +376,8 @@ export class GithubSyncWorker {
           changed = true;
         }
       }
-      this.client.writeCache(projectId, 'pulls-state', Object.fromEntries(
-        pulls.data.slice(0, 30).map((pr) => [String(pr.number), classifyPull(pr)]),
-      ));
+      // 只在成功取得列表后整体写入；未见过的 PR 条目原样保留
+      this.client.writeCache(projectId, 'pulls-state', mergedState);
       if (!hadBaseline) this.client.writeCache(projectId, 'pulls-seeded', true);
     } else if (pulls.error) {
       errors.push(pulls.error);
