@@ -11,10 +11,10 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(here, '..');
+const root = path.join(here, '..', '..'); // apps/desktop → repo root
 const desktop = here;
 const distElectron = path.join(desktop, 'dist-electron');
 
@@ -26,9 +26,21 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-// 1. bundle main process
+// 1. bundle main process via the esbuild JS API (no platform-specific binary shim)
 fs.mkdirSync(distElectron, { recursive: true });
-run('pnpm', ['exec', 'esbuild', 'apps/desktop/src/main.cjs', '--bundle', `--outfile=${path.join(distElectron, 'main.cjs')}`, '--platform=node', '--format=cjs', '--external:electron']);
+// esbuild 在 pnpm 虚拟存储中，从本包 createRequire 解析真实路径
+const { createRequire } = await import('node:module');
+const esbuild = (createRequire(path.join(desktop, 'package.json')))('esbuild');
+const { build: esbuildBuild } = esbuild;
+await esbuildBuild({
+  entryPoints: [path.join(root, 'apps', 'desktop', 'src', 'main.cjs')],
+  outfile: path.join(distElectron, 'main.cjs'),
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  external: ['electron'],
+  logLevel: 'info',
+});
 
 // 2. web production build
 run('pnpm', ['--filter', '@archsync/web', 'build']);
