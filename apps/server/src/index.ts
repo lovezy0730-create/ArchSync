@@ -7,11 +7,16 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
-import { discoverProjects } from './projects.js';
+import { discoverProjects, loadEntry } from './projects.js';
+import { LocalDatabase } from './db.js';
+import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
+import { GithubSyncWorker } from './sync/github-worker.js';
+import { GithubApiClient } from './sync/github-client.js';
 import { registerRoutes } from './routes.js';
+import { registerRegistryRoutes } from './registry-routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
 import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
 import { LoginRateLimiter } from './auth-rate-limit.js';
@@ -23,6 +28,18 @@ export interface ServerHandle {
   url: string;
   close: () => Promise<void>;
 }
+
+/** Re-read a registered external project from disk; null when unloadable. */
+function loadExternalEntry(registered: {
+  id: string;
+  localPath: string;
+}): import('./projects.js').ProjectEntry | null {
+  const entry = loadEntry(join(registered.localPath, '.archsync', 'project.yaml'));
+  return 'error' in entry ? null : entry;
+}
+
+/** Forward declarations wired after construction (watcher re-hook). */
+const dynamicRefs: { rewatch?: () => Promise<void> } = {};
 
 export async function createServer(overrides?: {
   repoRoot?: string;
@@ -49,12 +66,35 @@ export async function createServer(overrides?: {
   if (workspaceRoot !== root) {
     log(`项目发现目录: ${workspaceRoot} (WORKSPACE_ROOT)`);
   }
-  const { projects: entries, skipped } = discoverProjects(workspaceRoot);
-  for (const reason of skipped) log('跳过项目:', reason);
-  if (entries.length === 0) throw new Error('未发现任何有效的 .archsync/project.yaml 项目');
+  const { projects: discovered, skipped } = discoverProjects(workspaceRoot);
 
   const store = new StateStore(databasePath);
   await store.load();
+  const db = new LocalDatabase(join(root, '.local', 'registry.sqlite'));
+
+  // Registry seeds built-in projects idempotently, then any previously
+  // registered external repos are reloaded from disk and merged into the
+  // live entry map that routes/watcher/snapshot share by reference.
+  const liveEntries = new Map(discovered.map((e) => [e.id, e]));
+  const registry = new ProjectRegistry(db, liveEntries, (event) => {
+    log(`注册表变更: ${event}（运行时已同步）`);
+    void dynamicRefs.rewatch?.();
+  });
+  const seedLog = (...a: unknown[]) => log(...a);
+  registry.seedFromDiscovery(discovered, skipped, seedLog);
+  let externalCount = 0;
+  for (const registered of registry.list()) {
+    if (liveEntries.has(registered.id)) continue;
+    const entry = loadExternalEntry(registered);
+    if (entry) {
+      liveEntries.set(registered.id, entry);
+      externalCount += 1;
+    } else {
+      log(`外部项目加载失败（保留注册）: ${registered.id} @ ${registered.localPath}`);
+    }
+  }
+  if (externalCount > 0) log(`已恢复 ${externalCount} 个外部注册项目`);
+  const entries = discovered; // builtin entries remain the bootstrap set
 
   const app = Fastify({ logger: false, bodyLimit: 4 * 1024 * 1024 });
   const hub = new PresenceHub(env.presenceTtlSeconds);
@@ -65,14 +105,21 @@ export async function createServer(overrides?: {
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
   const inFlight = new Map<string, Promise<RebuildResult>>();
-  const entryById = new Map(entries.map((e) => [e.id, e]));
+  // liveEntries is shared by reference with the registry: dynamic add/remove
+  // takes effect in routes immediately, no restart needed.
+  const entryById = liveEntries;
 
   async function runRebuild(entryId: string, jobId: string): Promise<RebuildResult> {
     const entry = entryById.get(entryId);
     if (!entry) throw new Error(`项目不存在: ${entryId}`);
     const previous = inFlight.get(entryId);
     if (previous) await previous.catch(() => undefined);
-    const task = rebuildSnapshot(entry, store, env.githubToken, jobId).then((result) => {
+    const task = rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+      registry.markScan(
+        entryId,
+        result.snapshot?.version ?? 0,
+        result.error ?? null,
+      );
       if (result.changed && result.snapshot) {
         hub.publishSnapshot(entryId, result.snapshot.id, result.snapshot.version);
         log(`快照已发布 ${entry.name} v${result.snapshot.version}`);
@@ -129,6 +176,35 @@ export async function createServer(overrides?: {
       }
     });
   }
+
+  registerRegistryRoutes(app, {
+    registry,
+    db,
+    scheduleRebuild: (entryId: string) => scheduleRebuild(entryId),
+    listEntries: () => [...liveEntries.values()],
+    syncGithubNow: async (entryId) => {
+      const entry = liveEntries.get(entryId);
+      if (!entry) return { state: 'skipped' as const, events: 0, errors: ['项目不存在'] };
+      // 连续点击合并：worker.syncNow 内部串行，重复调用排队等待上一轮完成
+      const summary = await syncWorker.syncNow(entry);
+      if (summary.changed && summary.events.length > 0) {
+        registry.markSync(entryId, null);
+        scheduleRebuild(entryId); // rebuild + WS 推送由 runRebuild 处理
+      }
+      const rateLimited = summary.errors.some((e) => e.includes('限流') || e.includes('预算'));
+      return {
+        state: rateLimited
+          ? ('rate_limited' as const)
+          : summary.errors.length > 0
+            ? ('failed' as const)
+            : summary.changed
+              ? ('completed' as const)
+              : ('completed_no_change' as const),
+        events: summary.events.length,
+        errors: summary.errors,
+      };
+    },
+  });
 
   registerRoutes(app, {
     entries: entryById,
@@ -187,13 +263,45 @@ export async function createServer(overrides?: {
     log('已启用内置前端静态服务 (apps/web/dist)');
   }
 
-  // ---- watcher ----
-  const watcher = new WorkspaceWatcher(
-    entries,
+  // ---- watcher (dynamic: rebuilt when the registry changes) ----
+  const watchRoots = [...new Set([...liveEntries.values()].map((e) => e.rootDir))];
+  log(`文件监听启动: ${liveEntries.size} 个项目 / ${watchRoots.length} 个根`);
+  let watcher = new WorkspaceWatcher(
+    [...liveEntries.values()],
     { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
     env.watchDebounceMs,
   );
   watcher.start();
+  dynamicRefs.rewatch = async () => {
+    await watcher.stop();
+    watcher = new WorkspaceWatcher(
+      [...liveEntries.values()],
+      { onProjectChanged: (entry) => scheduleRebuild(entry.id) },
+      env.watchDebounceMs,
+    );
+    watcher.start();
+    log(`文件监听已重建（${liveEntries.size} 个项目）`);
+  };
+
+  // ---- GitHub sync worker (阶段 B): budgeted polling with ETag cache ----
+  const syncClient = new GithubApiClient(db, () => env.githubToken);
+  const syncCacheReader = {
+    readCache: <T>(projectId: string, kind: string): T | null => syncClient.readCache<T>(projectId, kind),
+  };
+  const syncWorker = new GithubSyncWorker(
+    db,
+    syncClient,
+    () => registry.monitoredEntries(),
+    {
+      onRemoteChanged: (entry) => {
+        registry.markSync(entry.id, null);
+        scheduleRebuild(entry.id);
+      },
+      log,
+    },
+  );
+  syncWorker.start();
+  log(`GitHub 同步引擎已启动（${env.githubToken ? '授权模式 4800/h' : '匿名模式 55/h'}）`);
 
   // ---- initial snapshots ----
   await Promise.all(entries.map((e) => runRebuild(e.id, randomUUID()).catch(() => undefined)));
@@ -216,9 +324,11 @@ export async function createServer(overrides?: {
     url,
     close: async () => {
       clearInterval(sessionSweeper);
+      await syncWorker.stop();
       await watcher.stop();
       await hub.stop();
       await app.close();
+      db.close();
     },
   };
 }

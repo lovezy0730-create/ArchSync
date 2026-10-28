@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { CollabData, DemoIssue, DemoPullRequest } from '@archsync/contracts';
+import { collabFromCache } from './sync/github-client.js';
 import { CollabDataSchema } from '@archsync/contracts';
 import type { ProjectEntry } from './projects.js';
 
@@ -16,7 +17,26 @@ import type { ProjectEntry } from './projects.js';
  * per-PR in the MVP, so module↔PR association in live mode relies on the
  * config `issues` / `moduleIssues` mapping only.
  */
-export async function loadCollab(entry: ProjectEntry, token: string | null): Promise<CollabData> {
+export async function loadCollab(
+  entry: ProjectEntry,
+  token: string | null,
+  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
+): Promise<CollabData> {
+  // SyncWorker 缓存优先：worker 轮询已把 issues/pulls 写入 github_cache，
+  // 复用它避免同一轮询窗口内的重复匿名请求。
+  if (cacheReader) {
+    const cachedIssues = cacheReader.readCache<CollabData['issues']>(entry.id, 'issues-previous');
+    const cachedPulls = cacheReader.readCache<CollabData['pullRequests']>(entry.id, 'pulls-previous');
+    if (Array.isArray(cachedPulls) && cachedPulls.length > 0) {
+      const fromWorker = collabFromCache({
+        pullRequests: cachedPulls,
+        issues: Array.isArray(cachedIssues) ? cachedIssues : [],
+        fetchedAt: null,
+        error: null,
+      });
+      if (fromWorker) return fromWorker;
+    }
+  }
   if (token) {
     try {
       return await fetchLiveCollab(entry, token);

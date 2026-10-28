@@ -17,6 +17,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     // GitHub Pages serves the site at https://<user>.github.io/ArchSync/
     base: pages ? '/ArchSync/' : '/',
+    resolve: pages
+      ? {
+          // The static bundle must not reference /api endpoints at all
+          // (verify:pages enforces it). Alias the registry API to a stub with
+          // identical signatures; the real client is server-mode only.
+          alias: [{ find: /registry-api(\.js)?$/, replacement: '/src/lib/registry-api-stub.ts' }],
+        }
+      : undefined,
     define: {
       'import.meta.env.VITE_ARCHSYNC_MODE': JSON.stringify(pages ? 'static' : 'server'),
     },

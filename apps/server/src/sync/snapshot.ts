@@ -22,6 +22,7 @@ export async function rebuildSnapshot(
   store: StateStore,
   githubToken: string | null,
   jobId: string = randomUUID(),
+  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
 ): Promise<RebuildResult> {
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());
@@ -37,7 +38,7 @@ export async function rebuildSnapshot(
 
   try {
     const scan = await scanProject(entry.config, entry.rootDir);
-    const collab = await loadCollab(entry, githubToken);
+    const collab = await loadCollab(entry, githubToken, cacheReader);
     const state = store.project(entry.id);
     const candidate = buildSnapshot({
       config: entry.config,

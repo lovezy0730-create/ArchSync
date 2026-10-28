@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store.js';
 import {
   IMPLEMENTATION_META,
@@ -9,6 +9,9 @@ import {
 import type { ImplementationState, WorkflowState } from '@archsync/contracts';
 import type { YamlImportResult } from '../store.js';
 import { HistoryPanel } from './HistoryPanel.js';
+import { AddProjectDialog } from './AddProjectDialog.js';
+import { TimelinePanel } from './TimelinePanel.js';
+import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
 
 export function TopBar() {
   const projects = useStore((s) => s.projects);
@@ -30,7 +33,12 @@ export function TopBar() {
   const mode = useStore((s) => s.mode);
   const capabilities = useStore((s) => s.capabilities);
   const importYaml = useStore((s) => s.importYaml);
+  const loadRegistry = useStore((s) => s.loadRegistry);
+  const registryList = useStore((s) => s.registryList);
+  const booted = useStore((s) => s.booted);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
@@ -40,6 +48,22 @@ export function TopBar() {
   const isStatic = mode === 'static';
 
   const online = useMemo(() => [...participants.values()], [participants]);
+
+  // registry drives the project switcher in server mode (dynamic multi-repo)
+  useEffect(() => {
+    if (mode !== 'server' || !booted) return;
+    void loadRegistry();
+  }, [mode, booted, projectId, loadRegistry]);
+
+  const projectOptions = useMemo(() => {
+    if (mode === 'server' && registryList.length > 0) {
+      return registryList.map((entry: unknown) => {
+        const r = entry as RegistryProjectInfo;
+        return { id: r.id, label: `${r.name}${r.repo ? `（${r.owner}/${r.repo}）` : ''}` };
+      });
+    }
+    return projects.map((p) => ({ id: p.id, label: `${p.name}${p.demoCollab ? '（示例）' : ''}` }));
+  }, [mode, registryList, projects]);
 
   const handleYamlFile = async (file: File): Promise<void> => {
     const text = await file.text();
@@ -58,18 +82,36 @@ export function TopBar() {
         </span>
       </div>
 
-      <select
-        className="project-select"
-        value={projectId ?? ''}
-        onChange={(e) => void switchProject(e.target.value)}
-        aria-label="切换项目"
-      >
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}{p.demoCollab ? '（示例）' : ''}
-          </option>
-        ))}
-      </select>
+      <div className="project-switcher">
+        <select
+          className="project-select"
+          value={projectId ?? ''}
+          onChange={(e) => void switchProject(e.target.value)}
+          aria-label="切换项目"
+        >
+          {projectOptions.map((p) => (
+            <option key={p.id} value={p.id}>{p.label}</option>
+          ))}
+        </select>
+        {mode === 'server' && (
+          <button
+            className="import-btn add-project-btn"
+            title="添加项目（本地 Git 仓库或 GitHub 只读分析）"
+            onClick={() => setAddOpen(true)}
+          >
+            ＋
+          </button>
+        )}
+        {mode === 'server' && projectId && (
+          <button
+            className="import-btn"
+            title="项目动态（GitHub 事件 / 本地变化时间线）"
+            onClick={() => setTimelineOpen(true)}
+          >
+            ≡ 动态
+          </button>
+        )}
+      </div>
 
       {snapshot?.githubDemo && <span className="badge badge-demo" title="该项目的 Issue/PR/成员数据来自演示数据 fixture">DEMO 数据</span>}
       <span className={`badge badge-gh badge-${snapshot?.githubSource ?? 'unavailable'}`} title={snapshot?.githubDemo ? '协作数据为演示 fixture' : 'GitHub 协作数据来源'}>
@@ -196,6 +238,18 @@ export function TopBar() {
             : (importMessage.message ?? `配置无效: ${importMessage.errors?.[0]?.message ?? ''}`)}
           <button onClick={() => setImportMessage(null)}>×</button>
         </div>
+      )}
+      {addOpen && (
+        <AddProjectDialog
+          onClose={() => setAddOpen(false)}
+          onAdded={(newId) => {
+            void loadRegistry();
+            void switchProject(newId);
+          }}
+        />
+      )}
+      {timelineOpen && projectId && (
+        <TimelinePanel projectId={projectId} onClose={() => setTimelineOpen(false)} />
       )}
     </header>
   );

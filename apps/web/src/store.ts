@@ -67,6 +67,12 @@ interface AppState {
   codeAuthenticated: boolean;
   boot: () => Promise<void>;
   submitAccessCode: (code: string) => Promise<string | null>;
+  loadRegistry: () => Promise<void>;
+  setRegistryList: (list: unknown[]) => void;
+  registryList: unknown[];
+  registryAddLocal: (path: string) => Promise<{ ok: boolean; project?: { id: string } }>;
+  registryAnalyzeGithub: (owner: string, repo: string) => Promise<{ ok: boolean; facts?: Record<string, unknown> }>;
+  loadTimeline: (projectId: string, limit?: number) => Promise<{ events: unknown[] }>;
   setIdentity: (identity: Identity) => void;
   switchProject: (projectId: string) => Promise<void>;
   select: (moduleId: string | null) => Promise<void>;
@@ -189,6 +195,25 @@ export const useStore = create<AppState>((set, get) => ({
       return null;
     }
     return result.message;
+  },
+
+  registryList: [],
+  setRegistryList: (list) => set({ registryList: list }),
+  loadRegistry: async () => {
+    const result = await provider.registry?.list();
+    if (result) set({ registryList: result.projects });
+  },
+  registryAddLocal: async (path) => {
+    if (!provider.registry) throw new Error('静态模式下项目管理不可用');
+    return provider.registry.addLocal(path);
+  },
+  registryAnalyzeGithub: async (owner, repo) => {
+    if (!provider.registry) throw new Error('静态模式下项目管理不可用');
+    return provider.registry.analyzeGithub(owner, repo);
+  },
+  loadTimeline: async (projectId, limit = 100) => {
+    if (!provider.registry) throw new Error('静态模式下项目动态不可用');
+    return provider.registry.timeline(projectId, limit);
   },
 
   setIdentity: (identity) => {
