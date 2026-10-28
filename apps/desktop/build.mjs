@@ -11,9 +11,11 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-const root = path.join(__dirname, '..');
-const desktop = path.join(__dirname, '.');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(here, '..');
+const desktop = here;
 const distElectron = path.join(desktop, 'dist-electron');
 
 function run(cmd, args, opts = {}) {
