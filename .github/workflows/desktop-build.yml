@@ -39,7 +39,7 @@ jobs:
 
       # 启动冒烟：独立 agent.cjs（与打包版共享同一 bundle 与资源解析逻辑）
       - name: Smoke test bundled agent
-        run: node scripts/agent-smoke.mjs
+        run: node scripts/agent-smoke.cjs
 
       - name: Record versions
         run: |
