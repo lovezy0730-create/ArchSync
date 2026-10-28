@@ -8,9 +8,9 @@
  *
  * Usage: node build.mjs [--run | --package]
  */
-const { spawnSync } = require('node:child_process');
-const path = require('node:path');
-const fs = require('node:fs');
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const root = path.join(__dirname, '..');
 const desktop = path.join(__dirname, '.');
