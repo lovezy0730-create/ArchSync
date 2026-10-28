@@ -1,0 +1,18 @@
+{
+  "name": "@archsync/desktop",
+  "version": "1.2.0",
+  "private": true,
+  "description": "ArchSync Windows desktop shell: embeds the React workbench and the local Fastify agent",
+  "type": "commonjs",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs --run",
+    "package:portable": "node build.mjs --package"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0"
+  }
+}
