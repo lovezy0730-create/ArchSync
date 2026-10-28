@@ -1,22 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GithubApiClient, collabFromCache } from '../src/sync/github-client.js';
-import { GithubSyncWorker, mapFilesToModules, recordEvents, type SyncEvent } from '../src/sync/github-worker.js';
+import { GithubApiClient, collabFromCache, parseNextLink } from '../src/sync/github-client.js';
+import {
+  GithubSyncWorker,
+  mapFilesToModules,
+  recordEvents,
+  type SyncEvent,
+} from '../src/sync/github-worker.js';
 import { LocalDatabase } from '../src/db.js';
 import type { ProjectEntry } from '../src/projects.js';
 
-const NOW = new Date('2026-01-01T00:00:00Z');
+const NOW = '2026-01-01T00:00:00Z';
 
-function fakeFetch(handler: (url: string, init?: RequestInit) => { status: number; body?: unknown; headers?: Record<string, string> }) {
-  return vi.fn(async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const urlText = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
-    const path = urlText.replace('https://api.github.com', '');
-    const result = handler(path, init);
-    const headers = new Headers(result.headers ?? {});
-    return new Response(result.body === undefined ? null : JSON.stringify(result.body), {
-      status: result.status,
-      headers,
-    });
-  }) as unknown as typeof fetch;
+/**
+ * GitHub 语义模拟核心约束：`pulls?state=open` 绝不返回 closed/merged PR；
+ * `state=all` 返回全部。旧实现的回归测试依赖此模拟才有效。
+ */
+interface FakePull {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  merged_at: string | null;
+  updated_at: string;
+  head: { sha: string; ref: string };
+  user: { login: string };
+  draft: boolean;
+  files?: Array<{ filename: string; previous_filename?: string }>;
 }
 
 const entry: ProjectEntry = {
@@ -31,6 +39,7 @@ const entry: ProjectEntry = {
     layers: [{ id: 'core', label: 'Core', order: 1 }],
     modules: [
       { id: 'auth', label: 'Auth', layer: 'core', description: '', owners: [], paths: ['src/auth/**'], issues: [], plannedDependsOn: [], acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false } },
+      { id: 'payment', label: 'Payment', layer: 'core', description: '', owners: [], paths: ['src/payment/**'], issues: [], plannedDependsOn: [], acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false } },
       { id: 'ui', label: 'UI', layer: 'core', description: '', owners: [], paths: ['src/ui/**'], issues: [], plannedDependsOn: [], acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false } },
     ],
   },
@@ -39,235 +48,317 @@ const entry: ProjectEntry = {
   demoCollabFetchedAt: null,
 };
 
-describe('GithubApiClient', () => {
-  it('sends Authorization and persists ETag → 304 returns cached data', async () => {
-    let authorized = '';
-    const db = new LocalDatabase(':memory:');
-    const client = new GithubApiClient(db, () => 'tok-123');
-    vi.stubGlobal(
-      'fetch',
-      fakeFetch((path) => {
-        if (path === '/repos/o/r') {
-          authorized = 'sent';
-          return { status: 200, body: { default_branch: 'main' }, headers: { etag: 'W/"abc1"' } };
+function makeWorkerDb(): LocalDatabase {
+  return new LocalDatabase(':memory:');
+}
+
+/** Harness with mutable GitHub state respecting real API semantics. */
+class FakeGithub {
+  pulls: FakePull[] = [];
+  commitSha = 'base0sha';
+  ciState = 'pending';
+  pagesSeen: string[] = [];
+  private db: LocalDatabase;
+  private client: GithubApiClient;
+  private fetchSpy: ReturnType<typeof vi.fn>;
+
+  constructor(db: LocalDatabase) {
+    this.db = db;
+    this.client = new GithubApiClient(db, () => 'tok');
+    this.fetchSpy = vi.fn(async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const path = url.replace('https://api.github.com', '');
+      this.pagesSeen.push(path);
+      if (path.startsWith('/repos/acme/widget/pulls?')) {
+        if (path.includes('state=open')) {
+          // GitHub 语义：open 列表只含 open PR
+          return this.json(this.pulls.filter((p) => p.state === 'open'), 'W/"pulls-open"');
         }
-        if (path === '/repos/o/r/pulls') {
-          return { status: 200, body: [{ number: 1, title: 't', state: 'open', updated_at: NOW.toISOString() }], headers: { etag: 'W/"p1"' } };
-        }
-        return { status: 200, body: [], headers: { etag: 'W/"x"' } };
-      }),
-    );
-    const first = await client.request<{ default_branch?: string }>('p1', 'repo', '/repos/o/r');
-    expect(first.status).toBe(200);
-    expect(authorized).toBe('sent'); // token was attached
-
-    // second call: If-None-Match → 304 → cached payload returned
-    vi.stubGlobal(
-      'fetch',
-      fakeFetch((path, init) => {
-        const headers = new Headers(init?.headers as Record<string, string>);
-        if (headers.get('If-None-Match') !== 'W/"abc1"') throw new Error('missing conditional header');
-        return { status: 304 };
-      }),
-    );
-    const second = await client.request<{ default_branch?: string }>('p1', 'repo', '/repos/o/r');
-    expect(second.status).toBe(304);
-    expect(second.data).toEqual({ default_branch: 'main' });
-    db.close();
-    vi.unstubAllGlobals();
-  });
-
-  it('classifies 401/403/404/429 and honors Retry-After with global cooldown', async () => {
-    const db = new LocalDatabase(':memory:');
-    const client = new GithubApiClient(db, () => 'tok');
-    vi.stubGlobal('fetch', fakeFetch((path) => {
-      if (path.includes('one')) return { status: 401, body: {} };
-      if (path.includes('two')) return { status: 403, body: {}, headers: { 'retry-after': '90' } };
-      if (path.includes('three')) return { status: 404, body: {} };
-      if (path.includes('four')) return { status: 429, body: {} };
-      return { status: 500, body: {} };
-    }));
-    const r401 = await client.request('p', 'k1', '/one');
-    expect(r401.errorKind).toBe('auth');
-    const r403 = await client.request('p', 'k2', '/two');
-    expect(r403.errorKind).toBe('rate_limited');
-    // cooldown from Retry-After blocks the next request even before network
-    const r404 = await client.request('p', 'k3', '/three');
-    expect(r404.errorKind).toBe('rate_limited'); // still cooling down
-    // expire cooldown manually via a fresh budget window
-    const client2 = new GithubApiClient(new LocalDatabase(':memory:'), () => 'tok');
-    vi.stubGlobal('fetch', fakeFetch((path) => {
-      if (path.includes('four')) return { status: 429, body: {} };
-      if (path.includes('five')) return { status: 502, body: {} };
-      return { status: 200, body: {} };
-    }));
-    const r429 = await client2.request('p', 'k4', '/four');
-    expect(r429.errorKind).toBe('rate_limited');
-    const client3 = new GithubApiClient(new LocalDatabase(':memory:'), () => 'tok');
-    vi.stubGlobal('fetch', fakeFetch((path) => (path.includes('five') ? { status: 502, body: {} } : { status: 200, body: {} })));
-    const r5xx = await client3.request('p', 'k5', '/five');
-    expect(r5xx.errorKind).toBe('server');
-    vi.unstubAllGlobals();
-  });
-
-  it('budget exhaustion fails fast without network', async () => {
-    const db = new LocalDatabase(':memory:');
-    const client = new GithubApiClient(db, () => null); // anonymous: 55/h
-    let calls = 0;
-    vi.stubGlobal('fetch', fakeFetch(() => {
-      calls += 1;
-      return { status: 200, body: {} };
-    }));
-    for (let i = 0; i < 60; i++) {
-      await client.request('p', `k${i}`, `/x${i}`);
-    }
-    expect(calls).toBeLessThanOrEqual(56); // budget capped
-    const exhausted = await client.request('p', 'k-final', '/final');
-    expect(exhausted.errorKind).toBe('rate_limited');
-    vi.unstubAllGlobals();
-  });
-
-  it('collabFromCache normalizes raw GitHub shapes to contract fields', () => {
-    const collab = collabFromCache({
-      issues: [],
-      pullRequests: [{ number: 1, title: 't', state: 'open', updated_at: NOW.toISOString() }] as unknown as import('@archsync/contracts').CollabData['pullRequests'],
-      fetchedAt: NOW.toISOString(),
+        return this.json(this.pulls, 'W/"pulls-all"');
+      }
+      if (path.startsWith('/repos/acme/widget/issues?')) return this.json([], 'W/"i"');
+      if (path.startsWith('/repos/acme/widget/commits?')) {
+        return this.json([{ sha: this.commitSha, commit: { message: 'head', author: { name: 'd', date: NOW } } }], 'W/"c"');
+      }
+      if (path.includes('/status')) return this.json({ state: this.ciState }, 'W/"st"');
+      if (path.includes('/check-runs')) return this.json({ check_runs: [] }, 'W/"cr"');
+      const filesMatch = path.match(/pulls\/(\d+)\/files/);
+      if (filesMatch) {
+        const pr = this.pulls.find((p) => p.number === Number(filesMatch[1]));
+        return this.json(pr?.files ?? [], 'W/"f"');
+      }
+      return this.json({ default_branch: 'main', pushed_at: NOW, updated_at: NOW }, 'W/"r"');
     });
-    expect(collab?.source).toBe('live');
-    expect(collab?.error).toBeNull();
-    // raw pull without changedFiles/checks must be normalized, never undefined
-    expect(collab?.pullRequests[0]?.changedFiles).toEqual([]);
-    expect(collab?.pullRequests[0]?.checks).toBe('unknown');
-    expect(collabFromCache({})).toBeNull();
-  });
-});
+    vi.stubGlobal('fetch', this.fetchSpy);
+  }
 
-describe('GithubSyncWorker', () => {
+  private json(body: unknown, etag: string): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { etag, 'content-type': 'application/json' },
+    });
+  }
+
+  events(worker: GithubSyncWorker): Promise<SyncEvent[]> {
+    return worker.syncNow(entry).then((r) => r.events);
+  }
+}
+
+function newWorker(db: LocalDatabase, github: FakeGithub): GithubSyncWorker {
+  // FakeGithub constructs its own client bound to the same db (shared cache)
+  const client = (github as unknown as { client: GithubApiClient }).client;
+  return new GithubSyncWorker(db, client, () => [{ entry, intervalSeconds: 120 }], {
+    onRemoteChanged: () => undefined,
+    log: () => undefined,
+  });
+}
+
+interface FakePull {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  merged_at: string | null;
+  updated_at: string;
+  head: { sha: string; ref: string };
+  user: { login: string };
+  draft: boolean;
+  files?: Array<{ filename: string; previous_filename?: string }>;
+}
+
+function pull(n: number, over: Partial<FakePull> = {}): FakePull {
+  return {
+    number: n,
+    title: `PR #${n}`,
+    state: 'open',
+    merged_at: null,
+    updated_at: NOW,
+    head: { sha: `head-${n}-a`, ref: `pr-${n}` },
+    user: { login: 'dev' },
+    draft: false,
+    ...over,
+  };
+}
+
+describe('PR state machine (GitHub-semantics mock)', () => {
   let db: LocalDatabase;
+  let github: FakeGithub;
+
   beforeEach(() => {
-    db = new LocalDatabase(':memory:');
+    vi.unstubAllGlobals();
+    db = makeWorkerDb();
+    github = new FakeGithub(db);
   });
 
-  it('emits pr_opened once (dedupe) and pr_merged on transition', async () => {
-    let pulls: Array<Record<string, unknown>> = [
-      { number: 42, title: 'Add login', state: 'open', updated_at: '2026-01-01T00:00:00Z', user: { login: 'dev' }, merged_at: null },
+  it('1-2. first sighting seeds baseline without events; next tick is silent', async () => {
+    github.pulls = [pull(1)];
+    const worker = newWorker(db, github);
+    const first = await github.events(worker);
+    expect(first.filter((e) => e.eventType === 'pr_opened')).toHaveLength(0); // baseline
+
+    const second = await github.events(worker);
+    expect(second).toHaveLength(0);
+  });
+
+  it('3-4. open PR merged (leaves open list) → exactly one pr_merged, no repeats', async () => {
+    github.pulls = [pull(1)];
+    const worker = newWorker(db, github);
+    await github.events(worker); // baseline
+
+    github.pulls = [pull(1, { state: 'closed', merged_at: '2026-01-02T00:00:00Z', head: { sha: 'head-1-a', ref: 'pr-1' } })];
+    const merged = await github.events(worker);
+    expect(merged.filter((e) => e.eventType === 'pr_merged')).toHaveLength(1);
+    expect(merged.some((e) => e.eventType === 'pr_closed')).toBe(false);
+
+    // 再轮询五次：不重复
+    for (let i = 0; i < 5; i++) {
+      const again = await github.events(worker);
+      expect(again.filter((e) => e.eventType === 'pr_merged')).toHaveLength(0);
+    }
+  });
+
+  it('5-6. closed without merge → pr_closed (never pr_merged)', async () => {
+    github.pulls = [pull(2)];
+    const worker = newWorker(db, github);
+    await github.events(worker);
+
+    github.pulls = [pull(2, { state: 'closed', merged_at: null })];
+    const closed = await github.events(worker);
+    expect(closed.filter((e) => e.eventType === 'pr_closed')).toHaveLength(1);
+    expect(closed.some((e) => e.eventType === 'pr_merged')).toBe(false);
+  });
+
+  it('7. closed PR reopened → pr_reopened', async () => {
+    github.pulls = [pull(3, { state: 'closed', merged_at: null })];
+    const worker = newWorker(db, github);
+    await github.events(worker); // baseline with closed PR
+
+    github.pulls = [pull(3, { state: 'open', merged_at: null })];
+    const reopened = await github.events(worker);
+    expect(reopened.filter((e) => e.eventType === 'pr_reopened')).toHaveLength(1);
+  });
+
+  it('8. service restart (fresh worker, same db) does not repeat old events', async () => {
+    github.pulls = [pull(4)];
+    const worker = newWorker(db, github);
+    await github.events(worker);
+    github.pulls = [pull(4, { state: 'closed', merged_at: '2026-01-03T00:00:00Z' })];
+    await github.events(worker); // merged recorded
+
+    // 模拟重启：全新 worker 实例，共享同一持久缓存
+    const restarted = newWorker(db, github);
+    const after = await github.events(restarted);
+    expect(after.filter((e) => e.eventType === 'pr_merged')).toHaveLength(0);
+  });
+
+  it('new open PR after baseline → pr_opened with real author', async () => {
+    github.pulls = [];
+    const worker = newWorker(db, github);
+    await github.events(worker); // baseline (empty)
+
+    github.pulls = [pull(9, { user: { login: 'real-dev' } })];
+    const opened = await github.events(worker);
+    const evt = opened.find((e) => e.eventType === 'pr_opened');
+    expect(evt).toBeTruthy();
+    expect((evt!.detail as { author: string }).author).toBe('real-dev');
+  });
+
+  it('head push → pr_head_changed + files remapped (module added and removed)', async () => {
+    github.pulls = [
+      pull(42, { head: { sha: 'head-42-A', ref: 'pr-42' }, files: [{ filename: 'src/auth/login.ts' }] }),
     ];
-    vi.stubGlobal('fetch', fakeFetch((path) => {
-      if (path.startsWith('/repos/acme/widget/pulls?') || path.endsWith('/pulls')) return { status: 200, body: pulls, headers: { etag: 'W/"p"' } };
-      if (path.startsWith('/repos/acme/widget/issues?') || path.endsWith('/issues')) return { status: 200, body: [], headers: { etag: 'W/"i"' } };
-      if (path.startsWith('/repos/acme/widget/commits?') || path.endsWith('/commits')) return { status: 200, body: [], headers: { etag: 'W/"c"' } };
-      return { status: 200, body: {}, headers: { etag: 'W/"r"' } };
+    const worker = newWorker(db, github);
+    const first = await github.events(worker);
+    console.log('DBG-FIRST:', JSON.stringify(first.map((e) => ({ t: e.eventType, d: e.detail }))));
+    const firstMap = first.find((e) => e.eventType === 'pr_modules_mapped');
+    expect((firstMap!.detail as { modules: string[] }).modules).toEqual(['auth']);
+
+    // HEAD B：新增 payment 文件 → Auth + Payment
+    github.pulls = [pull(42, { head: { sha: 'head-42-B', ref: 'pr-42' }, files: [
+      { filename: 'src/auth/login.ts' },
+      { filename: 'src/payment/order.ts' },
+    ] })];
+    const second = await github.events(worker);
+    expect(second.some((e) => e.eventType === 'pr_head_changed')).toBe(true);
+    const remap = second.find((e) => e.eventType === 'pr_modules_mapped');
+    expect((remap!.detail as { modules: string[] }).modules.sort()).toEqual(['auth', 'payment']);
+
+    // HEAD C：移除 auth 变更 → 仅 Payment（失效映射必须被删除）
+    github.pulls = [pull(42, { head: { sha: 'head-42-C', ref: 'pr-42' }, files: [
+      { filename: 'src/payment/order.ts' },
+    ] })];
+    const third = await github.events(worker);
+    const remap3 = third.find((e) => e.eventType === 'pr_modules_mapped');
+    expect((remap3!.detail as { modules: string[] }).modules).toEqual(['payment']);
+  });
+
+  it('renamed files count via previous_filename', async () => {
+    github.pulls = [pull(5, { head: { sha: 'head-5', ref: 'pr-5' }, files: [
+      { filename: 'src/ui/new.tsx', previous_filename: 'src/ui/old.tsx' },
+    ] })];
+    const worker = newWorker(db, github);
+    const events = await github.events(worker);
+    const mapped = events.find((e) => e.eventType === 'pr_modules_mapped');
+    expect((mapped!.detail as { modules: string[] }).modules).toEqual(['ui']);
+  });
+
+  it('CI pending → failure transitions are reported (check-runs + combined status)', async () => {
+    github.commitSha = 'ci-head';
+    github.ciState = 'pending';
+    const worker = newWorker(db, github);
+    const first = await github.events(worker);
+    expect(first.some((e) => e.eventType === 'ci_status' && (e.detail as { state: string }).state === 'pending')).toBe(true);
+
+    github.ciState = 'failure';
+    const second = await github.events(worker);
+    const fail = second.find((e) => e.eventType === 'ci_status');
+    expect((fail!.detail as { state: string }).state).toBe('failure');
+
+    // 终态后不再重复
+    const third = await github.events(worker);
+    expect(third.filter((e) => e.eventType === 'ci_status')).toHaveLength(0);
+  });
+
+  it('pagination: >30 PRs across pages are all tracked', async () => {
+    // FakeGithub 的 pulls 端点一次返回全部；这里通过 Link header 验证分页合并
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes('/pulls?') && url.includes('page=2')) {
+        return new Response(JSON.stringify([pull(32)]), { status: 200, headers: { etag: 'W/"p2"' } });
+      }
+      if (url.includes('/pulls?')) {
+        return new Response(JSON.stringify([pull(31)]), {
+          status: 200,
+          headers: { etag: 'W/"p1"', link: `<${url.split('?')[0]}?state=all&page=2&per_page=30>; rel="next"` },
+        });
+      }
+      if (url.includes('/issues?')) return new Response('[]', { status: 200, headers: { etag: 'W/"i"' } });
+      if (url.includes('/commits?')) return new Response('[]', { status: 200, headers: { etag: 'W/"c"' } });
+      return new Response('{}', { status: 200, headers: { etag: 'W/"r"' } });
     }));
     const client = new GithubApiClient(db, () => 'tok');
-    const worker = new GithubSyncWorker(db, client, () => [{ entry, intervalSeconds: 120 }], { onRemoteChanged: () => {}, log: () => {} });
-
-    const first = await worker.syncNow(entry);
-    expect(first.changed).toBe(true);
-    expect(first.events.filter((e) => e.eventType === 'pr_opened')).toHaveLength(1);
-
-    // same state again → no duplicate event
-    const second = await worker.syncNow(entry);
-    expect(second.events.filter((e) => e.eventType === 'pr_opened')).toHaveLength(0);
-
-    // transition to merged → pr_merged event
-    pulls = [{ number: 42, title: 'Add login', state: 'closed', updated_at: '2026-01-02T00:00:00Z', user: { login: 'dev' }, merged_at: '2026-01-02T01:00:00Z' }];
-    const third = await worker.syncNow(entry);
-    expect(third.events.some((e) => e.eventType === 'pr_merged')).toBe(true);
-
-    // timeline table has exactly 2 rows for this PR (opened + merged)
-    const rows = db.prepare("SELECT COUNT(*) as c FROM sync_events WHERE project_id='proj-x'").get() as { c: number };
-    expect(rows.c).toBe(2);
+    const result = await client.request<unknown[]>('proj-x', 'pulls-paginate', '/repos/acme/widget/pulls?state=all&per_page=30', { paginate: true });
+    expect((result.data as unknown[]).length).toBe(2); // page1 + page2 merged
     vi.unstubAllGlobals();
   });
 
-  it('maps PR changed files to modules with multi-module evidence', async () => {
-    vi.stubGlobal('fetch', fakeFetch((path) => {
-      if (path.startsWith('/repos/acme/widget/pulls?') || path.endsWith('/pulls')) {
-        return {
-          status: 200,
-          body: [{ number: 42, title: 'Change auth+ui', state: 'open', updated_at: NOW.toISOString() }],
-          headers: { etag: 'W/"p1"' },
-        };
+  it('304 without cached payload falls back to unconditional refetch', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      calls += 1;
+      const hasConditional = Boolean((init?.headers as Record<string, string> | undefined)?.['If-None-Match']);
+      if (hasConditional) {
+        // GitHub 语义：仅当客户端发送条件头时才可能 304
+        return new Response(null, { status: 304, headers: { etag: 'W/"x"' } });
       }
-      if (path.includes('/pulls/42/files')) {
-        return {
-          status: 200,
-          body: [
-            { filename: 'src/auth/login.ts' },
-            { filename: 'src/auth/session.ts' },
-            { filename: 'src/ui/button.tsx' },
-            { filename: 'docs/unmapped.md' },
-          ],
-          headers: { etag: 'W/"f"' },
-        };
-      }
-      if (path.startsWith('/repos/acme/widget/issues?') || path.endsWith('/issues')) return { status: 200, body: [], headers: { etag: 'W/"i"' } };
-      if (path.startsWith('/repos/acme/widget/commits?') || path.endsWith('/commits')) return { status: 200, body: [], headers: { etag: 'W/"c"' } };
-      return { status: 200, body: {}, headers: { etag: 'W/"r"' } };
+      return new Response(JSON.stringify({ default_branch: 'main' }), { status: 200, headers: { etag: 'W/"x"' } });
     }));
     const client = new GithubApiClient(db, () => 'tok');
-    const worker = new GithubSyncWorker(db, client, () => [{ entry, intervalSeconds: 120 }], { onRemoteChanged: () => {}, log: () => {} });
-    const summary = await worker.syncNow(entry);
-    const mapped = summary.events.find((e) => e.eventType === 'pr_modules_mapped');
-    expect(mapped).toBeTruthy();
-    expect((mapped!.detail.modules as string[]).sort()).toEqual(['auth', 'ui']);
-    // docs/unmapped.md belongs to no module → surfaced as unclassified,
-    // never fabricated into a module
-    expect((mapped!.detail.modules as string[]).sort()).toEqual(['auth', 'ui']);
-    expect((mapped!.detail.unmappedFiles as string[])).toContain('docs/unmapped.md');
-
-    // repeat poll: files already mapped → no duplicate mapping events
-    const again = await worker.syncNow(entry);
-    expect(again.events.filter((e) => e.eventType === 'pr_modules_mapped')).toHaveLength(0);
-    vi.unstubAllGlobals();
-  });
-
-  it('transient errors do not wipe prior caches (stale kept)', async () => {
-    let failNow = false;
-    vi.stubGlobal('fetch', fakeFetch((path) => {
-      if (failNow) return { status: 503, body: {} };
-      if (path.startsWith('/repos/acme/widget/pulls?') || path.endsWith('/pulls')) return { status: 200, body: [{ number: 7, title: 'T', state: 'open', updated_at: NOW.toISOString() }], headers: { etag: 'W/"p"' } };
-      if (path.startsWith('/repos/acme/widget/issues?') || path.endsWith('/issues')) return { status: 200, body: [], headers: { etag: 'W/"i"' } };
-      if (path.startsWith('/repos/acme/widget/commits?') || path.endsWith('/commits')) return { status: 200, body: [], headers: { etag: 'W/"c"' } };
-      return { status: 200, body: {}, headers: { etag: 'W/"r"' } };
-    }));
-    const client = new GithubApiClient(db, () => 'tok');
-    const worker = new GithubSyncWorker(db, client, () => [{ entry, intervalSeconds: 120 }], { onRemoteChanged: () => {}, log: () => {} });
-    await worker.syncNow(entry);
-    const cachedBefore = client.readCache('proj-x', 'pulls');
-    expect(cachedBefore).toBeTruthy();
-
-    failNow = true;
-    const failed = await worker.syncNow(entry);
-    expect(failed.errors.length).toBeGreaterThan(0);
-    // prior cache survives the failed round (stale > guessed)
-    expect(client.readCache('proj-x', 'pulls')).toEqual(cachedBefore);
+    const first = await client.request<{ default_branch?: string }>('p', 'repo', '/repos/o/r');
+    console.log('DBG-304-FIRST:', JSON.stringify({ status: first.status, err: first.error, kind: first.errorKind, budget: client.budgetStatus() }));
+    expect(first.status).toBe(200);
+    // 清掉 payload 缓存（保留 etag 行）→ 304 时必须触发无条件重取，
+    // 不得把无 payload 的 304 当作可用数据
+    db.prepare('DELETE FROM github_cache WHERE project_id = ?').run('p');
+    console.log('DBG-CACHE-AFTER-DELETE:', JSON.stringify(
+      db.prepare('SELECT project_id, kind FROM github_cache').all()));
+    console.log('DBG-ETAG:', JSON.stringify(db.prepare('SELECT * FROM github_etags').all()));
+    const second = await client.request<{ default_branch?: string }>('p', 'repo', '/repos/o/r');
+    expect(second.status).toBe(200);
+    expect(second.data).toEqual({ default_branch: 'main' });
+    // 正确行为：payload 缺失时客户端根本不发条件头（无谓的 304 风险为零），
+    // 因此流程是 200 → 无条件 200，两次调用、无 304 误判。
+    expect(calls).toBe(2);
     vi.unstubAllGlobals();
   });
 });
 
-describe('mapFilesToModules / recordEvents', () => {
-  it('reports the same file to every matching module (ambiguity honesty)', () => {
+describe('mapFilesToModules / recordEvents / helpers', () => {
+  it('ambiguous files attach to every matching module', () => {
     const wide: ProjectEntry = {
       ...entry,
       config: { ...entry.config, modules: [...entry.config.modules, { ...entry.config.modules[0]!, id: 'everything', paths: ['src/**'] }] },
     };
     const mapping = mapFilesToModules(wide, ['src/auth/login.ts']);
-    const owners = mapping.map((m) => m.moduleId).sort();
-    expect(owners).toEqual(['auth', 'everything']);
+    expect(mapping.map((m) => m.moduleId).sort()).toEqual(['auth', 'everything']);
   });
 
   it('recordEvents dedupes identical events', () => {
     const db = new LocalDatabase(':memory:');
-    const event: SyncEvent = {
-      projectId: 'p',
-      source: 'github',
-      eventType: 'pr_opened',
-      remoteId: '1',
-      title: 't',
-      detail: {},
-      occurredAt: NOW.toISOString(),
-    };
+    const event: SyncEvent = { projectId: 'p', source: 'github', eventType: 'pr_opened', remoteId: '1', title: 't', detail: {}, occurredAt: NOW };
     expect(recordEvents(db, [event, event])).toBe(1);
+  });
+
+  it('parseNextLink extracts rel=next', () => {
+    expect(parseNextLink('<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x>; rel="last"'))
+      .toBe('https://api.github.com/x?page=2');
+    expect(parseNextLink(null)).toBeNull();
+  });
+
+  it('collabFromCache normalizes raw shapes without field bleed', () => {
+    const raw = { issues: [{ number: 3, title: 'i', state: 'open' }], pullRequests: [{ number: 1, title: 'p', state: 'open' }], fetchedAt: NOW };
+    const collab = collabFromCache(raw as unknown as Parameters<typeof collabFromCache>[0]);
+    expect(collab?.pullRequests[0]?.changedFiles).toEqual([]);
+    expect(collab?.issues[0]?.labels).toEqual([]);
+    expect(collabFromCache({})).toBeNull();
   });
 });

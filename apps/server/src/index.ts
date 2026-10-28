@@ -182,6 +182,28 @@ export async function createServer(overrides?: {
     db,
     scheduleRebuild: (entryId: string) => scheduleRebuild(entryId),
     listEntries: () => [...liveEntries.values()],
+    syncGithubNow: async (entryId) => {
+      const entry = liveEntries.get(entryId);
+      if (!entry) return { state: 'skipped' as const, events: 0, errors: ['项目不存在'] };
+      // 连续点击合并：worker.syncNow 内部串行，重复调用排队等待上一轮完成
+      const summary = await syncWorker.syncNow(entry);
+      if (summary.changed && summary.events.length > 0) {
+        registry.markSync(entryId, null);
+        scheduleRebuild(entryId); // rebuild + WS 推送由 runRebuild 处理
+      }
+      const rateLimited = summary.errors.some((e) => e.includes('限流') || e.includes('预算'));
+      return {
+        state: rateLimited
+          ? ('rate_limited' as const)
+          : summary.errors.length > 0
+            ? ('failed' as const)
+            : summary.changed
+              ? ('completed' as const)
+              : ('completed_no_change' as const),
+        events: summary.events.length,
+        errors: summary.errors,
+      };
+    },
   });
 
   registerRoutes(app, {

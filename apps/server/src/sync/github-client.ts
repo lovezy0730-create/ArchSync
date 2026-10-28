@@ -103,7 +103,7 @@ export class GithubApiClient {
     projectId: string,
     kind: string,
     path: string,
-    options: { conditional?: boolean } = {},
+    options: { conditional?: boolean; paginate?: boolean; maxPages?: number } = {},
   ): Promise<GithubApiResult<T>> {
     this.rollBudgetWindow(Date.now());
     if (this.budget.used >= this.budget.max) {
@@ -140,17 +140,41 @@ export class GithubApiClient {
       'X-GitHub-Api-Version': '2022-11-28',
     };
     if (token) headers.Authorization = `Bearer ${token}`;
-    const cacheKey = `${projectId}:${kind}`;
-    if (options.conditional !== false) {
+
+    // Cache identity binds to the FULL canonical request (path + sorted query),
+    // so `issues?since=A` and `issues?since=B` can never share an ETag slot.
+    const [pathOnly, query = ''] = path.split('?');
+    const canonicalQuery = query.split('&').filter(Boolean).sort().join('&');
+    const cacheKey = `${projectId}:${kind}:${pathOnly}${canonicalQuery ? `?${canonicalQuery}` : ''}`;
+    // 条件请求的三重门：etag 存在 + payload 缓存存在（否则 304 会拿到空数据）。
+    // 判定必须先于 header 写入，否则 fallback 请求仍携带过期条件头。
+    let conditional = options.conditional !== false;
+    if (conditional) {
       const etag = this.etagFor(cacheKey);
-      if (etag) headers['If-None-Match'] = etag;
+      const hasPayload =
+        this.readCache<unknown>(projectId, `${kind}:${canonicalQuery}`) !== null ||
+        this.readCache<unknown>(projectId, kind) !== null;
+      conditional = etag !== null && hasPayload;
+    }
+    if (conditional) {
+      headers['If-None-Match'] = this.etagFor(cacheKey)!;
+    }
+    if (process.env.ARCHSYNC_CACHE_DEBUG) {
+      console.log('[cache-debug]', cacheKey, 'conditional=', conditional);
     }
 
     this.budget.used += 1;
     let res: Response;
     try {
-      res = await fetch(`https://api.github.com${path}`, { headers });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+      try {
+        res = await fetch(`https://api.github.com${path}`, { headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
     } catch (err) {
+      const aborted = (err as Error).name === 'AbortError';
       return {
         ok: false,
         status: 0,
@@ -159,7 +183,7 @@ export class GithubApiClient {
         remaining: null,
         resetAt: null,
         retryAfterSeconds: null,
-        error: `网络请求失败: ${(err as Error).message}`,
+        error: aborted ? '请求超时（30s）' : `网络请求失败: ${(err as Error).message}`,
         errorKind: 'network',
       };
     }
@@ -170,19 +194,23 @@ export class GithubApiClient {
     const retryAfterRaw = res.headers.get('retry-after');
     const retryAfterSeconds = retryAfterRaw === null ? null : Number(retryAfterRaw);
 
-    if (res.status === 304) {
-      // not modified: keep prior cache, refresh the recorded etag status
-      this.saveEtag(cacheKey, projectId, kind, this.etagFor(cacheKey), 'unchanged');
-      const cached = this.readCache<T>(projectId, kind);
-      return {
-        ok: true,
-        status: 304,
-        data: cached,
-        etag: res.headers.get('etag'),
-        remaining: Number.isFinite(remaining) ? remaining : null,
-        resetAt,
-        retryAfterSeconds,
-      };
+    if (res.status === 304 && conditional) {
+      // not modified: the payload cache must exist for this exact key; if it
+      // does not (partial cache), fall through to an unconditional refetch
+      const cached = this.readCache<T>(projectId, `${kind}:${canonicalQuery}`) ??
+        this.readCache<T>(projectId, kind);
+      if (cached !== null) {
+        this.saveEtag(cacheKey, projectId, kind, this.etagFor(cacheKey), 'unchanged');
+        return {
+          ok: true,
+          status: 304,
+          data: cached,
+          etag: res.headers.get('etag'),
+          remaining: Number.isFinite(remaining) ? remaining : null,
+          resetAt,
+          retryAfterSeconds,
+        };
+      }
     }
 
     if (res.status === 401) {
@@ -213,9 +241,42 @@ export class GithubApiClient {
       return fail(res, 'server', `意外状态 ${res.status}`);
     }
 
+    // Link-header pagination: follow rel="next" up to maxPages, merging arrays.
+    const firstPageData = (await res.json()) as T;
+    if (options.paginate) {
+      const maxPages = options.maxPages ?? 3;
+      const collected: unknown[] = Array.isArray(firstPageData) ? (firstPageData as unknown[]) : [];
+      let nextUrl: string | null = parseNextLink(res.headers.get('link'));
+      let pages = 1;
+      while (nextUrl && pages < maxPages) {
+        this.budget.used += 1;
+        if (this.budget.used >= this.budget.max) break;
+        const pageRes = await fetch(nextUrl.startsWith('http') ? nextUrl : `https://api.github.com${nextUrl}`, {
+          headers,
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!pageRes.ok) break;
+        const pageData = (await pageRes.json()) as unknown;
+        if (!Array.isArray(pageData)) break;
+        collected.push(...(pageData as unknown[]));
+        nextUrl = parseNextLink(pageRes.headers.get('link'));
+        pages += 1;
+      }
+      return {
+        ok: true,
+        status: 200,
+        data: collected as T,
+        etag: res.headers.get('etag'),
+        remaining: Number.isFinite(remaining) ? remaining : null,
+        resetAt,
+        retryAfterSeconds,
+      };
+    }
+
+    const data = firstPageData;
     const etag = res.headers.get('etag');
-    const data = (await res.json()) as T;
-    this.writeCache(projectId, kind, data); // 304 path reads this back
+    this.writeCache(projectId, `${kind}:${canonicalQuery}`, data); // 304 readback, query-scoped
+    this.writeCache(projectId, kind, data); // convenience: latest snapshot for the kind
     this.saveEtag(cacheKey, projectId, kind, etag, 'fresh');
     return {
       ok: true,
@@ -245,6 +306,16 @@ export class GithubApiClient {
       };
     }
   }
+}
+
+/** Extract rel="next" from a GitHub Link header. */
+export function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  for (const part of linkHeader.split(',')) {
+    const m = part.match(/<([^>]+)>;\s*rel="next"/);
+    if (m) return m[1]!;
+  }
+  return null;
 }
 
 /** Rebuild a CollabData from cached worker data (issues/pulls/commits). */

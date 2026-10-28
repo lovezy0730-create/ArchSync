@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ProjectRegistry } from './registry.js';
 import type { ProjectEntry } from './projects.js';
 import type { LocalDatabase } from './db.js';
+import { isSameOrigin } from './routes.js';
 
 const AddLocalSchema = z.object({
   path: z.string().min(1).max(1024),
@@ -18,6 +19,12 @@ export interface RegistryRouteContext {
   scheduleRebuild: (entryId: string) => string;
   listEntries: () => ProjectEntry[];
   db: LocalDatabase;
+  /** run the GitHub worker immediately for one project (手动立即同步) */
+  syncGithubNow: (entryId: string) => Promise<{
+    state: 'completed' | 'completed_no_change' | 'failed' | 'rate_limited' | 'skipped';
+    events: number;
+    errors: string[];
+  }>;
 }
 
 interface TimelineRow {
@@ -38,6 +45,14 @@ interface TimelineRow {
  * code is never touched. Path validation lives in ProjectRegistry.addLocal.
  */
 export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteContext): void {
+  // 每个写接口统一同源断言（CSRF 硬化）；避免新增接口时遗漏。
+  // code 模式下的会话要求由 index.ts 的统一 onRequest 鉴权门覆盖。
+  const requireSameOrigin: import('fastify').preHandlerHookHandler = async (request, reply) => {
+    if (!isSameOrigin(request)) {
+      return reply.code(403).send({ error: { code: 'cross_origin_blocked', message: '跨源写请求被拒绝' } });
+    }
+  };
+
   app.get('/api/v1/registry', async () => {
     return {
       projects: ctx.registry.list().map((p) => ({
@@ -48,7 +63,7 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     };
   });
 
-  app.post('/api/v1/registry/add-local', async (request, reply) => {
+  app.post('/api/v1/registry/add-local', { preHandler: requireSameOrigin }, async (request, reply) => {
     const parsed = AddLocalSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: { code: 'invalid_body', message: 'expected { path: string }' } });
@@ -71,7 +86,7 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     });
   });
 
-  app.post('/api/v1/registry/add-github-remote', async (request, reply) => {
+  app.post('/api/v1/registry/add-github-remote', { preHandler: requireSameOrigin }, async (request, reply) => {
     const parsed = AddGithubRemoteSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply
@@ -86,19 +101,41 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     return reply.code(200).send(result);
   });
 
-  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/disable', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/disable', { preHandler: requireSameOrigin }, async (request, reply) => {
     const updated = ctx.registry.setMonitoring(request.params.id, false);
     if (!updated) return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     return { ok: true, project: updated };
   });
 
-  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/enable', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/enable', { preHandler: requireSameOrigin }, async (request, reply) => {
     const updated = ctx.registry.setMonitoring(request.params.id, true);
     if (!updated) return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     return { ok: true, project: updated };
   });
 
-  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/resync', async (request, reply) => {
+  // 手动「立即同步」：真正触发 GitHub worker（条件请求 + 时间线事件 + 快照重建），
+  // 与 resync（本地重扫）语义分开。等待完成并返回任务状态，限流时如实报告。
+  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/sync-github', { preHandler: requireSameOrigin }, async (request, reply) => {
+    const registered = ctx.registry.get(request.params.id);
+    const entry = ctx.registry.configFor(request.params.id);
+    if (!registered || !entry) {
+      return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
+    }
+    if (!registered.monitoringEnabled) {
+      return reply.code(409).send({ error: { code: 'monitoring_disabled', message: '该项目已暂停监控' } });
+    }
+    const result = await ctx.syncGithubNow(request.params.id);
+    ctx.registry.markSync(request.params.id, result.state === 'failed' ? result.errors.join('; ') : null);
+    return {
+      ok: result.state !== 'failed' && result.state !== 'rate_limited',
+      state: result.state,
+      events: result.events,
+      errors: result.errors,
+      syncedAt: new Date().toISOString(),
+    };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/resync', { preHandler: requireSameOrigin }, async (request, reply) => {
     const registered = ctx.registry.get(request.params.id);
     const entry = ctx.registry.configFor(request.params.id);
     if (!registered || !entry) {
@@ -134,7 +171,7 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     },
   );
 
-  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/remove', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/registry/:id/remove', { preHandler: requireSameOrigin }, async (request, reply) => {
     const removed = ctx.registry.remove(request.params.id);
     if (!removed) return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     return {
