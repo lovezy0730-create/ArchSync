@@ -238,7 +238,6 @@ export class ProjectRegistry {
     const id = `remote-${owner}-${repo}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (this.get(id)) return { ok: false, error: `仓库已注册: ${owner}/${repo}` };
     // 元数据探测：404 = 不存在或私有不可达
-    let probeOk = true;
     try {
       const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry' },
