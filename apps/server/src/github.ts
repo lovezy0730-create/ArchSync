@@ -28,7 +28,7 @@ export async function loadCollab(
     // 统一数据源：读取 SyncWorker 维护的规范化模型（pulls-state/issues-state），
     // 与时间线、模块映射使用同一份事实；旧键 pulls/issues-previous 已废弃
     const cachedIssues = cacheReader.readCache<CollabData['issues']>(entry.id, 'issues-state');
-    const cachedPulls = cacheReader.readCache<Array<Record<string, unknown>>>(entry.id, 'pulls-state');
+    const cachedPulls = cacheReader.readCache<CollabData['pullRequests']>(entry.id, 'pulls-state');
     if (Array.isArray(cachedPulls) && cachedPulls.length > 0) {
       const fromWorker = collabFromCache({
         pullRequests: cachedPulls,

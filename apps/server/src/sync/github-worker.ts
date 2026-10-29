@@ -41,7 +41,7 @@ export function classifyPull(pr: PullSummary): NormalizedPull {
     number: pr.number,
     title: pr.title,
     phase,
-    state: pr.state,
+    state: pr.state as 'open' | 'closed',
     headSha: pr.head?.sha ?? '',
     headRef: pr.head?.ref ?? '',
     author: pr.user?.login ?? 'unknown',
@@ -348,10 +348,10 @@ export class GithubSyncWorker {
       `${base}/pulls?state=all&sort=updated&direction=desc&per_page=30`,
     );
     if (pulls.ok && Array.isArray(pulls.data)) {
-      const lastKnown = this.client.readCache<Record<string, LastPullState>>(projectId, 'pulls-state') ?? {};
+      const lastKnown = this.client.readCache<Record<string, NormalizedPull>>(projectId, 'pulls-state') ?? {};
       const hadBaseline = this.client.readCache<boolean>(projectId, 'pulls-seeded') === true;
       // 增量合并而非覆盖：本轮未返回的 PR 保留其上次可信状态（P0 2.2）
-      const mergedState: Record<string, LastPullState> = { ...lastKnown };
+      const mergedState: Record<string, NormalizedPull> = { ...lastKnown };
       for (const pr of pulls.data.slice(0, 30)) {
         const before = lastKnown[String(pr.number)];
         const nowState = classifyPull(pr);
