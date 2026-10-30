@@ -47,15 +47,34 @@ it("real source → AST → SQLite → restart, edits, stale recovery, move and 
         join(root, `src/plain.${ext}`),
         `exports.fn = function named() { return 1; };`,
       );
+    mkdirSync(join(root, "packages/tool/src"), { recursive: true });
+    writeFileSync(
+      join(root, "packages/tool/package.json"),
+      JSON.stringify({ name: "@fixture/tool" }),
+    );
+    writeFileSync(
+      join(root, "packages/tool/src/index.ts"),
+      "export function work(){return 55;}",
+    );
+    writeFileSync(
+      join(root, "src/work.ts"),
+      "import {work} from '@fixture/tool'; export function invoke(){return work();} export const bad:number='type error is not a syntax error'; export {f} from './a';",
+    );
     let index = new CodeIndex(db);
     const r = scanAstIndex(root, "p", index);
-    expect(r.files).toBe(8);
+    expect(r.files).toBe(10);
     for (const ext of ["js", "jsx", "mjs", "cjs"])
       expect(
         index
           .get("p", `src/plain.${ext}`)!
           .symbols.some((s) => s.kind === "function" && s.name === "named"),
       ).toBe(true);
+    expect(index.get("p", "src/work.ts")?.status).toBe("fresh");
+    expect(
+      index
+        .get("p", "src/work.ts")!
+        .relations.some((r) => r.kind === "calls" && r.strength === "resolved"),
+    ).toBe(true);
     const cls = index
       .get("p", "src/model.ts")!
       .symbols.find((s) => s.kind === "class")!;

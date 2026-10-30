@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  server: {hmr: {port: 0}},
   test: {
     environment: 'node',
     // node:sqlite is an experimental built-in not in vite's core module list;
