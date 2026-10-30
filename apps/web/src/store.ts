@@ -74,7 +74,13 @@ interface AppState {
   setRegistryList: (list: unknown[]) => void;
   registryList: unknown[];
   registryAddLocal: (path: string) => Promise<{ ok: boolean; project?: { id: string } }>;
-  registryAnalyzeGithub: (owner: string, repo: string) => Promise<{ ok: boolean; facts?: Record<string, unknown> }>;
+  registrySyncGithub: (id:string) => Promise<{ok:boolean;errors:string[]}>;
+  registrySetMonitoring: (id:string,enabled:boolean) => Promise<{ok:boolean}>;
+  registryRemove: (id:string) => Promise<{ok:boolean}>;
+  registryInitPreview: (path:string) => Promise<{yaml:string}>;
+  registryInitApply: (path:string,yaml:string) => Promise<{ok:boolean;project?:{id:string}}>;
+  registryClone: (owner:string,repo:string,parent:string) => Promise<{path:string}>;
+  registryAnalyzeGithub: (owner: string, repo: string) => Promise<{ ok: boolean; project?: {id:string}; facts?: Record<string, unknown> }>;
   loadTimeline: (projectId: string, limit?: number) => Promise<{ events: unknown[] }>;
   setIdentity: (identity: Identity) => void;
   switchProject: (projectId: string) => Promise<void>;
@@ -272,6 +278,12 @@ export const useStore = create<AppState>((set, get) => ({
     const result = await provider.registry?.list();
     if (result) set({ registryList: result.projects });
   },
+  registrySyncGithub: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.syncGithub(id);},
+  registrySetMonitoring: async (id,enabled) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.setMonitoring(id,enabled);},
+  registryRemove: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.remove(id);},
+  registryInitPreview: async (path) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.initPreview(path); },
+  registryInitApply: async (path,yaml) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.initApply(path,yaml); },
+  registryClone: async (owner,repo,parent) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.clone(owner,repo,parent); },
   registryAddLocal: async (path) => {
     if (!provider.registry) throw new Error('静态模式下项目管理不可用');
     return provider.registry.addLocal(path);

@@ -43,7 +43,11 @@ export interface AuthProbe {
 export interface RegistrySurface {
   list(): Promise<{ projects: unknown[]; totalMonitored: number }>;
   addLocal(path: string): Promise<{ ok: boolean; project?: { id: string } }>;
-  analyzeGithub(owner: string, repo: string): Promise<{ ok: boolean; facts?: Record<string, unknown> }>;
+  initPreview(path:string): Promise<{yaml:string}>;
+  initApply(path:string,yaml:string): Promise<{ok:boolean;project?:{id:string}}>;
+  clone(owner:string,repo:string,parent:string): Promise<{path:string}>;
+  syncGithub(id:string): Promise<{ok:boolean;state:string;events:number;errors:string[]}>;
+  analyzeGithub(owner: string, repo: string): Promise<{ ok: boolean; project?: {id:string}; facts?: Record<string, unknown> }>;
   remove(id: string): Promise<{ ok: boolean; note: string }>;
   setMonitoring(id: string, enabled: boolean): Promise<{ ok: boolean }>;
   resync(id: string): Promise<{ jobId: string }>;

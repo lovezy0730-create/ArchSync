@@ -77,6 +77,11 @@ export class LocalDatabase {
         ON sync_events(project_id, occurred_at DESC);
     `);
     this.recordMigration(1);
+    const columns = this.db.prepare('PRAGMA table_info(registry_projects)').all() as {name:string}[];
+    if (!columns.some(c => c.name === 'kind')) {
+      this.db.exec("ALTER TABLE registry_projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'local' CHECK(kind IN ('local','remote-only')); UPDATE registry_projects SET kind = 'remote-only' WHERE local_path LIKE 'remote:%';");
+    }
+    this.recordMigration(2);
   }
 
   private recordMigration(version: number): void {

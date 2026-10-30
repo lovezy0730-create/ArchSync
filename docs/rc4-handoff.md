@@ -28,3 +28,13 @@
 - Worker PR/Issue 全分页对账，去除 slice 截断；Issue 首轮基线；同一数据库 Record 经 projectWorkerState 单一投影（PR assignees、HEAD 对应 files/checks，raw Issue 字段）进入 Snapshot；无缓存不伪造 live。
 - 新增 7 项分页/安全回归与 1 项真实 SQLite 关闭重开至 Snapshot 的集成回归（GitHub 为显式 fixture），曾失败后通过。定向 23 项通过；lint/typecheck/build 通过。全 test 的 137 assertions 通过但 server afterAll EBUSY；正在补齐关闭等待及 Windows 删除重试，需重跑。
 - 仍待完整 raw schema/多页 Checks、端到端 REST/UI 证据及线上验收；不可宣称 B/C 所有验收完成。
+
+## 接入与恢复阶段
+
+提交：590e250（B/C）、6049368（shutdown）。Windows EBUSY 修复后全量 138 项通过；补充初始化回归后 139 项通过（server 69，web 12，graph 23，scanner 15，config 17，contracts 3）。lint（既有 1 warning）、typecheck、build 通过。
+
+- SQLite v2 增 kind 并迁移已有 remote: 条目；remote-only 恢复使用内存元数据，不扫描虚拟路径；REST 注册→重启→同步回归通过。
+- 现有 Dialog 接入预览/编辑/校验/确认保存，已有配置保护；GitHub 真正持久化注册；克隆公开库入口（需系统 Git）。原生选择器为受限 preload IPC，只接受当前主窗口主 frame 同源请求。
+- 首页显示同步状态，提供远端刷新、暂停恢复、移除；暂停过滤本地 watcher。没有完整私有库凭据管理。
+- build:pages / verify:pages / verify:workflow 已通过；Pages 匿名读取本项目实际 PR（只读，无测试写入）。随后 UI 仍有改动，最终需再跑一次。
+- Windows 打包两次失败于 GitHub Electron ZIP 下载连接超时；新增 Playwright 实际 EXE 接入/重启/生命周期 E2E，尚未运行成功，不能宣称成品通过。CI 将运行该门禁，已移除旧固定4310/全系统同名进程强杀做法。

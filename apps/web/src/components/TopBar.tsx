@@ -36,6 +36,12 @@ export function TopBar() {
   const loadRegistry = useStore((s) => s.loadRegistry);
   const registryList = useStore((s) => s.registryList);
   const booted = useStore((s) => s.booted);
+  const syncGithub = useStore(s => s.registrySyncGithub);
+  const setMonitoring = useStore(s => s.registrySetMonitoring);
+  const remove = useStore(s => s.registryRemove);
+  const [remoteBusy,setRemoteBusy] = useState(false);
+  const [remoteError,setRemoteError] = useState<string|null>(null);
+  const registered = (registryList as RegistryProjectInfo[]).find(p => p.id === projectId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -96,7 +102,7 @@ export function TopBar() {
         {mode === 'server' && (
           <button
             className="import-btn add-project-btn"
-            title="添加项目（本地 Git 仓库或 GitHub 只读分析）"
+            title="添加项目（本地或 GitHub 仓库）"
             onClick={() => setAddOpen(true)}
           >
             ＋
@@ -113,6 +119,13 @@ export function TopBar() {
         )}
       </div>
 
+      {mode === 'server' && registered && <div className="registry-status">
+        <span title={registered.lastError ?? ''}>{registered.monitoringEnabled ? '监控中' : '已暂停'} · {registered.kind === 'remote-only' ? '远端只读，无本地扫描' : '本地仓库'} · 上次同步 {registered.lastSyncAt ? timeAgo(registered.lastSyncAt) : '尚未同步'}</span>
+        <button disabled={remoteBusy || !registered.monitoringEnabled} onClick={() => {setRemoteBusy(true);setRemoteError(null);void syncGithub(registered.id).then(async r => {if(!r.ok) setRemoteError(r.errors.join('；'));await loadRegistry();}).catch(e => setRemoteError(e.message)).finally(() => setRemoteBusy(false));}}>刷新 GitHub</button>
+        <button disabled={remoteBusy} onClick={() => {void setMonitoring(registered.id,!registered.monitoringEnabled).then(() => loadRegistry()).catch(e => setRemoteError(e.message));}}>{registered.monitoringEnabled ? '暂停' : '恢复'}</button>
+        <button disabled={remoteBusy} onClick={() => {if(window.confirm('从 ArchSync 移除此项目？源代码会保留。')) void remove(registered.id).then(async () => {await loadRegistry();window.location.reload();}).catch(e => setRemoteError(e.message));}}>移除</button>
+        {(remoteError || registered.lastError) && <span role="alert">{remoteError ?? registered.lastError} · 请检查网络后刷新</span>}
+      </div>}
       {snapshot?.githubDemo && <span className="badge badge-demo" title="该项目的 Issue/PR/成员数据来自演示数据 fixture">DEMO 数据</span>}
       <span className={`badge badge-gh badge-${snapshot?.githubSource ?? 'unavailable'}`} title={snapshot?.githubDemo ? '协作数据为演示 fixture' : 'GitHub 协作数据来源'}>
         ● {gh.label}

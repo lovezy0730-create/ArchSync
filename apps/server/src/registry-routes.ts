@@ -60,6 +60,19 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     }
   };
 
+  app.post('/api/v1/registry/init-preview', {preHandler:requireSameOrigin}, async (request,reply) => {
+    const body = AddLocalSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({error:{message:'路径无效'}});
+    try { return await ctx.registry.initPreview(body.data.path); }
+    catch (err) { return reply.code(400).send({error:{message:(err as Error).message}}); }
+  });
+  app.post('/api/v1/registry/clone', {preHandler:requireSameOrigin}, async (request,reply) => {
+    const body = AddGithubRemoteSchema.extend({parent:z.string().min(1).max(1024)}).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({error:{message:'克隆参数无效'}});
+    try { return await ctx.registry.clonePublic(body.data.owner,body.data.repo,body.data.parent); }
+    catch { return reply.code(400).send({error:{message:'克隆失败：检查网络、Git 安装和目录权限后重试'}}); }
+  });
+
   app.get('/api/v1/registry', async () => {
     return {
       projects: ctx.registry.list().map((p) => ({
@@ -100,12 +113,12 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
         .code(400)
         .send({ error: { code: 'invalid_body', message: 'expected { owner, repo }' } });
     }
-    const result = await ctx.registry.addGithubRemote(parsed.data.owner, parsed.data.repo);
+    const result = await ctx.registry.addRemoteOnly(parsed.data.owner, parsed.data.repo);
     if (!result.ok) {
       return reply.code(400).send({ error: { code: 'add_failed', message: result.error ?? '失败' } });
     }
-    // read-only analysis only; cloning lands as a follow-up local add
-    return reply.code(200).send(result);
+    if (result.project) { ctx.scheduleRebuild(result.project.id); void ctx.syncGithubNow(result.project.id); }
+    return reply.code(201).send(result);
   });
 
   app.post<{ Params: { id: string } }>('/api/v1/registry/:id/disable', { preHandler: requireSameOrigin }, async (request, reply) => {
@@ -165,6 +178,7 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
     if (!registered || !entry) {
       return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     }
+    if (registered.kind === 'remote-only') return reply.code(409).send({error:{code:'remote_only',message:'远端项目请刷新 GitHub，无本地文件扫描'}});
     const reloaded = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
     if ('error' in reloaded) {
       return reply.code(409).send({ error: { code: 'reload_failed', message: reloaded.error } });

@@ -37,7 +37,7 @@ export async function rebuildSnapshot(
   });
 
   try {
-    const scan = await scanProject(entry.config, entry.rootDir);
+    const scan = entry.rootDir ? await scanProject(entry.config, entry.rootDir) : {ok:false,baselineSha:null,branch:null,baselineFiles:[],workspaceFiles:[],overlay:[],modules:[],errors:['远端只读项目：无本地文件扫描，架构未知'],scannedAt:new Date().toISOString(),importAnalysisRan:false,observedDependencies:[]};
     const collab = await loadCollab(entry, githubToken, cacheReader);
     const state = store.project(entry.id);
     const candidate = buildSnapshot({

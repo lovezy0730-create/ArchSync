@@ -74,7 +74,7 @@ export class WorkspaceWatcher {
   }
 
   start(): void {
-    const roots = [...new Set(this.entries.map((e) => e.rootDir))];
+    const roots = [...new Set(this.entries.filter(e => e.rootDir).map((e) => e.rootDir))];
     // Windows fs.watch (ReadDirectoryChangesW) can silently drop events when
     // multiple nested watch roots overlap (workspace root + registered
     // sub-repos). Polling is the reliable default there; other platforms keep

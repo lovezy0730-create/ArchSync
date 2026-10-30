@@ -3,6 +3,7 @@ export interface RegistryProjectInfo {
   id: string;
   name: string;
   localPath: string;
+  kind?: 'local' | 'remote-only';
   owner: string | null;
   repo: string | null;
   defaultBranch: string | null;

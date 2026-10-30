@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, lstatSync } from 'node:fs';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { ProjectConfigFile } from '@archsync/contracts';
 import { parseProjectConfig } from '@archsync/config';
@@ -14,6 +14,7 @@ export interface RegistryProject {
   id: string;
   name: string;
   localPath: string;
+  kind: 'local' | 'remote-only';
   owner: string | null;
   repo: string | null;
   defaultBranch: string | null;
@@ -148,6 +149,7 @@ export class ProjectRegistry {
       return { ok: false, error: `该路径已注册: ${absPath}` };
     }
 
+    if (existsSync(join(absPath,'.archsync')) && lstatSync(join(absPath,'.archsync')).isSymbolicLink()) return {ok:false,error:'.archsync 不能是符号链接'};
     const configPath = join(absPath, '.archsync', 'project.yaml');
     let configText: string;
     if (existsSync(configPath)) {
@@ -169,6 +171,8 @@ export class ProjectRegistry {
     const entry = loadProjectEntry(join(absPath, '.archsync', 'project.yaml'));
     if ('error' in entry) return { ok: false, error: entry.error };
 
+    const existing = this.get(entry.id);
+    if (existing && (existing.kind === 'remote-only' || existsSync(join(existing.localPath,'.git')))) return {ok:false,error:'项目 ID 已被另一仓库使用，请修改候选架构中的 project.id'};
     const ownerRepo = parseOwnerRepo(facts.remoteOriginUrl);
     const now = new Date().toISOString();
     this.db
@@ -177,7 +181,8 @@ export class ProjectRegistry {
          (id, name, local_path, owner, repo, default_branch, monitoring_enabled,
           sync_interval_seconds, last_scan_at, last_sync_at, last_error, snapshot_version,
           created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, 120, NULL, NULL, NULL, 0, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 1, 120, NULL, NULL, NULL, 0, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET local_path=excluded.local_path, name=excluded.name, owner=excluded.owner, repo=excluded.repo, default_branch=excluded.default_branch, updated_at=excluded.updated_at`,
       )
       .run(
         entry.id,
@@ -204,7 +209,8 @@ export class ProjectRegistry {
         for (const name of readdirSafe(dir)) {
           if (['node_modules', '.git', 'dist', 'build', '.local', 'coverage'].includes(name)) continue;
           const full = join(dir, name);
-          const st = statSync(full);
+          const st = lstatSync(full);
+          if (st.isSymbolicLink()) continue;
           if (st.isDirectory()) walk(full, depth + 1);
           else if (/\.(ts|tsx|js|jsx|py|go|rs|java)$/.test(name)) {
             const rel = full.slice(rootDir.length + 1).replace(/\\/g, '/');
@@ -246,6 +252,8 @@ export class ProjectRegistry {
         return { ok: false, error: `${owner}/${repo} 不存在或为私有（远端只读模式仅支持公开仓库）` };
       }
       if (!res.ok) return { ok: false, error: `GitHub 查询失败: HTTP ${res.status}` };
+      const metadata = await res.json() as {default_branch?:string};
+      defaultBranch = metadata.default_branch ?? defaultBranch;
     } catch (err) {
       return { ok: false, error: `GitHub 网络请求失败: ${(err as Error).message}` };
     }
@@ -261,25 +269,8 @@ export class ProjectRegistry {
       )
       .run(id, `${owner}/${repo}`, sentinelPath, owner, repo, defaultBranch, now, now);
     // 远端项目无本地文件树：entry.rootDir 置空，扫描诚实输出 unknown
-    this.liveEntries.set(id, {
-      id,
-      name: `${owner}/${repo}`,
-      rootDir: '',
-      configText: '',
-      configBlobSha: '',
-      config: {
-        schemaVersion: 1,
-        project: { id, name: `${owner}/${repo}`, github: { owner, repo, defaultBranch }, root: '.' },
-        layers: [{ id: 'remote', label: '远端', order: 1 }],
-        modules: [],
-      },
-      configWarnings: [],
-      views: [],
-      defaultViewId: '',
-      viewDiagnostics: [],
-      demoCollabPath: null,
-      demoCollabFetchedAt: null,
-    });
+    this.db.prepare("UPDATE registry_projects SET kind = 'remote-only' WHERE id = ?").run(id);
+    this.liveEntries.set(id, remoteEntry(this.get(id)!));
     this.onRegistryChanged('added');
     return { ok: true, project: this.get(id)! };
   }
@@ -288,12 +279,33 @@ export class ProjectRegistry {
    * 一键接入闭环：用户确认架构建议后写入 .archsync/project.yaml 并注册。
    * 不覆盖已有有效配置；YAML 先经过严格校验，写入失败不产生半成品注册。
    */
+  async initPreview(rawPath: string): Promise<{yaml:string}> {
+    const inspected = await inspectGitRepo(rawPath);
+    if (!inspected.ok) throw new Error(inspected.error);
+    if (existsSync(join(inspected.absPath,'.archsync','project.yaml'))) throw new Error('已有配置，请直接添加');
+    const { suggestModules, renderProjectYaml } = await import('./init/init-wizard.js');
+    const paths = (await git(inspected.absPath,['ls-files','-z'])).split('\0').filter(Boolean);
+    const suggestion = suggestModules(paths.map(path => ({path,content:''})));
+    if (!suggestion.modules.length) suggestion.modules = [{id:'source',dir:'src',fileCount:0,sampleFiles:[],confidence:'low',reasons:['自动建议：请确认源码目录'],layer:'core',observedDeps:[]}];
+    const remote = parseOwnerRepo(inspected.facts.remoteOriginUrl);
+    const name = basename(inspected.absPath).replace(/[^a-zA-Z0-9-]/g,'-') || 'project';
+    return {yaml:renderProjectYaml(remote?.owner ?? 'local',remote?.repo ?? name,suggestion)};
+  }
+
+  async clonePublic(owner: string, repo: string, parent: string): Promise<{path:string}> {
+    const { realpath, mkdtemp } = await import('node:fs/promises');
+    const destination = await mkdtemp(join(await realpath(parent), 'archsync-'));
+    await execFileAsync('git', ['-c','core.hooksPath=','clone','--',`https://github.com/${owner}/${repo}.git`,destination], {timeout:120_000,windowsHide:true,env:{...process.env,GIT_TERMINAL_PROMPT:'0'}});
+    return {path:destination};
+  }
+
   async initApply(rawPath: string, yamlText: string): Promise<AddLocalResult> {
     const inspected = await inspectGitRepo(rawPath);
     if (!inspected.ok) return { ok: false, error: inspected.error };
     const { absPath } = inspected;
     if (this.findByPath(absPath)) return { ok: false, error: `该路径已注册: ${absPath}` };
 
+    if (existsSync(join(absPath,'.archsync')) && lstatSync(join(absPath,'.archsync')).isSymbolicLink()) return {ok:false,error:'.archsync 不能是符号链接'};
     const configPath = join(absPath, '.archsync', 'project.yaml');
     if (existsSync(configPath)) {
       return { ok: false, error: `${absPath} 已存在 .archsync/project.yaml，为避免覆盖请使用「添加已有配置」` };
@@ -305,7 +317,7 @@ export class ProjectRegistry {
     }
     const { mkdir } = await import('node:fs/promises');
     await mkdir(join(absPath, '.archsync'), { recursive: true });
-    await import('node:fs/promises').then((m) => m.writeFile(configPath, yamlText, 'utf8'));
+    await import('node:fs/promises').then((m) => m.writeFile(configPath, yamlText, {encoding:'utf8',flag:'wx'}));
     return this.addLocal(absPath);
   }
 
@@ -396,6 +408,9 @@ export class ProjectRegistry {
   reloadProjectEntry(id: string): ProjectEntry | null {
     const registered = this.get(id);
     if (!registered) return null;
+    if (registered.kind === 'remote-only') {
+      const entry = remoteEntry(registered); this.liveEntries.set(id, entry); return entry;
+    }
     const entry = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
     if ('error' in entry) return null;
     this.liveEntries.set(id, entry);
@@ -447,6 +462,7 @@ function rowToProject(row: Record<string, unknown>): RegistryProject {
     id: String(row.id),
     name: String(row.name),
     localPath: String(row.local_path),
+    kind: row.kind === 'remote-only' ? 'remote-only' : 'local',
     owner: row.owner === null ? null : String(row.owner),
     repo: row.repo === null ? null : String(row.repo),
     defaultBranch: row.default_branch === null ? null : String(row.default_branch),
@@ -467,4 +483,29 @@ function readdirSafe(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+export function remoteEntry(p: RegistryProject): ProjectEntry {
+  const { id, owner, repo } = p;
+  const defaultBranch = p.defaultBranch ?? 'main';
+  return {
+      id,
+      name: `${owner}/${repo}`,
+      rootDir: '',
+      configText: '',
+      configBlobSha: '',
+      config: {
+        schemaVersion: 1,
+        project: { id, name: `${owner}/${repo}`, github: { owner:owner ?? '', repo:repo ?? '', defaultBranch }, root: '.' },
+        layers: [{ id: 'remote', label: '远端', order: 1 }],
+        modules: [],
+      },
+      configWarnings: [],
+      views: [],
+      defaultViewId: '',
+      viewDiagnostics: [],
+      demoCollabPath: null,
+      demoCollabFetchedAt: null,
+  };
+
 }

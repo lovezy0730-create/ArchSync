@@ -163,3 +163,15 @@ describe('ProjectRegistry: multi-repo across different parent directories', () =
     expect(result.ok).toBe(false);
   });
 });
+
+
+describe('RC4 local onboarding', () => {
+  it('previews, validates and applies configuration without overwriting it', async () => {
+    const draft = await registry.initPreview(repoC);
+    expect(draft.yaml).toContain('schemaVersion: 1');
+    expect((await registry.initApply(repoC,'invalid: [')).ok).toBe(false);
+    const applied = await registry.initApply(repoC,draft.yaml);
+    expect(applied.ok).toBe(true);
+    expect((await registry.initApply(repoC,draft.yaml.replace('source','changed'))).ok).toBe(false);
+  });
+});

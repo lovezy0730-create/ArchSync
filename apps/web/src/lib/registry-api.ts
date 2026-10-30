@@ -3,6 +3,7 @@ export interface RegistryProjectInfo {
   id: string;
   name: string;
   localPath: string;
+  kind: 'local' | 'remote-only';
   owner: string | null;
   repo: string | null;
   defaultBranch: string | null;
@@ -50,6 +51,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const registryApi = {
+  initPreview: (path:string) => req<{yaml:string}>('/api/v1/registry/init-preview',{method:'POST',body:JSON.stringify({path})}),
+  clone: (owner:string,repo:string,parent:string) => req<{path:string}>('/api/v1/registry/clone',{method:'POST',body:JSON.stringify({owner,repo,parent})}),
   list: () => req<{ projects: RegistryProjectInfo[]; totalMonitored: number }>('/api/v1/registry'),
   addLocal: (path: string) =>
     req<{ ok: boolean; project: RegistryProjectInfo }>('/api/v1/registry/add-local', {
@@ -67,7 +70,7 @@ export const registryApi = {
       { method: 'POST' },
     ),
   analyzeGithub: (owner: string, repo: string) =>
-    req<{ ok: boolean; remoteOnly?: boolean; facts?: Record<string, unknown> }>(
+    req<{ ok: boolean; project?: {id:string}; facts?: Record<string, unknown> }>(
       '/api/v1/registry/add-github-remote',
       { method: 'POST', body: JSON.stringify({ owner, repo }) },
     ),
