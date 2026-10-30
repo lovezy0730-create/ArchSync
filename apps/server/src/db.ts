@@ -82,6 +82,11 @@ export class LocalDatabase {
       this.db.exec("ALTER TABLE registry_projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'local' CHECK(kind IN ('local','remote-only')); UPDATE registry_projects SET kind = 'remote-only' WHERE local_path LIKE 'remote:%';");
     }
     this.recordMigration(2);
+    this.db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS code_index_files(project_id TEXT NOT NULL,file_path TEXT NOT NULL,payload_json TEXT NOT NULL,last_success_json TEXT,PRIMARY KEY(project_id,file_path));
+      CREATE TABLE IF NOT EXISTS code_index_history(project_id TEXT NOT NULL,file_path TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,file_path,revision));
+    `);
+    try {this.recordMigration(3);this.db.exec('COMMIT');} catch(error){this.db.exec('ROLLBACK');throw error;}
   }
 
   private recordMigration(version: number): void {
