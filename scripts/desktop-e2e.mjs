@@ -42,6 +42,7 @@ try {
   await access(join(repo,'.archsync','project.yaml'));
   await page.waitForFunction(async () => {const r=await (await fetch('/api/v1/registry')).json();return r.projects.some(p=>p.name==='local/unfamiliar'&&p.snapshotVersion>0);});
   await access(join(data,'data','registry.sqlite'));
+  await page.locator('.react-flow__node[data-id="source"]').waitFor({timeout:30000});
   await page.screenshot({path:resolve('docs/screenshots/rc4-packaged-local.png')});
   const oldPid=agentPid; await stop();
   page = await launch(); assert.notEqual(agentPid,oldPid);
@@ -54,11 +55,19 @@ try {
   await page.getByRole('button',{name:'添加',exact:true}).click();
   await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
   await page.waitForFunction(async () => {const r=await (await fetch('/api/v1/registry')).json();return r.projects.some(p=>p.id==='archsync'&&p.snapshotVersion>0);});
-  console.log('PASS: self repository existing config through packaged UI');
+  await page.waitForFunction(async () => {const s=await (await fetch('/api/v1/projects/archsync/snapshot')).json();return s.modules.some(m=>m.id==='workbench-ui'&&m.matchedWorkspacePaths.length>0);},{timeout:30000});
+  await page.locator('.react-flow__node[data-id="workbench-ui"]').filter({hasText:/[1-9][0-9]* 文件/}).waitFor({timeout:30000});
+  await page.screenshot({path:resolve('docs/screenshots/rc4-packaged-self.png')});
+  console.log('PASS: self repository existing config and rendered architecture through packaged UI');
   await page.locator('.add-project-btn').click();
   await page.getByRole('button',{name:'GitHub 仓库',exact:true}).click();
   await page.getByPlaceholder('https://github.com/owner/repo 或 owner/repo').fill('https://github.com/lovezy0730-create/ArchSync');
   await page.getByRole('button',{name:'添加远端监控'}).click();
+  if(!process.env.CI) {
+    const outcome=await Promise.race([page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'}).then(()=>true),page.locator('.add-project-card .conflict-note').waitFor().then(()=>false)]);
+    if(!outcome) {console.log('LIVE REMOTE NOT VERIFIED: '+await page.locator('.add-project-card .conflict-note').innerText());await page.getByRole('button',{name:'关闭',exact:true}).click();await stop();console.log('PASS: normal application quit cleans up its own agent');process.exitCode=0;}
+  }
+  if(app) {
   await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
   const remote = await page.evaluate(async () => {
     const result = await fetch('/api/v1/registry/remote-lovezy0730-create-archsync/sync-github',{method:'POST'});
@@ -66,9 +75,15 @@ try {
   });
   if (!remote.ok && remote.state === 'rate_limited' && !process.env.CI) console.log('LIVE REMOTE NOT VERIFIED: anonymous rate limit reported correctly');
   else assert.equal(remote.ok,true,JSON.stringify(remote));
+  if(remote.ok) {
+    await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
+    await page.locator('a[href$="/pull/11"]').waitFor({timeout:30000});
+    console.log('PASS: Worker SQLite projection → REST → React PR #11 evidence');
+  }
   if(remote.ok) console.log('PASS: public GitHub read-only registration and actual API sync (no remote writes)');
   await stop();
   console.log('PASS: normal application quit cleans up its own agent');
+  }
 } finally {
   if(app) await app.close();
   await rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});

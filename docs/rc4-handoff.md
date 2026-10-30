@@ -46,3 +46,12 @@
 本机 Electron 官方 Releases API 下载绕过 github.com 直连超时，ZIP 官方 SHA256 b87b2d6167845ece1d373eb37f5ce49868a07ec90203de44b6bd415d6c673c6d 校验通过。目录打包版实际跑过 UI 初始化/扫描/重启恢复/ArchSync 自举；公开远端同步由于匿名限流失败，已如实区分，不作为通过。新 CI 远端只读测试使用 Actions 只读 token（不写远端）。
 
 补充：101 PR files、101 Check Runs 对象分页、35 PR/Issue 状态、重启去重等回归；Checks 缺项保持 unknown；PR SHA/文件是否已知加入契约；缓存/ETag 成功写入事务。定向 26 项通过；全量 142 项通过、lint/typecheck/build 通过。最终 Pages/Windows 新版还需追踪。
+
+## 产品闭环最后检查
+
+补充项目切换竞态失败回归→修复，WS重连主动读最新快照；本地HEAD与远端HEAD独立显示。全量现为143项（server72/web13/graph23/scanner15/config17/contracts3）。
+8ea0213 的 Windows run https://github.com/lovezy0730-create/ArchSync/actions/runs/40988547083 成功，真实公开仓库只读同步 PASS。后续新增当前GitHub状态API与动态面板PR/Issue/负责人/CI展示及REST一致性断言，需最终CI覆盖。
+本机实际目录EXE经节点渲染等待验证陌生仓库与自举、退出通过；本机匿名远端HTTP403，不计成功。截图rc4-packaged-local.png/self.png只代表本机该轮代码的图形验证，最终CI截图在artifact中。
+
+回滚：按本轮提交逆序用git revert创建回退PR；不降级/删除SQLite，v2迁移仅添加kind列。历史敏感数据不因回滚清理提交而重新跟踪。
+人工与产品限制见rc4-user-trial.md，不宣称正式发布就绪。

@@ -10,7 +10,7 @@
  *
  * Security: contextIsolation on, nodeIntegration off, no remote content.
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, utilityProcess } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, shell, utilityProcess } = require('electron');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -138,7 +138,10 @@ function createWindow() {
       sandbox: true,
     },
   });
-  mainWindow.webContents.setWindowOpenHandler(() => ({action:'deny'}));
+  mainWindow.webContents.setWindowOpenHandler(({url}) => {
+    try {const target=new URL(url);if(target.origin==='https://github.com'&&!target.username&&!target.password) void shell.openExternal(target.href);} catch {}
+    return {action:'deny'};
+  });
   mainWindow.webContents.on('will-navigate',(event,url) => {if (new URL(url).origin !== `http://127.0.0.1:${agentPort}`) event.preventDefault();});
   mainWindow.loadURL(`http://127.0.0.1:${agentPort}/`);
   mainWindow.on('close', (event) => {
