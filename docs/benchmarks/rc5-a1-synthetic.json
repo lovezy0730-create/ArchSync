@@ -1,0 +1,276 @@
+{
+  "reportVersion": 1,
+  "scope": "synthetic index transactions; NOT AST scanning or UI performance",
+  "dataset": {
+    "version": "synthetic-index-1",
+    "seed": 7,
+    "hash": "8c4a3af22fae123b57157d04f438f91e24ae595294d6d510dc7ba08e20ab7bc6",
+    "files": 10,
+    "symbols": 100
+  },
+  "parserVersion": "synthetic-symbols-1",
+  "gitSha": "aee2d829413a8b4c0c2168c62e3eae99c808d9f4",
+  "gitDirty": false,
+  "environment": {
+    "cpuModel": "Intel(R) Core(TM) Ultra 9 185H",
+    "logicalCpus": 22,
+    "totalMemoryBytes": 33832394752,
+    "platform": "win32",
+    "release": "10.0.26200",
+    "architecture": "x64",
+    "node": "v24.14.0",
+    "electron": null
+  },
+  "measurement": {
+    "cache": "new in-memory SQLite per sample; migration excluded; incremental baseline excluded",
+    "rss": "process lifetime high-water RSS, not scenario-isolated peak",
+    "io": "OS resourceUsage counters; may be zero/unsupported on Windows",
+    "classification": "observational; no performance compliance claim"
+  },
+  "scenarios": [
+    {
+      "name": "cold-index",
+      "samples": [
+        {
+          "elapsedMs": 23.04400000000004,
+          "cpuMicros": {
+            "user": 47000,
+            "system": 0
+          },
+          "rssBytesAfter": 86618112,
+          "processHighWaterRssBytes": 87019520,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 10.049499999999966,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 89542656,
+          "processHighWaterRssBytes": 89526272,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 12.502399999999966,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 0
+          },
+          "rssBytesAfter": 94429184,
+          "processHighWaterRssBytes": 94429184,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 8.857200000000034,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 15000
+          },
+          "rssBytesAfter": 97624064,
+          "processHighWaterRssBytes": 97624064,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 5.857200000000034,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 99311616,
+          "processHighWaterRssBytes": 99672064,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 9.681399999999996,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytesAfter": 99692544,
+          "processHighWaterRssBytes": 100282368,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 7.4103000000000065,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 102076416,
+          "processHighWaterRssBytes": 102051840,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 7.610000000000014,
+          "cpuMicros": {
+            "user": 0,
+            "system": 32000
+          },
+          "rssBytesAfter": 102076416,
+          "processHighWaterRssBytes": 102973440,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 6.574099999999987,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 104067072,
+          "processHighWaterRssBytes": 104062976,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 8.543399999999963,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 0
+          },
+          "rssBytesAfter": 111943680,
+          "processHighWaterRssBytes": 111939584,
+          "fsRead": 0,
+          "fsWrite": 0
+        }
+      ],
+      "statistics": {
+        "p50": 8.543399999999963,
+        "p95": 23.04400000000004,
+        "min": 5.857200000000034,
+        "max": 23.04400000000004,
+        "count": 10
+      }
+    },
+    {
+      "name": "incremental-index",
+      "samples": [
+        {
+          "elapsedMs": 3.8903000000000247,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 111685632,
+          "processHighWaterRssBytes": 112377856,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 6.352399999999989,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 0
+          },
+          "rssBytesAfter": 111837184,
+          "processHighWaterRssBytes": 112893952,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 5.130400000000009,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 120307712,
+          "processHighWaterRssBytes": 120307712,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 5.558499999999981,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 120365056,
+          "processHighWaterRssBytes": 120365056,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 7.174800000000005,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytesAfter": 119820288,
+          "processHighWaterRssBytes": 121004032,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 5.626700000000028,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 122220544,
+          "processHighWaterRssBytes": 122220544,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 3.9991999999999734,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 125616128,
+          "processHighWaterRssBytes": 125616128,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 6.246099999999956,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 0
+          },
+          "rssBytesAfter": 140398592,
+          "processHighWaterRssBytes": 141225984,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 3.298000000000002,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 142344192,
+          "processHighWaterRssBytes": 142344192,
+          "fsRead": 0,
+          "fsWrite": 0
+        },
+        {
+          "elapsedMs": 4.039200000000051,
+          "cpuMicros": {
+            "user": 0,
+            "system": 0
+          },
+          "rssBytesAfter": 156139520,
+          "processHighWaterRssBytes": 156139520,
+          "fsRead": 0,
+          "fsWrite": 0
+        }
+      ],
+      "statistics": {
+        "p50": 5.130400000000009,
+        "p95": 7.174800000000005,
+        "min": 3.298000000000002,
+        "max": 7.174800000000005,
+        "count": 10
+      }
+    }
+  ]
+}
