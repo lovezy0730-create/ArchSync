@@ -10,6 +10,7 @@ directories:
 # 与 main.cjs 的 process.resourcesPath 查找路径一一对应。
 files:
   - dist-electron/main.cjs
+  - dist-electron/preload.cjs
   - package.json
   - icon.png
 

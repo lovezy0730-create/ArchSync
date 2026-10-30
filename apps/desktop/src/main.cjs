@@ -10,10 +10,17 @@
  *
  * Security: contextIsolation on, nodeIntegration off, no remote content.
  */
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, utilityProcess } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, utilityProcess } = require('electron');
 const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
+const {randomUUID} = require('node:crypto');
+const instanceId = randomUUID();
+if (process.env.ARCHSYNC_DESKTOP_DATA_DIR) {
+  fs.mkdirSync(process.env.ARCHSYNC_DESKTOP_DATA_DIR,{recursive:true});
+  app.setPath('userData',process.env.ARCHSYNC_DESKTOP_DATA_DIR);
+}
 
 // 打包态：agent.cjs 位于 resources（asar 外）；开发态：位于 dist-electron。
 const isPackaged = app.isPackaged;
@@ -23,7 +30,7 @@ const AGENT_CJS = isPackaged
 // 内置示例项目（resources/examples）；开发态为仓库根
 const BUILTIN_ROOT = isPackaged
   ? path.join(process.resourcesPath, 'builtin-projects')
-  : path.join(__dirname, '..', '..');
+  : path.join(__dirname, '..', '..', '..');
 
 let mainWindow = null;
 let tray = null;
@@ -40,6 +47,7 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
     }
   });
@@ -50,7 +58,8 @@ function findFreePort(startPort) {
     const server = net.createServer();
     server.once('error', () => resolvePort(findFreePort(startPort + 1)));
     server.once('listening', () => {
-      server.close(() => resolvePort(startPort));
+      const actualPort = server.address().port;
+      server.close(() => resolvePort(actualPort));
     });
     server.listen(startPort, '127.0.0.1');
   });
@@ -60,12 +69,13 @@ function agentEnv() {
   const userData = app.getPath('userData');
   const env = {
     ...process.env,
+    ARCHSYNC_INSTANCE_ID: instanceId,
     PORT: String(agentPort),
     HOST: '127.0.0.1',
     ARCHSYNC_DATA_DIR: path.join(userData, 'data'), // SQLite/状态/日志 → 用户数据目录
     ARCHSYNC_WEB_DIST: isPackaged
       ? path.join(process.resourcesPath, 'web-dist')
-      : path.join(__dirname, '..', '..', 'apps', 'web', 'dist'),
+      : path.join(__dirname, '..', '..', '..', 'apps', 'web', 'dist'),
     WORKSPACE_ROOT: BUILTIN_ROOT,
   };
   if (monitorPaused) env.ARCHSYNC_MONITOR_PAUSED = '1';
@@ -78,41 +88,38 @@ function startAgent() {
   const agent = utilityProcess.fork(AGENT_CJS, [], {
     env: agentEnv(),
     serviceName: 'archsync-agent',
-    stdio: 'ignore',
+    stdio: 'pipe',
   });
-  agent.on('exit', (code) => {
-    agentProcess = null;
-    if (!quitting) {
-      // 后台异常恢复：3 秒后重启 agent；连续崩溃 5 次后停止避免风暴
-      restartCount += 1;
-      if (restartCount <= 5) {
-        setTimeout(() => {
-          if (!quitting) startAgent();
-        }, 3000);
-      } else {
-        console.error('[desktop] agent 连续崩溃超过 5 次，停止自动重启');
-      }
-    }
+  const logDir = path.join(app.getPath('userData'),'logs');
+  fs.mkdirSync(logDir,{recursive:true});
+  for (const stream of [agent.stdout,agent.stderr]) stream?.on('data',data => fs.appendFileSync(path.join(logDir,'agent.log'),data));
+  const stableTimer = setTimeout(() => { if (agentProcess === agent) restartCount = 0; },60000);
+  agent.on('exit', () => {
+    clearTimeout(stableTimer);
+    if (agentProcess === agent) agentProcess = null;
+    if (quitting) return;
+    if (!agent.policyRestart) restartCount += 1;
+    if (agent.policyRestart || restartCount <= 5) {
+      restartTimer = setTimeout(() => {restartTimer = null; if (!quitting && !agentProcess) startAgent();},agent.policyRestart ? 50 : 3000);
+    } else fs.appendFileSync(path.join(logDir,'agent.log'),'Agent 连续崩溃超过 5 次，停止自动重启\n');
   });
-  // restartCount 在 agent 稳定运行 60s 后归零（无崩溃计时器）
-  setTimeout(() => { restartCount = 0; }, 60000);
   agentProcess = agent;
 }
 
 function waitForAgent(maxWaitMs = 30000) {
   const started = Date.now();
-  return new Promise((resolveReady) => {
+  return new Promise(resolveReady => {
     const probe = () => {
-      const req = net.connect(agentPort, '127.0.0.1', () => {
-        req.destroy();
-        resolveReady(true);
+      const retry = () => Date.now() - started > maxWaitMs ? resolveReady(false) : setTimeout(probe,400);
+      const req = http.get(`http://127.0.0.1:${agentPort}/healthz`,res => {
+        let body=''; res.on('data',data => {body+=data;});
+        res.on('end',() => {
+          try {if(JSON.parse(body).instanceId === instanceId) {resolveReady(true);return;}} catch {}
+          retry();
+        });
       });
-      req.on('error', () => {
-        if (Date.now() - started > maxWaitMs) resolveReady(false);
-        else setTimeout(probe, 400);
-      });
-    };
-    probe();
+      req.setTimeout(1000,() => req.destroy()); req.on('error',retry);
+    }; probe();
   });
 }
 
@@ -125,11 +132,14 @@ function createWindow() {
     backgroundColor: '#0d1117',
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
+      preload: path.join(__dirname,'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
+  mainWindow.webContents.setWindowOpenHandler(() => ({action:'deny'}));
+  mainWindow.webContents.on('will-navigate',(event,url) => {if (new URL(url).origin !== `http://127.0.0.1:${agentPort}`) event.preventDefault();});
   mainWindow.loadURL(`http://127.0.0.1:${agentPort}/`);
   mainWindow.on('close', (event) => {
     if (!quitting && process.env.ARCHSYNC_CLOSE_TO_TRAY !== '0') {
@@ -175,20 +185,25 @@ let restartTimer = null;
 function restartAgentForPolicy() {
   if (restartTimer) clearTimeout(restartTimer);
   restartTimer = setTimeout(() => {
-    if (agentProcess) agentProcess.kill();
+    if (agentProcess) { agentProcess.policyRestart = true; agentProcess.kill(); } else {restartCount = 0;startAgent();}
   }, 500);
 }
 
 app.whenReady().then(async () => {
   agentPort = await findFreePort(Number(process.env.PORT || 4310));
   // IPC：仅暴露受控查询，不暴露文件系统或命令执行
+  ipcMain.handle('archsync:choose-folder', async (event) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || new URL(event.senderFrame.url).origin !== `http://127.0.0.1:${agentPort}`) throw new Error('untrusted IPC sender');
+    const result = await dialog.showOpenDialog(mainWindow,{properties:['openDirectory']});
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
   ipcMain.handle('archsync:status', () => ({ port: agentPort, monitorPaused }));
   startAgent();
   const ready = await waitForAgent();
   if (!ready) {
     // agent 无法启动时仍打开一个错误页，用户可以看到日志路径
     mainWindow = new BrowserWindow({ width: 800, height: 500 });
-    mainWindow.loadURL(`data:text/html,<h2>ArchSync Agent 启动失败</h2><p>请查看日志：%file%</p>`.replace('%file%', encodeURIComponent(path.join(ROOT, '.local'))));
+    mainWindow.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(`<h2>ArchSync Agent 启动失败</h2><p>请查看用户数据目录中的 logs/agent.log</p>`));
   } else {
     createWindow();
   }
@@ -197,6 +212,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   quitting = true;
+  if (restartTimer) {clearTimeout(restartTimer);restartTimer=null;}
   if (agentProcess) agentProcess.kill();
 });
 

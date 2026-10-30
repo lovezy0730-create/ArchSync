@@ -42,6 +42,8 @@ await esbuildBuild({
   logLevel: 'info',
 });
 
+fs.copyFileSync(path.join(desktop,'src','preload.cjs'),path.join(distElectron,'preload.cjs'));
+
 // 2. web production build
 run('pnpm', ['--filter', '@archsync/web', 'build']);
 

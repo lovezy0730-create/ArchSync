@@ -29,18 +29,6 @@ export interface ServerHandle {
   close: () => Promise<void>;
 }
 
-/** Re-read a registered external project from disk; null when unloadable. */
-function loadExternalEntry(registered: {
-  id: string;
-  localPath: string;
-}): import('./projects.js').ProjectEntry | null {
-  const entry = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
-  return 'error' in entry ? null : entry;
-}
-
-/** Forward declarations wired after construction (watcher re-hook). */
-
-
 export async function createServer(overrides?: {
   repoRoot?: string;
   databasePath?: string;
@@ -96,7 +84,7 @@ export async function createServer(overrides?: {
   let externalCount = 0;
   for (const registered of registry.list()) {
     if (liveEntries.has(registered.id)) continue;
-    const entry = loadExternalEntry(registered);
+    const entry = registry.reloadProjectEntry(registered.id);
     if (entry) {
       liveEntries.set(registered.id, entry);
       externalCount += 1;
@@ -105,7 +93,7 @@ export async function createServer(overrides?: {
     }
   }
   if (externalCount > 0) log(`已恢复 ${externalCount} 个外部注册项目`);
-  const entries = discovered; // builtin entries remain the bootstrap set
+  const entries = [...liveEntries.values()]; // builtin entries remain the bootstrap set
 
   const app = Fastify({ logger: false, bodyLimit: 4 * 1024 * 1024 });
   const hub = new PresenceHub(env.presenceTtlSeconds);
@@ -163,7 +151,7 @@ export async function createServer(overrides?: {
   });
   await app.register(websocket);
 
-  app.get('/healthz', async () => ({ ok: true, time: new Date().toISOString() }));
+  app.get('/healthz', async () => ({ ok: true, instanceId:process.env.ARCHSYNC_INSTANCE_ID ?? null, pid:process.pid, time: new Date().toISOString() }));
 
   // ---- unified auth gate (code mode) -------------------------------------
   // Every /api/v1/* request — reads included — requires a valid session.
@@ -275,10 +263,11 @@ export async function createServer(overrides?: {
   }
 
   // ---- watcher (dynamic: rebuilt when the registry changes; config reload on edit) ----
+  const watchedEntries = () => registry.monitoredEntries().map(p => p.entry).filter(e => e.rootDir);
   const watchRoots = [...new Set([...liveEntries.values()].map((e) => e.rootDir))];
   log(`文件监听启动: ${liveEntries.size} 个项目 / ${watchRoots.length} 个根`);
   let watcher = new WorkspaceWatcher(
-    [...liveEntries.values()],
+    watchedEntries(),
     { onProjectChanged: (entry) => {
         // project.yaml/views 变更时热重载配置；失败保留上一份有效配置
         const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
@@ -301,7 +290,7 @@ export async function createServer(overrides?: {
   dynamicRefs.rewatch = async () => {
     await watcher.stop();
     watcher = new WorkspaceWatcher(
-      [...liveEntries.values()],
+      watchedEntries(),
       { onProjectChanged: (entry) => {
           const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
           if ('error' in reloaded) {
