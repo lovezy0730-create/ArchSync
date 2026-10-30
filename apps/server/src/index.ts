@@ -39,7 +39,7 @@ function loadExternalEntry(registered: {
 }
 
 /** Forward declarations wired after construction (watcher re-hook). */
-const dynamicRefs: { rewatch?: () => Promise<void> } = {};
+
 
 export async function createServer(overrides?: {
   repoRoot?: string;
@@ -49,6 +49,7 @@ export async function createServer(overrides?: {
   authCode?: string | null;
   port?: number;
 }): Promise<ServerHandle> {
+  const dynamicRefs: { rewatch?: () => Promise<void> } = {};
   const root = overrides?.repoRoot ?? repoRoot;
   const env = overrides?.authMode || overrides?.authCode !== undefined
     ? { ...loadEnv(root), ...(overrides.authMode ? { authMode: overrides.authMode } : {}), ...(overrides.authCode !== undefined ? { authCode: overrides.authCode } : {}), ...(overrides.port ? { port: overrides.port } : {}) }
@@ -197,7 +198,7 @@ export async function createServer(overrides?: {
       if (!entry) return { state: 'skipped' as const, events: 0, errors: ['项目不存在'] };
       // 连续点击合并：worker.syncNow 内部串行，重复调用排队等待上一轮完成
       const summary = await syncWorker.syncNow(entry);
-      if (summary.changed && summary.events.length > 0) {
+      if (summary.changed || summary.errors.length > 0) {
         registry.markSync(entryId, null);
         scheduleRebuild(entryId); // rebuild + WS 推送由 runRebuild 处理
       }
@@ -360,7 +361,9 @@ export async function createServer(overrides?: {
     close: async () => {
       clearInterval(sessionSweeper);
       await syncWorker.stop();
+      dynamicRefs.rewatch = undefined;
       await watcher.stop();
+      await Promise.allSettled([...inFlight.values()]);
       await hub.stop();
       await app.close();
       db.close();
