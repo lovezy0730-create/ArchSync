@@ -1,3 +1,6 @@
+import { createRequire } from "node:module";
+import type { Ignore } from "ignore";
+const createIgnore = createRequire(import.meta.url)("ignore") as () => Ignore;
 import ts from "typescript";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
@@ -20,11 +23,35 @@ const skip = new Set([
 ]);
 export function sourcePaths(root: string): string[] {
   const out: string[] = [];
-  const walk = (dir: string) => {
+  const walk = (
+    dir: string,
+    inherited: { base: string; rules: Ignore }[] = [],
+  ) => {
+    const rules = [...inherited];
+    try {
+      rules.push({
+        base: dir,
+        rules: createIgnore().add(
+          readFileSync(join(dir, ".gitignore"), "utf8"),
+        ),
+      });
+    } catch {
+      /* optional ignore file */
+    }
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (e.isSymbolicLink() || skip.has(e.name)) continue;
       const path = join(dir, e.name);
-      if (e.isDirectory()) walk(path);
+      let ignored = false;
+      for (const rule of rules) {
+        const rel =
+          relative(rule.base, path).replace(/\\/g, "/") +
+          (e.isDirectory() ? "/" : "");
+        const result = rule.rules.test(rel);
+        if (result.ignored) ignored = true;
+        if (result.unignored) ignored = false;
+      }
+      if (ignored) continue;
+      if (e.isDirectory()) walk(path, rules);
       else if (/\.(tsx?|jsx?|mjs|cjs)$/.test(e.name)) out.push(norm(path));
     }
   };

@@ -207,3 +207,23 @@ it("does not reuse modified declaration identity across split and merge", () => 
     rmSync(root, { recursive: true, force: true, maxRetries: 10 });
   }
 });
+
+it("ignores excluded sources and keeps oversized files explicitly unsupported", () => {
+  const root = mkdtempSync(join(tmpdir(), "ast-safety-"));
+  const db = new LocalDatabase(":memory:");
+  try {
+    writeFileSync(join(root, ".gitignore"), "ignored.ts\n");
+    writeFileSync(join(root, "ignored.ts"), "export function secret(){}");
+    writeFileSync(join(root, "big.ts"), " ".repeat(1024 * 1024 + 1));
+    const index = new CodeIndex(db);
+    scanAstIndex(root, "p", index);
+    expect(index.get("p", "ignored.ts")).toBeNull();
+    expect(index.get("p", "big.ts")?.status).toBe("unsupported");
+    expect(index.get("p", "big.ts")?.diagnostics[0]?.message).toContain(
+      "limit",
+    );
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true, maxRetries: 10 });
+  }
+});
