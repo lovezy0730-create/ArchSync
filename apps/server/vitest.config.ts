@@ -1,7 +1,8 @@
 import { defineConfig } from 'vitest/config';
+import {freeTestPort} from '../../scripts/test-network.js';
 
-export default defineConfig({
-  server: {hmr: {port: 0}},
+export default defineConfig(async()=>({
+  server: {hmr: {port: await freeTestPort()}},
   test: {
     environment: 'node',
     // node:sqlite is an experimental built-in not in vite's core module list;
@@ -13,4 +14,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

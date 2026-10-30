@@ -1,2 +1,3 @@
 import {defineConfig} from 'vitest/config';
-export default defineConfig({server:{hmr:{port:0}}});
+import {freeTestPort} from '../../scripts/test-network.js';
+export default defineConfig(async()=>({server:{hmr:{port:await freeTestPort()}}}));
