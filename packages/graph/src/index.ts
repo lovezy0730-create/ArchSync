@@ -39,6 +39,7 @@ export interface BuildSnapshotInput {
   collab: CollabData;
   version: number;
   snapshotId: string;
+  remoteHeadSha?: string | null;
   now: string;
   /** optional project-specific presentation views */
   views?: ProjectViewConfig[];
@@ -438,6 +439,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     projectName: config.project.name,
     branch: scan.branch ?? '(unknown)',
     sourceCommitSha: scan.baselineSha ?? 'unknown',
+    ...(input.remoteHeadSha !== undefined ? {remoteHeadSha:input.remoteHeadSha} : {}),
     configBlobSha: input.configBlobSha,
     scope: 'local-workspace' as const,
     githubFetchedAt: collab.source === 'unavailable' ? null : collab.fetchedAt,

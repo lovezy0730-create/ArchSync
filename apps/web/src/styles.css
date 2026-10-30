@@ -689,3 +689,8 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .view-diagnostic-location code { color: #d4deea; font-family: Consolas, 'Cascadia Mono', monospace; font-size: 9px; }
 .view-diagnostic-location span { color: var(--text-dim); font-family: Consolas, 'Cascadia Mono', monospace; font-size: 8.5px; overflow-wrap: anywhere; }
 .view-diagnostics li p { margin: 4px 0 0; color: #aeb9c8; font-size: 9.5px; line-height: 1.45; }
+
+/* Repository controls stay on one readable row within the existing scrollable toolbar. */
+.registry-status { display:flex; align-items:center; gap:8px; flex:0 0 auto; font-size:11px; color:var(--text-dim); white-space:nowrap; }
+.registry-status button { background:var(--panel2); color:var(--text); border:1px solid var(--border2); border-radius:6px; padding:5px 8px; cursor:pointer; }
+.registry-status [role="alert"] { max-width:260px; overflow:hidden; text-overflow:ellipsis; color:var(--warn); }

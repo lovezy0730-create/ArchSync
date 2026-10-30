@@ -414,7 +414,7 @@ export function projectWorkerState(
     assignees:(i.assignees ?? []).flatMap(a => a.login ? [a.login] : []),
     labels:(i.labels ?? []).flatMap(l => typeof l === 'string' ? [l] : l.name ? [l.name] : []),
     createdAt:i.created_at ?? '', updatedAt:i.updated_at ?? '', closedAt:i.closed_at ?? null,
-    completion:i.state === 'closed' ? i.state_reason === 'completed' ? 'completed' : 'not_completed' : 'none',
+    completion:i.state === 'closed' ? i.state_reason === 'completed' ? 'completed' : i.state_reason === 'not_planned' ? 'not_completed' : 'none' : 'none',
   }));
   return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:sync?.at ?? null,
     error:sync?.error ?? null, pullRequests, issues:normalizedIssues, team:[], moduleIssues:{}, manualApprovals:{}});

@@ -1,4 +1,4 @@
-import type { ModuleDetail, ProjectSummary, Snapshot } from '@archsync/contracts';
+import type { CollabData, ModuleDetail, ProjectSummary, Snapshot } from '@archsync/contracts';
 
 /**
  * Data access abstraction so the same UI runs against the Fastify server
@@ -40,7 +40,10 @@ export interface AuthProbe {
 }
 
 /** Multi-repo registry surface — server mode only (static mode has no backend). */
+export interface GithubState { collab:CollabData; repository:string; head:{sha:string;branch:string}|null; ci:{state:string;sha:string}|null; }
+
 export interface RegistrySurface {
+  githubState(id:string):Promise<GithubState>;
   list(): Promise<{ projects: unknown[]; totalMonitored: number }>;
   addLocal(path: string): Promise<{ ok: boolean; project?: { id: string } }>;
   initPreview(path:string): Promise<{yaml:string}>;

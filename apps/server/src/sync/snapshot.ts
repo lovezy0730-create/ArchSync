@@ -50,6 +50,7 @@ export async function rebuildSnapshot(
       scan,
       collab,
       version: state.nextVersion,
+      remoteHeadSha:cacheReader?.readCache<{sha:string}>(entry.id,'head')?.sha ?? null,
       snapshotId: `snap-${entry.id}-${state.nextVersion}`,
       now: new Date().toISOString(),
     });

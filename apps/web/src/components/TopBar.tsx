@@ -121,6 +121,7 @@ export function TopBar() {
 
       {mode === 'server' && registered && <div className="registry-status">
         <span title={registered.lastError ?? ''}>{registered.monitoringEnabled ? '监控中' : '已暂停'} · {registered.kind === 'remote-only' ? '远端只读，无本地扫描' : '本地仓库'} · 上次同步 {registered.lastSyncAt ? timeAgo(registered.lastSyncAt) : '尚未同步'}</span>
+        <span>本地 HEAD {snapshot?.sourceCommitSha === 'unknown' ? '未知' : snapshot?.sourceCommitSha.slice(0,8) ?? '未知'} · 远端 HEAD {snapshot?.remoteHeadSha?.slice(0,8) ?? '未知'}</span>
         <button disabled={remoteBusy || !registered.monitoringEnabled} onClick={() => {setRemoteBusy(true);setRemoteError(null);void syncGithub(registered.id).then(async r => {if(!r.ok) setRemoteError(r.errors.join('；'));await loadRegistry();}).catch(e => setRemoteError(e.message)).finally(() => setRemoteBusy(false));}}>刷新 GitHub</button>
         <button disabled={remoteBusy} onClick={() => {void setMonitoring(registered.id,!registered.monitoringEnabled).then(() => loadRegistry()).catch(e => setRemoteError(e.message));}}>{registered.monitoringEnabled ? '暂停' : '恢复'}</button>
         <button disabled={remoteBusy} onClick={() => {if(window.confirm('从 ArchSync 移除此项目？源代码会保留。')) void remove(registered.id).then(async () => {await loadRegistry();window.location.reload();}).catch(e => setRemoteError(e.message));}}>移除</button>

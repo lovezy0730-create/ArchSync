@@ -15,6 +15,7 @@ import {
   currentMode,
   type ArchSyncMode,
   type DataProvider,
+  type GithubState,
 } from './lib/data-provider.js';
 import { createServerProvider } from './lib/server-provider.js';
 import { createStaticProvider } from './lib/static-provider.js';
@@ -74,6 +75,7 @@ interface AppState {
   setRegistryList: (list: unknown[]) => void;
   registryList: unknown[];
   registryAddLocal: (path: string) => Promise<{ ok: boolean; project?: { id: string } }>;
+  registryGithubState:(id:string)=>Promise<GithubState>;
   registrySyncGithub: (id:string) => Promise<{ok:boolean;errors:string[]}>;
   registrySetMonitoring: (id:string,enabled:boolean) => Promise<{ok:boolean}>;
   registryRemove: (id:string) => Promise<{ok:boolean}>;
@@ -182,7 +184,11 @@ function connectPresence(
   if (!provider.capabilities.presence) return;
   presenceClient?.close();
   const client = new PresenceClient(projectId, userName, {
-    onStatus: (status) => set({ wsStatus: status }),
+    onStatus: (status) => {
+      if(get().projectId !== projectId) return;
+      set({wsStatus:status,...(status==='connecting'?{participants:new Map()}: {})});
+      if(status==='open') void get().refreshSnapshot().catch(() => undefined);
+    },
     onSelf: (info) => set({ me: { ...get().me, name: userName, sessionId: info.sessionId, color: info.color } }),
     onParticipants: (incoming) => {
       const map = new Map(get().participants);
@@ -278,6 +284,7 @@ export const useStore = create<AppState>((set, get) => ({
     const result = await provider.registry?.list();
     if (result) set({ registryList: result.projects });
   },
+  registryGithubState:async(id)=>{if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.githubState(id);},
   registrySyncGithub: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.syncGithub(id);},
   registrySetMonitoring: async (id,enabled) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.setMonitoring(id,enabled);},
   registryRemove: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.remove(id);},
@@ -323,7 +330,7 @@ export const useStore = create<AppState>((set, get) => ({
       localStorage.setItem('archsync-project', projectId);
     } catch { /* storage unavailable: session-only selection */ }
     await loadProjectData(projectId, set);
-    if (identity) connectPresence(projectId, identity.name, set, get);
+    if (identity && get().projectId === projectId) connectPresence(projectId, identity.name, set, get);
   },
 
   select: async (moduleId) => {
@@ -334,7 +341,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ detailLoading: true });
       try {
         const detail = await provider.loadModule(projectId, moduleId);
-        if (get().selection === moduleId) set({ moduleDetail: detail });
+        if (get().projectId === projectId && get().selection === moduleId) set({ moduleDetail: detail });
       } catch (err) {
         console.warn('module detail failed', err);
       } finally {
@@ -466,6 +473,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!projectId) return;
     const current = get().snapshot;
     const snapshot = await provider.loadSnapshot(projectId);
+    if(get().projectId !== projectId) return;
     if (!current || snapshot.version >= current.version) {
       const views = snapshotViews(snapshot);
       const keepView = views.some((view) => view.id === get().activeViewId);
@@ -475,7 +483,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (fresh) {
           try {
             const detail = await provider.loadModule(projectId, fresh.id);
-            set({ moduleDetail: detail });
+            if(get().projectId === projectId && get().selection === fresh.id) set({ moduleDetail: detail });
           } catch { /* keep old detail */ }
         }
       }
@@ -560,6 +568,7 @@ async function loadProjectData(
       provider.loadSnapshot(projectId),
       provider.loadTeam(projectId),
     ]);
+    if(useStore.getState().projectId !== projectId) return;
     const viewState = initialViewState(snapshot, projectId);
     set({
       snapshot,
@@ -569,7 +578,7 @@ async function loadProjectData(
       ...viewState,
     });
   } catch (err) {
-    set({ loadError: (err as Error).message });
+    if(useStore.getState().projectId === projectId) set({ loadError: (err as Error).message });
     console.error('failed to load project', err);
   }
 }

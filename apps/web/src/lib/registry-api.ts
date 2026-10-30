@@ -1,3 +1,4 @@
+import type { GithubState } from './data-provider.js';
 
 export interface RegistryProjectInfo {
   id: string;
@@ -51,6 +52,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const registryApi = {
+  githubState:(id:string) => req<GithubState>(`/api/v1/registry/${encodeURIComponent(id)}/github`),
   initPreview: (path:string) => req<{yaml:string}>('/api/v1/registry/init-preview',{method:'POST',body:JSON.stringify({path})}),
   clone: (owner:string,repo:string,parent:string) => req<{path:string}>('/api/v1/registry/clone',{method:'POST',body:JSON.stringify({owner,repo,parent})}),
   list: () => req<{ projects: RegistryProjectInfo[]; totalMonitored: number }>('/api/v1/registry'),

@@ -1,3 +1,5 @@
+import { loadCollab } from './github.js';
+import { GithubApiClient } from './sync/github-client.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRegistry } from './registry.js';
@@ -81,6 +83,15 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
       })),
       totalMonitored: ctx.registry.list().filter((p) => p.monitoringEnabled).length,
     };
+  });
+
+  app.get<{Params:{id:string}}>('/api/v1/registry/:id/github', async (request,reply) => {
+    const entry = ctx.registry.liveEntries.get(request.params.id);
+    if (!entry) return reply.code(404).send({error:{message:'项目不存在'}});
+    const cache = new GithubApiClient(ctx.db,()=>null);
+    const {owner,repo} = entry.config.project.github;
+    return {collab:await loadCollab(entry,null,cache),repository:`${owner}/${repo}`,
+      head:cache.readCache(entry.id,'head'),ci:cache.readCache(entry.id,'head-ci')};
   });
 
   app.post('/api/v1/registry/add-local', { preHandler: requireSameOrigin }, async (request, reply) => {

@@ -43,6 +43,7 @@ export interface TimelineEvent {
 }
 
 export const registryApi = {
+  githubState: (): Promise<never> => Promise.reject(new StaticModeError()),
   initPreview: (): Promise<never> => Promise.reject(new StaticModeError()),
   initApply: (): Promise<never> => Promise.reject(new StaticModeError()),
   clone: (): Promise<never> => Promise.reject(new StaticModeError()),

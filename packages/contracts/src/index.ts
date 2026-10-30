@@ -362,6 +362,7 @@ export const SnapshotSchema = z.object({
   /** snapshot scope is the local workspace clone, labelled honestly */
   branch: z.string(),
   sourceCommitSha: z.string(),
+  remoteHeadSha: z.string().nullable().optional(),
   configBlobSha: z.string(),
   scope: z.literal('local-workspace'),
   generatedAt: z.string(),
