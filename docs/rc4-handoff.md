@@ -38,3 +38,11 @@
 - 首页显示同步状态，提供远端刷新、暂停恢复、移除；暂停过滤本地 watcher。没有完整私有库凭据管理。
 - build:pages / verify:pages / verify:workflow 已通过；Pages 匿名读取本项目实际 PR（只读，无测试写入）。随后 UI 仍有改动，最终需再跑一次。
 - Windows 打包两次失败于 GitHub Electron ZIP 下载连接超时；新增 Playwright 实际 EXE 接入/重启/生命周期 E2E，尚未运行成功，不能宣称成品通过。CI 将运行该门禁，已移除旧固定4310/全系统同名进程强杀做法。
+
+## 打包实证与补充回归
+
+8422e463a871faa8cd67bdf8a812227b63dd0b85 的 CI、Pages、Windows Desktop Build 全部成功。Windows run https://github.com/lovezy0730-create/ArchSync/actions/runs/40987771468 ，artifact 12947064173（该版尚不含下一阶段 Checks 分页修复）。CI 日志逐包测试合计 139。
+
+本机 Electron 官方 Releases API 下载绕过 github.com 直连超时，ZIP 官方 SHA256 b87b2d6167845ece1d373eb37f5ce49868a07ec90203de44b6bd415d6c673c6d 校验通过。目录打包版实际跑过 UI 初始化/扫描/重启恢复/ArchSync 自举；公开远端同步由于匿名限流失败，已如实区分，不作为通过。新 CI 远端只读测试使用 Actions 只读 token（不写远端）。
+
+补充：101 PR files、101 Check Runs 对象分页、35 PR/Issue 状态、重启去重等回归；Checks 缺项保持 unknown；PR SHA/文件是否已知加入契约；缓存/ETag 成功写入事务。定向 26 项通过；全量 142 项通过、lint/typecheck/build 通过。最终 Pages/Windows 新版还需追踪。

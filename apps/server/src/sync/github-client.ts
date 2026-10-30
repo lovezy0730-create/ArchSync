@@ -104,7 +104,7 @@ export class GithubApiClient {
     projectId: string,
     kind: string,
     path: string,
-    options: { conditional?: boolean; paginate?: boolean; maxPages?: number } = {},
+    options: { conditional?: boolean; paginate?: boolean; maxPages?: number; itemsKey?: string } = {},
   ): Promise<GithubApiResult<T>> {
     this.rollBudgetWindow(Date.now());
     if (this.budget.used >= this.budget.max) {
@@ -150,7 +150,7 @@ export class GithubApiClient {
     const cacheKey = `${projectId}:${kind}:${pathOnly}${canonicalQuery ? `?${canonicalQuery}` : ''}`;
     // 条件请求的三重门：etag 存在 + payload 缓存存在（否则 304 会拿到空数据）。
     // 判定必须先于 header 写入，否则 fallback 请求仍携带过期条件头。
-    const payloadKind = `request:${cacheKey}:${options.paginate ? 'all' : 'one'}`;
+    const payloadKind = `request:${cacheKey}:${options.paginate ? 'all' : 'one'}:${options.itemsKey ?? ''}`;
     let conditional = options.conditional !== false;
     if (conditional) {
       const etag = this.etagFor(cacheKey);
@@ -248,8 +248,9 @@ export class GithubApiClient {
     try { firstPageData = await res.json() as T; } catch { return fail(res, 'server', '无效 JSON'); }
     if (options.paginate) {
       const maxPages = options.maxPages ?? 100;
-      if (!Array.isArray(firstPageData)) return fail(res, 'server', '分页响应必须为数组');
-      const collected: unknown[] = Array.isArray(firstPageData) ? (firstPageData as unknown[]) : [];
+      const items = options.itemsKey ? (firstPageData as Record<string,unknown>)[options.itemsKey] : firstPageData;
+      if (!Array.isArray(items)) return fail(res, 'server', '分页响应必须包含数组');
+      const collected: unknown[] = [...items];
       let nextUrl: string | null = parseNextLink(res.headers.get('link'));
       let pages = 1;
       const seen = new Set([initial.href]);
@@ -270,20 +271,25 @@ export class GithubApiClient {
         if (!pageRes.ok) return fail(pageRes, pageRes.status === 429 ? 'rate_limited' : 'server', `分页 HTTP ${pageRes.status}`);
         let pageData: unknown;
         try { pageData = await pageRes.json(); } catch { return fail(pageRes, 'server', '分页无效 JSON'); }
-        if (!Array.isArray(pageData)) return fail(pageRes, 'server', '分页响应必须为数组');
-        collected.push(...(pageData as unknown[]));
+        const items = options.itemsKey && pageData && typeof pageData === 'object' ? (pageData as Record<string,unknown>)[options.itemsKey] : pageData;
+        if (!Array.isArray(items)) return fail(pageRes, 'server', '分页响应必须包含数组');
+        collected.push(...items);
         nextUrl = parseNextLink(pageRes.headers.get('link'));
         pages += 1;
       }
       if (nextUrl) return fail(res, 'server', '分页截断：达到 maxPages');
-      firstPageData = collected as T;
+      firstPageData = (options.itemsKey ? {...firstPageData,[options.itemsKey]:collected} : collected) as T;
     }
 
     const data = firstPageData;
     const etag = res.headers.get('etag');
+    this.db.exec('BEGIN');
+    try {
     this.writeCache(projectId, payloadKind, data); // 304 readback, query-scoped
     this.writeCache(projectId, kind, data); // convenience: latest snapshot for the kind
     this.saveEtag(cacheKey, projectId, kind, etag, 'fresh');
+    this.db.exec('COMMIT');
+    } catch (error) {this.db.exec('ROLLBACK');throw error;}
     return {
       ok: true,
       completeness: 'complete',
@@ -399,7 +405,7 @@ export function projectWorkerState(
     const mapping = read<{headSha:string;files:string[]}>(`pr-files:${p.number}`);
     const ci = read<{sha:string;state:string}>(`pr-ci:${p.number}`);
     const checks = ci?.sha === p.headSha ? ci.state : 'unknown';
-    return { ...p, assignees:p.assignees ?? [],
+    return { ...p, changedFilesKnown:mapping?.headSha === p.headSha, assignees:p.assignees ?? [],
       changedFiles: mapping?.headSha === p.headSha ? mapping.files : [],
       checks: ['success','failure','pending'].includes(checks) ? checks : 'unknown' };
   });

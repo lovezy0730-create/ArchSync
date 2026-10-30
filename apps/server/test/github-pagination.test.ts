@@ -39,3 +39,23 @@ describe('complete request cache and credential boundary', () => {
     expect((await client.request('p','files','/repos/o/r/pulls/1/files')).data).toEqual([1]); db.close();
   });
 });
+
+
+describe('large PR file sets and check-run objects', () => {
+  it('merges 101 renamed PR files and never sends first-page conditional headers to page 2', async () => {
+    const db = new LocalDatabase(':memory:'); const client = new GithubApiClient(db, () => 'secret');
+    const route = '/repos/o/r/pulls/1/files?per_page=100';
+    const fetcher = vi.fn().mockResolvedValueOnce(page(Array.from({length:100},(_,i)=>({filename:`src/${i}.ts`})), 'https://api.github.com/repos/o/r/pulls/1/files?per_page=100&page=2')).mockResolvedValueOnce(page([{filename:'new.ts',previous_filename:'old.ts'}]));
+    vi.stubGlobal('fetch',fetcher);
+    const result = await client.request<unknown[]>('p','files',route,{paginate:true});
+    expect(result.data).toHaveLength(101);
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({redirect:'error'});
+    expect(fetcher.mock.calls[1]?.[1].headers['If-None-Match']).toBeUndefined(); db.close();
+  });
+  it('merges paginated check_runs and retains SHA-specific request caches', async () => {
+    const db = new LocalDatabase(':memory:'); const client = new GithubApiClient(db, () => null);
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({total_count:101,check_runs:Array.from({length:100},()=>({status:'completed',conclusion:'success'}))}),{headers:{link:'<https://api.github.com/repos/o/r/commits/sha/check-runs?per_page=100&page=2>; rel="next"'}})).mockResolvedValueOnce(new Response(JSON.stringify({check_runs:[{status:'completed',conclusion:'failure'}]}))));
+    const result = await client.request<{check_runs:unknown[]}>('p','checks','/repos/o/r/commits/sha/check-runs?per_page=100',{paginate:true,itemsKey:'check_runs'});
+    expect(result.data?.check_runs).toHaveLength(101); db.close();
+  });
+});

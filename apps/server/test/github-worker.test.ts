@@ -58,6 +58,7 @@ function makeWorkerDb(): LocalDatabase {
 /** Harness with mutable GitHub state respecting real API semantics. */
 class FakeGithub {
   pulls: FakePull[] = [];
+  issues: Array<{number:number;title:string;state:string;updated_at:string}> = [];
   commitSha = 'base0sha';
   ciState = 'pending';
   pagesSeen: string[] = [];
@@ -79,7 +80,7 @@ class FakeGithub {
         }
         return this.json(this.pulls, 'W/"pulls-all"');
       }
-      if (path.startsWith('/repos/acme/widget/issues?')) return this.json([], 'W/"i"');
+      if (path.startsWith('/repos/acme/widget/issues?')) return this.json(this.issues, 'W/"i"');
       if (path.startsWith('/repos/acme/widget/commits?')) {
         return this.json([{ sha: this.commitSha, commit: { message: 'head', author: { name: 'd', date: NOW } } }], 'W/"c"');
       }
@@ -160,6 +161,19 @@ describe('PR state machine (GitHub-semantics mock)', () => {
 
     const second = await github.events(worker);
     expect(second).toHaveLength(0);
+  });
+
+  it('tracks >30 PRs/issues, seeds Issue history silently and preserves all after restart', async () => {
+    github.pulls = Array.from({length:35},(_,i)=>pull(i+1));
+    github.issues = Array.from({length:35},(_,i)=>({number:i+100,title:'Issue',state:'open',updated_at:NOW}));
+    const worker = newWorker(db,github);
+    const first = await worker.syncNow(entry);
+    expect(first.events.filter(e=>e.eventType==='issue_opened')).toHaveLength(0);
+    expect(Object.keys(new GithubApiClient(db,()=>null).readCache('proj-x','pulls-state')!)).toHaveLength(35);
+    github.issues[34]!.state='closed';
+    const second = await newWorker(db,github).syncNow(entry);
+    expect(second.events.some(e=>e.eventType==='issue_closed'&&e.remoteId==='134')).toBe(true);
+    expect((await newWorker(db,github).syncNow(entry)).events.filter(e=>e.eventType==='issue_closed')).toHaveLength(0);
   });
 
   it('3-4. open PR merged (leaves open list) → exactly one pr_merged, no repeats', async () => {

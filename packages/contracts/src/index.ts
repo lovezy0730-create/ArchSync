@@ -224,6 +224,8 @@ export const DemoPullRequestSchema = z.object({
   author: z.string(),
   assignees: z.array(z.string()).default([]),
   headRef: z.string(),
+  headSha: z.string().optional(),
+  changedFilesKnown: z.boolean().optional(),
   mergedAt: z.string().nullable().default(null),
   closedAt: z.string().nullable().default(null),
   createdAt: z.string(),

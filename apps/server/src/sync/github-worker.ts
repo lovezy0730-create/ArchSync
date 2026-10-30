@@ -278,7 +278,8 @@ export class GithubSyncWorker {
       in_progress: 2,
       pending: 2,
       queued: 2,
-      cancelled: 1,
+      cancelled: 4,
+      timed_out: 5,
       skipped: 1,
       success: 0,
       unknown: -1,
@@ -292,7 +293,7 @@ export class GithubSyncWorker {
       'head-status',
       `${base}/commits/${headSha}/status`,
     );
-    if (status.ok && status.data?.state && status.data.state !== 'unknown') {
+    if (status.ok && status.data?.state && status.data.state !== 'unknown' && (status.data.statuses === undefined || status.data.statuses.length > 0)) {
       worst = status.data.state;
       source = 'commit-status';
     }
@@ -301,7 +302,7 @@ export class GithubSyncWorker {
       status?: string;
       conclusion?: string | null;
       details_url?: string | null;
-    }> }>(projectId, 'head-check-runs', `${base}/commits/${headSha}/check-runs?per_page=100`);
+    }> }>(projectId, 'head-check-runs', `${base}/commits/${headSha}/check-runs?per_page=100`, {paginate:true,itemsKey:'check_runs'});
     if (runs.ok && runs.data?.check_runs) {
       source = source === 'none' ? 'check-runs' : `${source}+check-runs`;
       for (const run of runs.data.check_runs) {
@@ -317,6 +318,7 @@ export class GithubSyncWorker {
       }
     }
 
+    if (!runs.ok || !status.ok) return {state:'unknown',url:null,source:'incomplete'};
     return { state: worst, url, source };
   }
 
@@ -378,11 +380,11 @@ export class GithubSyncWorker {
         } else if (before.phase !== nowState.phase || before.headSha !== nowState.headSha) {
           if (before.phase === 'open' && nowState.phase === 'merged') {
             events.push(this.event(projectId, 'pr_merged', String(pr.number), `PR #${pr.number} 已合并：${pr.title}`, {
-              url: `${base}/pull/${pr.number}`, mergedAt: nowState.mergedAt, headSha: nowState.headSha,
+              url: `https://github.com/${owner}/${repo}/pull/${pr.number}`, mergedAt: nowState.mergedAt, headSha: nowState.headSha,
             }));
           } else if (before.phase === 'open' && nowState.phase === 'closed') {
             events.push(this.event(projectId, 'pr_closed', String(pr.number), `PR #${pr.number} 已关闭（未合并）：${pr.title}`, {
-              url: `${base}/pull/${pr.number}`,
+              url: `https://github.com/${owner}/${repo}/pull/${pr.number}`,
             }));
           } else if ((before.phase === 'closed' || before.phase === 'merged') && nowState.phase === 'open') {
             events.push(this.event(projectId, 'pr_reopened', String(pr.number), `PR #${pr.number} 重新打开：${pr.title}`, {
@@ -485,12 +487,13 @@ export class GithubSyncWorker {
       const previousNonTerminal = cachedCi?.state === 'pending' || cachedCi?.state === 'in_progress';
       if (headChanged || previousNonTerminal || !cachedCi || cachedCi.state === 'unknown' || cachedCi.state === 'queued') {
         const ciState = await this.readCombinedCiState(projectId, base, head);
-        if (ciState && ciState.state !== 'unknown') {
+        if (ciState) {
           this.client.writeCache(projectId, 'head-ci', { state: ciState.state, sha: head, url:ciState.url });
           if (headChanged || ciState.state !== cachedCi?.state) {
             events.push(
               this.event(projectId, 'ci_status', head.slice(0, 10), `CI 状态：${ciState.state} @ ${head.slice(0, 8)}`, {
                 state: ciState.state,
+                sha:head,
                 url: ciState.url,
                 source: ciState.source,
                 ...(ciState.state === 'failure' ? { failureHint: 'CI 失败不等于功能未完成/完成——仅为验证证据' } : {}),
@@ -577,7 +580,7 @@ export class GithubSyncWorker {
       }
     }
 
-    this.client.writeCache(projectId, 'sync-status', { at:new Date().toISOString(), error:errors.length ? errors.join('; ') : null });
+
     // PR checks belong to the PR HEAD, never to the default branch HEAD.
     const prStates = this.client.readCache<Record<string, NormalizedPull>>(projectId, 'pulls-state') ?? {};
     const pendingChecks = Object.values(prStates).filter(p => p.phase === 'open' && p.headSha).sort((a,b) =>
@@ -591,6 +594,7 @@ export class GithubSyncWorker {
       this.client.writeCache(projectId, `pr-ci:${p.number}`, {state, sha:p.headSha, url:ci.url, at:Date.now()});
       if (before?.state !== state || before?.sha !== p.headSha) changed = true;
     }
+    this.client.writeCache(projectId, 'sync-status', { at:new Date().toISOString(), error:errors.length ? errors.join('; ') : null });
     const inserted = recordEvents(this.db, events);
     if (inserted > 0) this.callbacks.log(`[${entry.id}] ${inserted} 条新事件入时间线`);
     return { changed, events, headSha: this.lastHeadSha.get(projectId) ?? null, errors };
