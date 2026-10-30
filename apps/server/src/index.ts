@@ -78,7 +78,7 @@ export async function createServer(overrides?: {
   const registry = new ProjectRegistry(db, liveEntries, (event) => {
     log(`注册表变更: ${event}（运行时已同步）`);
     void dynamicRefs.rewatch?.();
-  });
+  }, () => env.githubToken);
   const seedLog = (...a: unknown[]) => log(...a);
   registry.seedFromDiscovery(discovered, skipped, seedLog);
   let externalCount = 0;

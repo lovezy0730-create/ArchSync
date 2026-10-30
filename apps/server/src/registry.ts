@@ -112,6 +112,7 @@ export class ProjectRegistry {
     /** live project entries consumed by routes/watcher/snapshot pipeline */
     public readonly liveEntries: Map<string, ProjectEntry>,
     private readonly onRegistryChanged: (event: 'added' | 'removed' | 'enabled' | 'disabled') => void,
+    private readonly tokenProvider: () => string | null = () => null,
   ) {}
 
   list(): RegistryProject[] {
@@ -246,13 +247,15 @@ export class ProjectRegistry {
     // 元数据探测：404 = 不存在或私有不可达
     try {
       const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry' },
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry', ...(this.tokenProvider() ? {Authorization:`Bearer ${this.tokenProvider()}`} : {}) },
+        redirect:'error', signal:AbortSignal.timeout(30_000),
       });
       if (res.status === 404) {
         return { ok: false, error: `${owner}/${repo} 不存在或为私有（远端只读模式仅支持公开仓库）` };
       }
       if (!res.ok) return { ok: false, error: `GitHub 查询失败: HTTP ${res.status}` };
-      const metadata = await res.json() as {default_branch?:string};
+      const metadata = await res.json() as {default_branch?:string;private?:boolean};
+      if(metadata.private) return {ok:false,error:'远端只读模式仅支持公开仓库，私有库凭据存储尚未完成'};
       defaultBranch = metadata.default_branch ?? defaultBranch;
     } catch (err) {
       return { ok: false, error: `GitHub 网络请求失败: ${(err as Error).message}` };
@@ -331,7 +334,8 @@ export class ProjectRegistry {
     // is surfaced to the caller and displayed in the UI.
     try {
       const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry' },
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ArchSync-Registry', ...(this.tokenProvider() ? {Authorization:`Bearer ${this.tokenProvider()}`} : {}) },
+        redirect:'error', signal:AbortSignal.timeout(30_000),
       });
       if (!res.ok) {
         return {

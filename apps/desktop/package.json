@@ -1,6 +1,6 @@
 {
   "name": "@archsync/desktop",
-  "version": "1.2.0",
+  "version": "1.2.0-rc.4",
   "private": true,
   "description": "ArchSync Windows desktop shell: embeds the React workbench and the local Fastify agent",
   "type": "commonjs",

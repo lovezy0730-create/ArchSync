@@ -55,6 +55,18 @@ try {
   await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
   await page.waitForFunction(async () => {const r=await (await fetch('/api/v1/registry')).json();return r.projects.some(p=>p.id==='archsync'&&p.snapshotVersion>0);});
   console.log('PASS: self repository existing config through packaged UI');
+  await page.locator('.add-project-btn').click();
+  await page.getByRole('button',{name:'GitHub 仓库',exact:true}).click();
+  await page.getByPlaceholder('https://github.com/owner/repo 或 owner/repo').fill('https://github.com/lovezy0730-create/ArchSync');
+  await page.getByRole('button',{name:'添加远端监控'}).click();
+  await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
+  const remote = await page.evaluate(async () => {
+    const result = await fetch('/api/v1/registry/remote-lovezy0730-create-archsync/sync-github',{method:'POST'});
+    return result.json();
+  });
+  if (!remote.ok && remote.state === 'rate_limited' && !process.env.CI) console.log('LIVE REMOTE NOT VERIFIED: anonymous rate limit reported correctly');
+  else assert.equal(remote.ok,true,JSON.stringify(remote));
+  if(remote.ok) console.log('PASS: public GitHub read-only registration and actual API sync (no remote writes)');
   await stop();
   console.log('PASS: normal application quit cleans up its own agent');
 } finally {

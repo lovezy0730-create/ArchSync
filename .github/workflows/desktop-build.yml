@@ -13,6 +13,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+      issues: read
+      pull-requests: read
+      checks: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,6 +45,8 @@ jobs:
         run: node scripts/agent-smoke.cjs
 
       - name: Packaged Windows repository onboarding E2E
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/desktop-e2e.mjs
 
       - name: Record versions
@@ -58,6 +63,7 @@ jobs:
           Get-ChildItem apps/desktop/release -Filter *.exe | ForEach-Object {
             "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLower())  $($_.Name)"
           } | Set-Content apps/desktop/release/SHA256SUMS.txt
+          Get-Content apps/desktop/release/SHA256SUMS.txt
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
