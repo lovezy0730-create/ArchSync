@@ -1,0 +1,93 @@
+name: Windows Desktop Build
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Quality gates
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
+      - name: Build desktop (bundle + web dist + agent bundle + electron-builder)
+        run: node apps/desktop/build.mjs --package
+
+      # 启动冒烟：独立 agent.cjs（与打包版共享同一 bundle 与资源解析逻辑）
+      - name: Smoke test bundled agent
+        run: node scripts/agent-smoke.cjs
+
+      - name: Packaged Windows repository onboarding E2E
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/desktop-e2e.mjs
+
+      - name: Record versions
+        run: |
+          "commit=$(git rev-parse HEAD)" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem apps/desktop/release -Filter *.exe | ForEach-Object {
+            "$($_.Name) = $([math]::Round($_.Length/1MB,1)) MB" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          }
+        shell: pwsh
+
+      - name: SHA256
+        shell: pwsh
+        run: |
+          Get-ChildItem apps/desktop/release -Filter *.exe | ForEach-Object {
+            "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLower())  $($_.Name)"
+          } | Set-Content apps/desktop/release/SHA256SUMS.txt
+          Get-Content apps/desktop/release/SHA256SUMS.txt
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: archsync-portable-rc4
+          path: |
+            apps/desktop/release/ArchSync-Portable-*.exe
+            apps/desktop/release/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload setup EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: archsync-setup-rc4
+          path: |
+            apps/desktop/release/ArchSync-Setup-*.exe
+            apps/desktop/release/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload Windows test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: archsync-windows-evidence
+          path: |
+            apps/desktop/release/SHA256SUMS.txt
+            docs/screenshots/rc4-packaged-*.png
+          retention-days: 30
+          if-no-files-found: error

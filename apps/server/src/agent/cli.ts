@@ -8,6 +8,8 @@
  *   pnpm agent -- impact <moduleId> [--project <id>]
  *   pnpm agent -- context [--project <id>] [--modules a,b]
  *   pnpm agent -- validate <project.yaml | -(stdin)>
+ *   pnpm agent -- layout-context [--project <id>]
+ *   pnpm agent -- layout-validate [views.yaml | -] [--project <id>]
  *   pnpm agent -- report --module <id> --status <workflow> --by <agentName> --note "..."
  *
  * Principles:
@@ -29,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 import type { Snapshot } from '@archsync/contracts';
 import { buildSnapshot, dependencyClosure } from '@archsync/graph';
 import { scanProject } from '@archsync/scanner';
-import { parseProjectConfig } from '@archsync/config';
+import { parseProjectConfig, parseProjectViews } from '@archsync/config';
 import { discoverProjects, type ProjectEntry } from '../projects.js';
 import { loadCollab } from '../github.js';
 
@@ -83,6 +85,9 @@ async function buildOfflineSnapshot(entry: ProjectEntry): Promise<Snapshot> {
   return buildSnapshot({
     config: entry.config,
     configWarnings: entry.configWarnings,
+    viewDiagnostics: entry.viewDiagnostics,
+    views: entry.views,
+    defaultViewId: entry.defaultViewId,
     configBlobSha: entry.configBlobSha,
     scan,
     collab,
@@ -132,6 +137,68 @@ async function main(): Promise<void> {
     process.exit(result.ok ? 0 : 1);
   }
 
+  if (command === 'layout-validate') {
+    const entry = await resolveProject(flags.get('project'));
+    const source = positional[0];
+    const text =
+      source === '-'
+        ? await new Promise<string>((resolve) => {
+            let data = '';
+            process.stdin.on('data', (chunk) => (data += chunk));
+            process.stdin.on('end', () => resolve(data));
+          })
+        : await readFile(source ?? join(entry.rootDir, '.archsync', 'views.yaml'), 'utf8');
+    const result = parseProjectViews(text, entry.config.modules.map((module) => module.id));
+    out({
+      ok: result.ok,
+      projectId: entry.id,
+      errors: result.errors,
+      warnings: result.warnings,
+      viewCount: result.file?.views.length ?? 0,
+      defaultView: result.file?.defaultView ?? null,
+    });
+    process.exit(result.ok ? 0 : 1);
+  }
+
+  if (command === 'layout-context') {
+    const entry = await resolveProject(flags.get('project'));
+    const snapshot = await buildOfflineSnapshot(entry);
+    out({
+      ok: true,
+      format: 'archsync-layout-context/1',
+      goal: '为当前项目建议一个简单、易读、适合该项目结构的模块视图。',
+      instructions: {
+        output: '.archsync/views.yaml',
+        doNotOutputCoordinates: true,
+        note: '只决定 kind、direction、groups、group.order、group.tone 和 group.moduleIds；像素坐标由 ArchSync 布局引擎计算。',
+        validation: '提交前运行 pnpm agent -- layout-validate .archsync/views.yaml --project <id>',
+        constraints: [
+          '每个 view 中每个模块最多出现一次，未分组模块会自动进入“其他模块”并产生警告',
+          'group.order 在同一个 view 内必须唯一',
+          '根据项目语义选择 system / flow / layer，不要为了填满画布创造不存在的系统',
+          '优先把强依赖模块放在相邻分组，减少跨组连线',
+        ],
+      },
+      project: { id: snapshot.projectId, name: snapshot.projectName },
+      modules: snapshot.modules.map((module) => ({
+        id: module.id,
+        label: module.label,
+        layer: module.layer,
+        description: module.description,
+        workflow: module.workflow,
+        implementation: module.implementation,
+        plannedDependsOn: module.plannedDependsOn,
+        dependedOnBy: module.dependedOnBy,
+        fileCount: module.matchedWorkspacePaths.length,
+      })),
+      edges: snapshot.edges.map((edge) => ({ source: edge.source, target: edge.target, kind: edge.kind })),
+      currentViews: snapshot.views ?? [],
+      defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
+    });
+    return;
+  }
+
   if (command === 'report') {
     const moduleId = flags.get('module');
     const status = flags.get('status');
@@ -164,6 +231,42 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'projects') {
+    const res = await fetch(`http://127.0.0.1:${process.env.ARCHSYNC_PORT ?? 4310}/api/v1/registry`).catch(() => null);
+    if (!res || !res.ok) {
+      fail('无法连接本地服务（pnpm dev 需在运行）；离线场景请用 snapshot 命令', 'service_unavailable');
+    }
+    const body = (await res.json()) as { projects: Array<Record<string, unknown>> };
+    out({
+      ok: true,
+      hint: 'projects 来自本地服务注册表；快照/模块/影响命令可离线进程内计算',
+      projects: body.projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        localPath: p.localPath,
+        github: p.owner && p.repo ? `${String(p.owner)}/${String(p.repo)}` : null,
+        monitoring: p.monitoringEnabled,
+        lastScanAt: p.lastScanAt,
+        lastSyncAt: p.lastSyncAt,
+        lastError: p.lastError,
+      })),
+    });
+    return;
+  }
+
+  if (command === 'timeline') {
+    const projectId = positional[0] ?? flags.get('project');
+    if (!projectId) fail('用法: timeline <projectId> [--limit 50]');
+    const limit = Number(flags.get('limit') ?? 50);
+    const res = await fetch(
+      `http://127.0.0.1:${process.env.ARCHSYNC_PORT ?? 4310}/api/v1/registry/${encodeURIComponent(projectId)}/timeline?limit=${limit}`,
+    ).catch(() => null);
+    if (!res || !res.ok) fail('无法连接本地服务或项目不存在', 'service_unavailable');
+    const body = (await res.json()) as { events: Array<Record<string, unknown>> };
+    out({ ok: true, projectId, count: body.events.length, events: body.events });
+    return;
+  }
+
   if (command === 'snapshot') {
     const entry = await resolveProject(flags.get('project'));
     const snapshot = await buildOfflineSnapshot(entry);
@@ -179,6 +282,9 @@ async function main(): Promise<void> {
       dependencyAnalysis: snapshot.dependencyAnalysis,
       githubSource: snapshot.githubSource,
       githubDemo: snapshot.githubDemo,
+      viewCount: snapshot.views?.length ?? 1,
+      defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
       moduleStats: {
         total: snapshot.modules.length,
         implementation: tally(snapshot.modules.map((m) => m.implementation)),
@@ -262,6 +368,9 @@ async function main(): Promise<void> {
       hint: '供 LLM/Agent 消费的紧凑架构上下文。implementation/workflow 状态由真实扫描与 GitHub 证据计算；agent-reports.jsonl 中的申报不参与计算。',
       project: { id: snapshot.projectId, name: snapshot.projectName, commit: snapshot.sourceCommitSha.slice(0, 10) },
       layers: snapshot.layers,
+      views: snapshot.views ?? [],
+      defaultViewId: snapshot.defaultViewId ?? null,
+      viewDiagnostics: snapshot.viewDiagnostics ?? [],
       modules: modules.map((m) => ({
         id: m.id,
         label: m.label,
@@ -283,7 +392,7 @@ async function main(): Promise<void> {
   }
 
   fail(
-    `未知命令 "${command}"。可用: snapshot | module | impact | context | validate | report`,
+    `未知命令 "${command}"。可用: projects | timeline | snapshot | module | impact | context | validate | layout-context | layout-validate | report`,
     'unknown_command',
   );
 }

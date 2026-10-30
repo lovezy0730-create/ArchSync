@@ -1,5 +1,6 @@
 import type { ModuleDetail } from '@archsync/contracts';
 import { api, ApiError } from './api.js';
+import { registryApi } from './registry-api.js';
 import {
   SERVER_CAPABILITIES,
   type AnnotationWriteResult,
@@ -13,6 +14,7 @@ export function createServerProvider(): DataProvider {
   return {
     mode: 'server',
     capabilities: SERVER_CAPABILITIES,
+    registry: registryApi,
     probeAuth: async (): Promise<AuthProbe> => api.me(),
     submitAccessCode: async (code) => {
       try {

@@ -15,17 +15,19 @@ import {
   currentMode,
   type ArchSyncMode,
   type DataProvider,
+  type GithubState,
 } from './lib/data-provider.js';
 import { createServerProvider } from './lib/server-provider.js';
 import { createStaticProvider } from './lib/static-provider.js';
 import { parseProjectConfig } from '@archsync/config';
 import { buildSnapshot } from '@archsync/graph';
 import type { ScanResult } from '@archsync/contracts';
+import { activeView, resolveViewGroups, snapshotViews, type ViewOrderOverride } from './lib/view-layout.js';
 
 export interface Filters {
   workflow: Set<WorkflowState>;
   implementation: Set<ImplementationState>;
-  layers: Set<string>;
+  groups: Set<string>;
 }
 
 export interface Me {
@@ -53,6 +55,8 @@ interface AppState {
   moduleDetail: ModuleDetail | null;
   detailLoading: boolean;
   selection: string | null;
+  activeViewId: string | null;
+  viewOrderOverrides: Record<string, ViewOrderOverride>;
   search: string;
   filters: Filters;
   participants: Map<string, PresenceParticipant>;
@@ -67,13 +71,30 @@ interface AppState {
   codeAuthenticated: boolean;
   boot: () => Promise<void>;
   submitAccessCode: (code: string) => Promise<string | null>;
+  loadRegistry: () => Promise<void>;
+  setRegistryList: (list: unknown[]) => void;
+  registryList: unknown[];
+  registryAddLocal: (path: string) => Promise<{ ok: boolean; project?: { id: string } }>;
+  registryGithubState:(id:string)=>Promise<GithubState>;
+  registrySyncGithub: (id:string) => Promise<{ok:boolean;errors:string[]}>;
+  registrySetMonitoring: (id:string,enabled:boolean) => Promise<{ok:boolean}>;
+  registryRemove: (id:string) => Promise<{ok:boolean}>;
+  registryInitPreview: (path:string) => Promise<{yaml:string}>;
+  registryInitApply: (path:string,yaml:string) => Promise<{ok:boolean;project?:{id:string}}>;
+  registryClone: (owner:string,repo:string,parent:string) => Promise<{path:string}>;
+  registryAnalyzeGithub: (owner: string, repo: string) => Promise<{ ok: boolean; project?: {id:string}; facts?: Record<string, unknown> }>;
+  loadTimeline: (projectId: string, limit?: number) => Promise<{ events: unknown[] }>;
   setIdentity: (identity: Identity) => void;
   switchProject: (projectId: string) => Promise<void>;
   select: (moduleId: string | null) => Promise<void>;
   setSearch: (q: string) => void;
+  setActiveView: (viewId: string) => void;
+  moveViewGroup: (groupId: string, direction: -1 | 1) => void;
+  moveViewModule: (groupId: string, moduleId: string, direction: -1 | 1) => void;
+  resetViewOrder: () => void;
   toggleWorkflowFilter: (state: WorkflowState) => void;
   toggleImplementationFilter: (state: ImplementationState) => void;
-  toggleLayerFilter: (layerId: string) => void;
+  toggleViewGroupFilter: (groupId: string) => void;
   clearFilters: () => void;
   resync: () => Promise<void>;
   saveAnnotation: (moduleId: string, text: string, expectedRevision: number) => Promise<boolean>;
@@ -94,6 +115,66 @@ function readStoredProject(): string | null {
   }
 }
 
+function activeViewStorageKey(projectId: string): string {
+  return `archsync-view:${projectId}`;
+}
+
+function viewOrderStorageKey(projectId: string, viewId: string): string {
+  return `archsync-view-order:${projectId}:${viewId}`;
+}
+
+function readStoredView(projectId: string): string | null {
+  try {
+    return localStorage.getItem(activeViewStorageKey(projectId));
+  } catch {
+    return null;
+  }
+}
+
+function readViewOverride(projectId: string, viewId: string): ViewOrderOverride | undefined {
+  try {
+    const raw = localStorage.getItem(viewOrderStorageKey(projectId, viewId));
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as ViewOrderOverride;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeViewOverride(projectId: string, viewId: string, override: ViewOrderOverride | null): void {
+  try {
+    const key = viewOrderStorageKey(projectId, viewId);
+    if (override) localStorage.setItem(key, JSON.stringify(override));
+    else localStorage.removeItem(key);
+  } catch { /* storage unavailable: session-only layout */ }
+}
+
+function initialViewState(snapshot: Snapshot, projectId: string): {
+  activeViewId: string;
+  viewOrderOverrides: Record<string, ViewOrderOverride>;
+} {
+  const views = snapshotViews(snapshot);
+  const stored = readStoredView(projectId);
+  const selected = views.find((view) => view.id === stored)
+    ?? views.find((view) => view.id === snapshot.defaultViewId)
+    ?? views[0]!;
+  const override = readViewOverride(projectId, selected.id);
+  return {
+    activeViewId: selected.id,
+    viewOrderOverrides: override ? { [selected.id]: override } : {},
+  };
+}
+
+function moveInList<T>(items: T[], index: number, direction: -1 | 1): T[] {
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= items.length) return items;
+  const next = [...items];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  return next;
+}
+
 function connectPresence(
   projectId: string,
   userName: string,
@@ -103,7 +184,11 @@ function connectPresence(
   if (!provider.capabilities.presence) return;
   presenceClient?.close();
   const client = new PresenceClient(projectId, userName, {
-    onStatus: (status) => set({ wsStatus: status }),
+    onStatus: (status) => {
+      if(get().projectId !== projectId) return;
+      set({wsStatus:status,...(status==='connecting'?{participants:new Map()}: {})});
+      if(status==='open') void get().refreshSnapshot().catch(() => undefined);
+    },
     onSelf: (info) => set({ me: { ...get().me, name: userName, sessionId: info.sessionId, color: info.color } }),
     onParticipants: (incoming) => {
       const map = new Map(get().participants);
@@ -138,8 +223,10 @@ export const useStore = create<AppState>((set, get) => ({
   moduleDetail: null,
   detailLoading: false,
   selection: null,
+  activeViewId: null,
+  viewOrderOverrides: {},
   search: '',
-  filters: { workflow: new Set(), implementation: new Set(), layers: new Set() },
+  filters: { workflow: new Set(), implementation: new Set(), groups: new Set() },
   participants: new Map(),
   me: null,
   identity: null,
@@ -191,6 +278,32 @@ export const useStore = create<AppState>((set, get) => ({
     return result.message;
   },
 
+  registryList: [],
+  setRegistryList: (list) => set({ registryList: list }),
+  loadRegistry: async () => {
+    const result = await provider.registry?.list();
+    if (result) set({ registryList: result.projects });
+  },
+  registryGithubState:async(id)=>{if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.githubState(id);},
+  registrySyncGithub: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.syncGithub(id);},
+  registrySetMonitoring: async (id,enabled) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.setMonitoring(id,enabled);},
+  registryRemove: async (id) => {if(!provider.registry) throw new Error('静态模式不支持');return provider.registry.remove(id);},
+  registryInitPreview: async (path) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.initPreview(path); },
+  registryInitApply: async (path,yaml) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.initApply(path,yaml); },
+  registryClone: async (owner,repo,parent) => { if (!provider.registry) throw new Error('静态模式不支持'); return provider.registry.clone(owner,repo,parent); },
+  registryAddLocal: async (path) => {
+    if (!provider.registry) throw new Error('静态模式下项目管理不可用');
+    return provider.registry.addLocal(path);
+  },
+  registryAnalyzeGithub: async (owner, repo) => {
+    if (!provider.registry) throw new Error('静态模式下项目管理不可用');
+    return provider.registry.analyzeGithub(owner, repo);
+  },
+  loadTimeline: async (projectId, limit = 100) => {
+    if (!provider.registry) throw new Error('静态模式下项目动态不可用');
+    return provider.registry.timeline(projectId, limit);
+  },
+
   setIdentity: (identity) => {
     saveIdentity(identity);
     set({ identity, me: { name: identity.name, sessionId: null, color: null } });
@@ -205,7 +318,10 @@ export const useStore = create<AppState>((set, get) => ({
       snapshot: null,
       moduleDetail: null,
       selection: null,
+      activeViewId: null,
+      viewOrderOverrides: {},
       search: '',
+      filters: { workflow: new Set(), implementation: new Set(), groups: new Set() },
       participants: new Map(),
       annotationConflict: null,
       loadError: null,
@@ -214,7 +330,7 @@ export const useStore = create<AppState>((set, get) => ({
       localStorage.setItem('archsync-project', projectId);
     } catch { /* storage unavailable: session-only selection */ }
     await loadProjectData(projectId, set);
-    if (identity) connectPresence(projectId, identity.name, set, get);
+    if (identity && get().projectId === projectId) connectPresence(projectId, identity.name, set, get);
   },
 
   select: async (moduleId) => {
@@ -225,7 +341,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ detailLoading: true });
       try {
         const detail = await provider.loadModule(projectId, moduleId);
-        if (get().selection === moduleId) set({ moduleDetail: detail });
+        if (get().projectId === projectId && get().selection === moduleId) set({ moduleDetail: detail });
       } catch (err) {
         console.warn('module detail failed', err);
       } finally {
@@ -235,6 +351,63 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setSearch: (q) => set({ search: q }),
+
+  setActiveView: (viewId) => {
+    const { snapshot, projectId } = get();
+    if (!snapshot || !projectId) return;
+    if (!snapshotViews(snapshot).some((view) => view.id === viewId)) return;
+    const override = readViewOverride(projectId, viewId);
+    set({
+      activeViewId: viewId,
+      filters: { ...get().filters, groups: new Set() },
+      viewOrderOverrides: override ? { ...get().viewOrderOverrides, [viewId]: override } : get().viewOrderOverrides,
+    });
+    try {
+      localStorage.setItem(activeViewStorageKey(projectId), viewId);
+    } catch { /* session-only */ }
+  },
+
+  moveViewGroup: (groupId, direction) => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const override = viewOrderOverrides[view.id] ?? {};
+    const groups = resolveViewGroups(view, snapshot.modules, override);
+    const ids = groups.map((group) => group.id);
+    const nextIds = moveInList(ids, ids.indexOf(groupId), direction);
+    if (nextIds === ids) return;
+    const next: ViewOrderOverride = { ...override, groupOrder: nextIds };
+    set({ viewOrderOverrides: { ...viewOrderOverrides, [view.id]: next } });
+    writeViewOverride(projectId, view.id, next);
+  },
+
+  moveViewModule: (groupId, moduleId, direction) => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const override = viewOrderOverrides[view.id] ?? {};
+    const groups = resolveViewGroups(view, snapshot.modules, override);
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) return;
+    const nextIds = moveInList(group.moduleIds, group.moduleIds.indexOf(moduleId), direction);
+    if (nextIds === group.moduleIds) return;
+    const next: ViewOrderOverride = {
+      ...override,
+      moduleOrder: { ...(override.moduleOrder ?? {}), [groupId]: nextIds },
+    };
+    set({ viewOrderOverrides: { ...viewOrderOverrides, [view.id]: next } });
+    writeViewOverride(projectId, view.id, next);
+  },
+
+  resetViewOrder: () => {
+    const { snapshot, projectId, activeViewId, viewOrderOverrides } = get();
+    if (!snapshot || !projectId) return;
+    const view = activeView(snapshot, activeViewId);
+    const next = { ...viewOrderOverrides };
+    delete next[view.id];
+    set({ viewOrderOverrides: next });
+    writeViewOverride(projectId, view.id, null);
+  },
   toggleWorkflowFilter: (state) => {
     const filters = get().filters;
     const next = new Set(filters.workflow);
@@ -249,14 +422,14 @@ export const useStore = create<AppState>((set, get) => ({
     else next.add(state);
     set({ filters: { ...filters, implementation: next } });
   },
-  toggleLayerFilter: (layerId) => {
+  toggleViewGroupFilter: (groupId) => {
     const filters = get().filters;
-    const next = new Set(filters.layers);
-    if (next.has(layerId)) next.delete(layerId);
-    else next.add(layerId);
-    set({ filters: { ...filters, layers: next } });
+    const next = new Set(filters.groups);
+    if (next.has(groupId)) next.delete(groupId);
+    else next.add(groupId);
+    set({ filters: { ...filters, groups: next } });
   },
-  clearFilters: () => set({ filters: { workflow: new Set(), implementation: new Set(), layers: new Set() } }),
+  clearFilters: () => set({ filters: { workflow: new Set(), implementation: new Set(), groups: new Set() } }),
 
   resync: async () => {
     if (!provider.capabilities.resync) return; // static mode: hidden in UI
@@ -300,14 +473,17 @@ export const useStore = create<AppState>((set, get) => ({
     if (!projectId) return;
     const current = get().snapshot;
     const snapshot = await provider.loadSnapshot(projectId);
+    if(get().projectId !== projectId) return;
     if (!current || snapshot.version >= current.version) {
-      set({ snapshot });
+      const views = snapshotViews(snapshot);
+      const keepView = views.some((view) => view.id === get().activeViewId);
+      set(keepView ? { snapshot } : { snapshot, ...initialViewState(snapshot, projectId) });
       if (get().selection) {
         const fresh = snapshot.modules.find((m) => m.id === get().selection);
         if (fresh) {
           try {
             const detail = await provider.loadModule(projectId, fresh.id);
-            set({ moduleDetail: detail });
+            if(get().projectId === projectId && get().selection === fresh.id) set({ moduleDetail: detail });
           } catch { /* keep old detail */ }
         }
       }
@@ -392,9 +568,17 @@ async function loadProjectData(
       provider.loadSnapshot(projectId),
       provider.loadTeam(projectId),
     ]);
-    set({ snapshot, team: teamRes.team, teamDemo: teamRes.demo, loadError: null });
+    if(useStore.getState().projectId !== projectId) return;
+    const viewState = initialViewState(snapshot, projectId);
+    set({
+      snapshot,
+      team: teamRes.team,
+      teamDemo: teamRes.demo,
+      loadError: null,
+      ...viewState,
+    });
   } catch (err) {
-    set({ loadError: (err as Error).message });
+    if(useStore.getState().projectId === projectId) set({ loadError: (err as Error).message });
     console.error('failed to load project', err);
   }
 }

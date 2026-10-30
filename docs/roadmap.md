@@ -53,3 +53,30 @@
 - Python/Go/Rust import 分析插件
 - MCP Server（stdio JSON-RPC 封装现有 CLI；CLI 已可用作过渡）
 - Playwright CI E2E（当前用等效浏览器自动化验收，见 acceptance.md）
+
+
+---
+
+# v1.1 Local Agent（feat/v1.1-local-agent 分支，2026-10-26）
+
+| 阶段 | 交付 | 状态 |
+|---|---|---|
+| A 多仓库接入 | SQLite 注册表（node:sqlite 零原生依赖）+ `ProjectRegistry`（add-local 验证 git/worktree、owner/repo 自动解析、needsInit 诚实反馈）+ REST API + 动态运行时 | ✅ |
+| B 常驻监听 | watcher 动态重建（registry 驱动）+ 最长前缀根匹配（嵌套仓库归属修正）+ Windows 默认 polling | ✅ |
+| C GitHub 轮询 | `GithubSyncWorker`：ETag 条件 GET（304 复用缓存）、全局请求预算（匿名 55/h / token 4800/h）、401/403/404/429/5xx 分类与全局冷却、事件去重（dedupe_key）、`since` 增量 | ✅ |
+| D 事件→模块 | PR changed files → 模块映射（歧义文件如实报告多归属、未归类文件显式列出）→ 时间线 | ✅ |
+| E 数据与 UI | sync_events 表（时间线 REST + Agent 命令）+ 前端注册表切换器/添加项目对话框/动态面板 | ✅ |
+
+**真实验收**：pmndrs/zustand 克隆接入（真实 PR #3333/#3583 自动拉取 + CI pending + 文件→模块映射）、本地文件变化自动更新快照（7→8）、控制台/时间线/Agent CLI 全链路。
+
+## v1.1 Sync 正确性修复轮（2026-10-28）
+
+| 修复 | 状态 |
+|---|---|
+| PR 状态机（state=all + 基线轮 + merged/closed/reopened/head_changed 精确区分） | ✅ |
+| PR 文件缓存以 HEAD SHA 失效（分页 + renamed + 映射增删） | ✅ |
+| GitHub 原始 JSON 统一规范化（collabFromCache 字段无串扰） | ✅ |
+| 手动「立即同步」真实触发 worker（completed/no_change/failed/rate_limited 状态） | ✅ |
+| ETag canonical 键（query 绑定 + 304 无 payload 强制重取）+ 分页 + 超时 | ✅ |
+| Checks：combined status + check-runs + pending→终态活跃轮询 | ✅ |
+| Registry 写接口统一同源门禁 + 安全回归测试 | ✅ |

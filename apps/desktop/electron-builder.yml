@@ -1,0 +1,46 @@
+appId: lovezy.archsync.desktop
+productName: ArchSync
+copyright: ArchSync contributors
+
+directories:
+  output: release
+
+# Electron 运行时只需要 main 进程 bundle 与 package 元数据；
+# agent.cjs / web-dist / 内置示例通过 extraResources 放到 resources 目录（asar 外），
+# 与 main.cjs 的 process.resourcesPath 查找路径一一对应。
+files:
+  - dist-electron/main.cjs
+  - dist-electron/preload.cjs
+  - package.json
+  - icon.png
+
+asar: true
+
+extraResources:
+  # 独立 Agent（esbuild 单文件 bundle，Electron utilityProcess 运行）
+  - from: dist-electron/agent/agent.cjs
+    to: agent.cjs
+  # 前端静态资源
+  - from: ../../apps/web/dist
+    to: web-dist
+  # 内置示例项目（ArchSync 自描述 + sticky-notes）
+  - from: ../../examples
+    to: builtin-projects/examples
+  - from: ../../.archsync
+    to: builtin-projects/.archsync
+
+win:
+  target:
+    - target: portable
+      arch: [x64]
+    - target: nsis
+      arch: [x64]
+  icon: icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ArchSync-Setup-${version}.exe
+
+portable:
+  artifactName: ArchSync-Portable-${version}.exe

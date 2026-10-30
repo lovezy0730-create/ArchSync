@@ -22,6 +22,7 @@ export async function rebuildSnapshot(
   store: StateStore,
   githubToken: string | null,
   jobId: string = randomUUID(),
+  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
 ): Promise<RebuildResult> {
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());
@@ -36,16 +37,20 @@ export async function rebuildSnapshot(
   });
 
   try {
-    const scan = await scanProject(entry.config, entry.rootDir);
-    const collab = await loadCollab(entry, githubToken);
+    const scan = entry.rootDir ? await scanProject(entry.config, entry.rootDir) : {ok:false,baselineSha:null,branch:null,baselineFiles:[],workspaceFiles:[],overlay:[],modules:[],errors:['远端只读项目：无本地文件扫描，架构未知'],scannedAt:new Date().toISOString(),importAnalysisRan:false,observedDependencies:[]};
+    const collab = await loadCollab(entry, githubToken, cacheReader);
     const state = store.project(entry.id);
     const candidate = buildSnapshot({
       config: entry.config,
       configWarnings: entry.configWarnings,
+      viewDiagnostics: entry.viewDiagnostics,
+      views: entry.views,
+      defaultViewId: entry.defaultViewId,
       configBlobSha: entry.configBlobSha,
       scan,
       collab,
       version: state.nextVersion,
+      remoteHeadSha:cacheReader?.readCache<{sha:string}>(entry.id,'head')?.sha ?? null,
       snapshotId: `snap-${entry.id}-${state.nextVersion}`,
       now: new Date().toISOString(),
     });

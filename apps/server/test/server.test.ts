@@ -55,7 +55,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await handle.close();
-  await rm(tmpRepo, { recursive: true, force: true });
+  await rm(tmpRepo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('REST API', () => {

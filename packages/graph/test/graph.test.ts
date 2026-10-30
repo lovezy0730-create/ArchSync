@@ -121,6 +121,70 @@ const build = (scan: ScanResult, collab: CollabData) =>
     now: NOW,
   });
 
+describe('project views', () => {
+  it('falls back to a deterministic layer view when no views.yaml exists', () => {
+    const snap = build(scanOf({ 'mod-a': ['src/a/x.ts'], 'mod-b': [] }), collabOf());
+    expect(snap.views).toHaveLength(1);
+    expect(snap.views?.[0]?.id).toBe('auto-layers');
+    expect(snap.defaultViewId).toBe('auto-layers');
+    expect(snap.views?.[0]?.groups[0]?.moduleIds).toEqual(['mod-a', 'mod-b']);
+  });
+
+  it('surfaces structured views.yaml errors and keeps the auto-layer fallback', () => {
+    const snap = buildSnapshot({
+      config,
+      configWarnings: [],
+      configBlobSha: 'b'.repeat(40),
+      scan: scanOf({ 'mod-a': ['src/a/x.ts'], 'mod-b': [] }),
+      collab: collabOf(),
+      version: 5,
+      snapshotId: 'snap-5',
+      now: NOW,
+      views: [],
+      viewDiagnostics: [{
+        severity: 'error',
+        file: '.archsync/views.yaml',
+        path: 'views[0].groups[0].moduleIds[2]',
+        code: 'unknown_view_module',
+        message: '模块 "ghost-module" 不存在于 project.yaml',
+        line: 12,
+        column: 18,
+      }],
+    });
+    expect(snap.views?.[0]?.id).toBe('auto-layers');
+    expect(snap.viewDiagnostics).toHaveLength(1);
+    expect(snap.viewDiagnostics?.[0]?.file).toBe('.archsync/views.yaml');
+    expect(snap.warnings.some((warning) =>
+      warning.includes('视图配置错误') &&
+      warning.includes('ghost-module') &&
+      warning.includes('views[0].groups[0].moduleIds[2]'),
+    )).toBe(true);
+  });
+
+  it('uses explicit views and defaults to the first when defaultViewId is invalid', () => {
+    const snap = buildSnapshot({
+      config,
+      configWarnings: [],
+      configBlobSha: 'b'.repeat(40),
+      scan: scanOf({ 'mod-a': ['src/a/x.ts'], 'mod-b': [] }),
+      collab: collabOf(),
+      version: 4,
+      snapshotId: 'snap-4',
+      now: NOW,
+      views: [{
+        id: 'systems', label: '系统', kind: 'system', direction: 'LR', description: '',
+        groups: [
+          { id: 'client', label: '客户端', order: 1, tone: 'blue', moduleIds: ['mod-a'] },
+          { id: 'server', label: '服务端', order: 2, tone: 'purple', moduleIds: ['mod-b'] },
+        ],
+      }],
+      defaultViewId: 'missing',
+    });
+    expect(snap.views?.[0]?.id).toBe('systems');
+    expect(snap.defaultViewId).toBe('systems');
+  });
+});
+
 describe('implementation state matrix', () => {
   it('T05: scan ok + zero matched files → not_detected with scan evidence', () => {
     const snap = build(scanOf({ 'mod-a': [], 'mod-b': ['src/b/main.ts'] }), collabOf());

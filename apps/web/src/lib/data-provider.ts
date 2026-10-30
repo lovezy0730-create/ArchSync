@@ -1,4 +1,4 @@
-import type { ModuleDetail, ProjectSummary, Snapshot } from '@archsync/contracts';
+import type { CollabData, ModuleDetail, ProjectSummary, Snapshot } from '@archsync/contracts';
 
 /**
  * Data access abstraction so the same UI runs against the Fastify server
@@ -39,9 +39,29 @@ export interface AuthProbe {
   identity: string | null;
 }
 
+/** Multi-repo registry surface — server mode only (static mode has no backend). */
+export interface GithubState { collab:CollabData; repository:string; head:{sha:string;branch:string}|null; ci:{state:string;sha:string}|null; }
+
+export interface RegistrySurface {
+  githubState(id:string):Promise<GithubState>;
+  list(): Promise<{ projects: unknown[]; totalMonitored: number }>;
+  addLocal(path: string): Promise<{ ok: boolean; project?: { id: string } }>;
+  initPreview(path:string): Promise<{yaml:string}>;
+  initApply(path:string,yaml:string): Promise<{ok:boolean;project?:{id:string}}>;
+  clone(owner:string,repo:string,parent:string): Promise<{path:string}>;
+  syncGithub(id:string): Promise<{ok:boolean;state:string;events:number;errors:string[]}>;
+  analyzeGithub(owner: string, repo: string): Promise<{ ok: boolean; project?: {id:string}; facts?: Record<string, unknown> }>;
+  remove(id: string): Promise<{ ok: boolean; note: string }>;
+  setMonitoring(id: string, enabled: boolean): Promise<{ ok: boolean }>;
+  resync(id: string): Promise<{ jobId: string }>;
+  timeline(id: string, limit?: number): Promise<{ events: unknown[] }>;
+}
+
 export interface DataProvider {
   readonly mode: 'server' | 'static';
   readonly capabilities: DataCapabilities;
+  /** server mode only; undefined in static mode */
+  readonly registry?: RegistrySurface;
   /** server mode: probe access-code auth state; static returns null */
   probeAuth?(): Promise<AuthProbe | null>;
   /** server mode: exchange access code for a session cookie */

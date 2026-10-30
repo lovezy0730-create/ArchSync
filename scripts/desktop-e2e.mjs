@@ -1,0 +1,90 @@
+import { _electron as electron } from 'playwright';
+import { mkdtemp, mkdir, writeFile, access, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+const dir = await mkdtemp(join(tmpdir(),'archsync-exe-e2e-'));
+const repo = join(dir,'unfamiliar');
+const data = join(dir,'user-data');
+await mkdir(join(repo,'src'),{recursive:true});
+await writeFile(join(repo,'src','index.ts'),'export const hello = 1;');
+for (const args of [['init','-q'],['add','-A'],['-c','user.name=fixture','-c','user.email=fixture@example.test','commit','-qm','fixture']]) execFileSync('git',args,{cwd:repo,windowsHide:true});
+const executablePath = resolve('apps/desktop/release/win-unpacked/ArchSync.exe');
+let app;
+let agentPid;
+async function launch() {
+  const env = {...process.env,ARCHSYNC_DESKTOP_DATA_DIR:data,PORT:'0',AUTH_CODE:'',DEV_AUTH_MODE:'mock'};
+  delete env.ELECTRON_RUN_AS_NODE;
+  app = await electron.launch({executablePath,env,timeout:60000});
+  const page = await app.firstWindow();
+  await page.waitForURL('http://127.0.0.1:*/',{timeout:60000});
+  await page.locator('.brand-name').waitFor();
+  const health = await page.evaluate(async () => (await fetch('/healthz')).json());
+  assert.ok(health.instanceId); assert.ok(health.pid); agentPid = health.pid;
+  const login = page.getByPlaceholder('输入显示名，例如：访客');
+  if (await login.isVisible()) {await login.fill('RC4 fixture');await page.getByRole('button',{name:'进入',exact:true}).click();}
+  return page;
+}
+async function stop() {
+  await app.close(); app = null;
+  for(let i=0;i<50;i++) {try {process.kill(agentPid,0);} catch {return;} await new Promise(r=>setTimeout(r,100));}
+  throw new Error('owned agent survived normal app quit');
+}
+try {
+  let page = await launch();
+  await page.locator('.add-project-btn').click();
+  await page.locator('.add-project-card input').first().fill(repo);
+  await page.getByRole('button',{name:'添加',exact:true}).click();
+  await page.getByLabel('候选架构 YAML').waitFor();
+  await page.getByRole('button',{name:'确认保存并监控'}).click();
+  await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
+  await access(join(repo,'.archsync','project.yaml'));
+  await page.waitForFunction(async () => {const r=await (await fetch('/api/v1/registry')).json();return r.projects.some(p=>p.name==='local/unfamiliar'&&p.snapshotVersion>0);});
+  await access(join(data,'data','registry.sqlite'));
+  await page.locator('.react-flow__node[data-id="source"]').waitFor({timeout:30000});
+  await page.screenshot({path:resolve('docs/screenshots/rc4-packaged-local.png')});
+  const oldPid=agentPid; await stop();
+  page = await launch(); assert.notEqual(agentPid,oldPid);
+  const registry = await page.evaluate(async () => (await fetch('/api/v1/registry')).json());
+  assert.ok(registry.projects.some(p=>p.localPath===repo));
+  console.log('PASS: packaged EXE identity, web load, UI init, scan, user-data SQLite, restart persistence');
+  // Self repository read-only scan: isolated application data, no source writes.
+  await page.locator('.add-project-btn').click();
+  await page.locator('.add-project-card input').first().fill(resolve('.'));
+  await page.getByRole('button',{name:'添加',exact:true}).click();
+  await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
+  await page.waitForFunction(async () => {const r=await (await fetch('/api/v1/registry')).json();return r.projects.some(p=>p.id==='archsync'&&p.snapshotVersion>0);});
+  await page.waitForFunction(async () => {const s=await (await fetch('/api/v1/projects/archsync/snapshot')).json();return s.modules.some(m=>m.id==='workbench-ui'&&m.matchedWorkspacePaths.length>0);},{timeout:30000});
+  await page.locator('.react-flow__node[data-id="workbench-ui"]').filter({hasText:/[1-9][0-9]* 文件/}).waitFor({timeout:30000});
+  await page.screenshot({path:resolve('docs/screenshots/rc4-packaged-self.png')});
+  console.log('PASS: self repository existing config and rendered architecture through packaged UI');
+  await page.locator('.add-project-btn').click();
+  await page.getByRole('button',{name:'GitHub 仓库',exact:true}).click();
+  await page.getByPlaceholder('https://github.com/owner/repo 或 owner/repo').fill('https://github.com/lovezy0730-create/ArchSync');
+  await page.getByRole('button',{name:'添加远端监控'}).click();
+  if(!process.env.CI) {
+    const outcome=await Promise.race([page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'}).then(()=>true),page.locator('.add-project-card .conflict-note').waitFor().then(()=>false)]);
+    if(!outcome) {console.log('LIVE REMOTE NOT VERIFIED: '+await page.locator('.add-project-card .conflict-note').innerText());await page.getByRole('button',{name:'关闭',exact:true}).click();await stop();console.log('PASS: normal application quit cleans up its own agent');process.exitCode=0;}
+  }
+  if(app) {
+  await page.getByRole('dialog',{name:'添加项目',exact:true}).waitFor({state:'hidden'});
+  const remote = await page.evaluate(async () => {
+    const result = await fetch('/api/v1/registry/remote-lovezy0730-create-archsync/sync-github',{method:'POST'});
+    return result.json();
+  });
+  if (!remote.ok && remote.state === 'rate_limited' && !process.env.CI) console.log('LIVE REMOTE NOT VERIFIED: anonymous rate limit reported correctly');
+  else assert.equal(remote.ok,true,JSON.stringify(remote));
+  if(remote.ok) {
+    await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
+    await page.locator('a[href$="/pull/11"]').waitFor({timeout:30000});
+    console.log('PASS: Worker SQLite projection → REST → React PR #11 evidence');
+  }
+  if(remote.ok) console.log('PASS: public GitHub read-only registration and actual API sync (no remote writes)');
+  await stop();
+  console.log('PASS: normal application quit cleans up its own agent');
+  }
+} finally {
+  if(app) await app.close();
+  await rm(dir,{recursive:true,force:true,maxRetries:10,retryDelay:100});
+}
