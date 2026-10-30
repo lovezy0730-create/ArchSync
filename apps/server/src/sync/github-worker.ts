@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { ProjectEntry } from '../projects.js';
 import { matchPaths } from '@archsync/scanner';
 import type { LocalDatabase } from '../db.js';
@@ -22,6 +23,7 @@ export interface NormalizedPull {
   title: string;
   /** 状态机相位：open | closed | merged（closed ≠ merged） */
   phase: PullPhase;
+  assignees: string[];
   state: 'open' | 'closed';
   headSha: string;
   headRef: string;
@@ -38,6 +40,7 @@ export function classifyPull(pr: PullSummary): NormalizedPull {
   const merged = pr.merged_at ?? null;
   const phase: PullPhase = merged ? 'merged' : pr.state === 'closed' ? 'closed' : 'open';
   return {
+    assignees: (pr.assignees ?? []).flatMap(a => a.login ? [a.login] : []),
     number: pr.number,
     title: pr.title,
     phase,
@@ -131,6 +134,7 @@ export interface WorkerCallbacks {
 }
 
 interface PullSummary {
+  assignees?: Array<{login?:string}>;
   number: number;
   title: string;
   state: string;
@@ -143,7 +147,11 @@ interface PullSummary {
   head?: { sha?: string; ref?: string };
 }
 
-interface IssueSummary {
+export interface IssueSummary {
+  user?: {login?:string};
+  created_at?:string;
+  closed_at?:string | null;
+  state_reason?:string | null;
   number: number;
   title: string;
   state: string;
@@ -332,7 +340,8 @@ export class GithubSyncWorker {
     if (!meta.ok) {
       if (meta.errorKind === 'auth') errors.push(`${meta.error} —— 已停用该项目的远端同步`);
       else errors.push(meta.error ?? 'repo 查询失败');
-      return { changed: false, events, headSha: this.lastHeadSha.get(projectId) ?? null, errors };
+      this.client.writeCache(projectId, 'sync-status', { at:new Date().toISOString(), error:errors.join('; ') });
+      return { changed: true, events, headSha: this.lastHeadSha.get(projectId) ?? null, errors };
     }
     const headBranch = meta.data?.default_branch ?? entry.config.project.github.defaultBranch ?? 'main';
 
@@ -346,13 +355,15 @@ export class GithubSyncWorker {
       projectId,
       'pulls',
       `${base}/pulls?state=all&sort=updated&direction=desc&per_page=30`,
+      { paginate: true },
     );
+    if (pulls.ok && !rawListSchema.safeParse(pulls.data).success) { pulls.ok = false; pulls.error = 'PR schema 无效'; }
     if (pulls.ok && Array.isArray(pulls.data)) {
       const lastKnown = this.client.readCache<Record<string, NormalizedPull>>(projectId, 'pulls-state') ?? {};
       const hadBaseline = this.client.readCache<boolean>(projectId, 'pulls-seeded') === true;
       // 增量合并而非覆盖：本轮未返回的 PR 保留其上次可信状态（P0 2.2）
       const mergedState: Record<string, NormalizedPull> = { ...lastKnown };
-      for (const pr of pulls.data.slice(0, 30)) {
+      for (const pr of pulls.data) {
         const before = lastKnown[String(pr.number)];
         const nowState = classifyPull(pr);
         mergedState[String(pr.number)] = nowState;
@@ -393,6 +404,7 @@ export class GithubSyncWorker {
         }
       }
       // 只在成功取得列表后整体写入；未见过的 PR 条目原样保留
+      if (JSON.stringify(lastKnown) !== JSON.stringify(mergedState)) changed = true;
       this.client.writeCache(projectId, 'pulls-state', mergedState);
       if (!hadBaseline) this.client.writeCache(projectId, 'pulls-seeded', true);
     } else if (pulls.error) {
@@ -400,16 +412,18 @@ export class GithubSyncWorker {
     }
 
     /* 3. issue state (updated since last poll via since= param) */
-    const since = this.readSince(projectId);
+    // Full reconciliation every tick also repairs missed updates after downtime.
     const issues = await this.client.request<IssueSummary[]>(
       projectId,
       'issues',
-      `${base}/issues?state=all&sort=updated&direction=desc&per_page=30${since ? `&since=${encodeURIComponent(since)}` : ''}`,
+      `${base}/issues?state=all&sort=updated&direction=desc&per_page=30`,
+      { paginate: true },
     );
+    if (issues.ok && !rawListSchema.safeParse(issues.data).success) { issues.ok = false; issues.error = 'Issue schema 无效'; }
     if (issues.ok && issues.data) {
       const prevIssuesState = this.client.readCache<Record<string, IssueSummary>>(projectId, 'issues-state') ?? {};
       const prevById = new Map(Object.entries(prevIssuesState).map(([n, i]) => [Number(n), i]));
-      for (const issue of issues.data.filter((i) => !i.pull_request).slice(0, 20)) {
+      for (const issue of issues.data.filter((i) => !i.pull_request)) {
         const before = prevById.get(issue.number);
         if (before) {
           if (before.state !== issue.state) {
@@ -427,7 +441,7 @@ export class GithubSyncWorker {
             events.push(this.event(projectId, 'issue_updated', String(issue.number), `Issue #${issue.number} 有更新：${issue.title}`, {}));
             changed = true;
           }
-        } else if (issue.state === 'open') {
+        } else if (issue.state === 'open' && this.client.readCache<boolean>(projectId, 'issues-seeded') === true) {
           events.push(this.event(projectId, 'issue_opened', String(issue.number), `新 Issue #${issue.number}：${issue.title}`, {}));
           changed = true;
         }
@@ -435,7 +449,9 @@ export class GithubSyncWorker {
       // 增量合并：本轮未返回的 Issue 保留上次可信状态（对齐 pulls-state 修复）
       const mergedIssues: Record<string, IssueSummary> = { ...prevIssuesState };
       for (const issue of issues.data) mergedIssues[String(issue.number)] = issue;
+      if (JSON.stringify(prevIssuesState) !== JSON.stringify(mergedIssues)) changed = true;
       this.client.writeCache(projectId, 'issues-state', mergedIssues);
+      this.client.writeCache(projectId, 'issues-seeded', true);
       this.writeSince(projectId, issues.data[0]?.updated_at ?? null);
     } else if (issues.error) {
       errors.push(issues.error);
@@ -449,7 +465,7 @@ export class GithubSyncWorker {
     );
     if (commits.ok && commits.data && commits.data.length > 0) {
       const head = commits.data[0]!.sha;
-      const prevHead = this.lastHeadSha.get(projectId);
+      const prevHead = this.lastHeadSha.get(projectId) ?? this.client.readCache<{sha:string}>(projectId, 'head')?.sha;
       this.lastHeadSha.set(projectId, head);
       this.client.writeCache(projectId, 'head', { sha: head, branch: headBranch });
       if (prevHead && prevHead !== head) {
@@ -467,10 +483,10 @@ export class GithubSyncWorker {
       const cachedCi = this.client.readCache<{ state?: string }>(projectId, 'head-ci');
       const headChanged = prevHead !== head;
       const previousNonTerminal = cachedCi?.state === 'pending' || cachedCi?.state === 'in_progress';
-      if (headChanged || previousNonTerminal) {
+      if (headChanged || previousNonTerminal || !cachedCi || cachedCi.state === 'unknown' || cachedCi.state === 'queued') {
         const ciState = await this.readCombinedCiState(projectId, base, head);
         if (ciState && ciState.state !== 'unknown') {
-          this.client.writeCache(projectId, 'head-ci', { state: ciState.state });
+          this.client.writeCache(projectId, 'head-ci', { state: ciState.state, sha: head, url:ciState.url });
           if (headChanged || ciState.state !== cachedCi?.state) {
             events.push(
               this.event(projectId, 'ci_status', head.slice(0, 10), `CI 状态：${ciState.state} @ ${head.slice(0, 8)}`, {
@@ -494,7 +510,7 @@ export class GithubSyncWorker {
      * keep the previous mapping without refetching. Renames contribute both
      * filename and previous_filename. Pagination follows the Link header. */
     let filesBudget = MAX_FILES_PER_PR_TICK;
-    for (const pr of (pulls.data ?? []).slice(0, 15)) {
+    for (const pr of (pulls.ok ? pulls.data ?? [] : [])) {
       if (filesBudget <= 0) break;
       const nowState = classifyPull(pr);
       if (nowState.headSha === '') continue;
@@ -514,6 +530,7 @@ export class GithubSyncWorker {
       );
       filesBudget -= 1;
       if (!filesRes.ok || !filesRes.data) {
+        errors.push(filesRes.error ?? 'PR 文件同步失败');
         if (filesRes.errorKind === 'rate_limited' || filesRes.errorKind === 'network') break;
         continue;
       }
@@ -527,7 +544,7 @@ export class GithubSyncWorker {
           ? (rawFiles as { files: string[] }).files
           : [];
       const files = [...new Set(fileList.filter(Boolean))].sort();
-      if (files.length === 0) continue;
+
       this.client.writeCache(projectId, cacheKey, {
         headSha: nowState.headSha,
         files,
@@ -560,17 +577,23 @@ export class GithubSyncWorker {
       }
     }
 
+    this.client.writeCache(projectId, 'sync-status', { at:new Date().toISOString(), error:errors.length ? errors.join('; ') : null });
+    // PR checks belong to the PR HEAD, never to the default branch HEAD.
+    const prStates = this.client.readCache<Record<string, NormalizedPull>>(projectId, 'pulls-state') ?? {};
+    const pendingChecks = Object.values(prStates).filter(p => p.phase === 'open' && p.headSha).sort((a,b) =>
+      (this.client.readCache<{at:number}>(projectId, `pr-ci:${a.number}`)?.at ?? 0) - (this.client.readCache<{at:number}>(projectId, `pr-ci:${b.number}`)?.at ?? 0));
+    for (const p of pendingChecks.slice(0, 5)) {
+      if (!this.client.hasBudget()) break;
+      const ci = await this.readCombinedCiState(projectId, base, p.headSha);
+      if (!ci) continue;
+      const state = ci.state === 'success' ? 'success' : ['failure','error','cancelled','timed_out','action_required'].includes(ci.state) ? 'failure' : ['pending','queued','in_progress'].includes(ci.state) ? 'pending' : 'unknown';
+      const before = this.client.readCache<{state:string;sha:string}>(projectId, `pr-ci:${p.number}`);
+      this.client.writeCache(projectId, `pr-ci:${p.number}`, {state, sha:p.headSha, url:ci.url, at:Date.now()});
+      if (before?.state !== state || before?.sha !== p.headSha) changed = true;
+    }
     const inserted = recordEvents(this.db, events);
     if (inserted > 0) this.callbacks.log(`[${entry.id}] ${inserted} 条新事件入时间线`);
     return { changed, events, headSha: this.lastHeadSha.get(projectId) ?? null, errors };
-  }
-
-  private readSince(projectId: string): string | null {
-    const row = this.db.prepare('SELECT payload_json FROM github_cache WHERE project_id = ? AND kind = ?').get(
-      projectId,
-      'issues-since',
-    ) as { payload_json: string } | undefined;
-    return row ? (JSON.parse(row.payload_json) as string) : null;
   }
 
   private writeSince(projectId: string, value: string | null): void {
@@ -596,3 +619,5 @@ export class GithubSyncWorker {
     };
   }
 }
+
+const rawListSchema = z.array(z.object({number:z.number().int().positive(),title:z.string(),state:z.enum(['open','closed']), assignees:z.array(z.object({login:z.string()})).optional(), labels:z.array(z.union([z.string(),z.object({name:z.string()})])).optional(), head:z.object({sha:z.string(),ref:z.string()}).optional()}).passthrough());

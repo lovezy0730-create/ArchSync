@@ -365,3 +365,32 @@ describe('mapFilesToModules / recordEvents / helpers', () => {
     expect(collabFromCache({})).toBeNull();
   });
 });
+
+
+describe('worker SQLite → collaboration → snapshot projection', () => {
+  it('projects persisted records and PR files after reopening SQLite', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadCollab } = await import('../src/github.js');
+    const { buildSnapshot } = await import('@archsync/graph');
+    const dir = mkdtempSync(join(tmpdir(), 'rc4-contract-'));
+    let db = new LocalDatabase(join(dir, 'state.sqlite'));
+    try {
+      const fake = new FakeGithub(db);
+      fake.pulls = [{ number: 42, title: 'Login', state: 'open', merged_at: null, updated_at: NOW,
+        head: { sha: 'head42', ref: 'feature' }, user: { login: 'alice' }, draft: false,
+        files: [{ filename: 'src/auth/login.ts' }] }];
+      const worker = newWorker(db, fake);
+      await worker.syncNow(entry);
+      db.close(); db = new LocalDatabase(join(dir, 'state.sqlite'));
+      const collab = await loadCollab(entry, null, new GithubApiClient(db, () => null));
+      expect(collab.source).toBe('live');
+      expect(collab.pullRequests[0]).toMatchObject({ number:42, author:'alice', headRef:'feature', changedFiles:['src/auth/login.ts'] });
+      const snap = buildSnapshot({ config:entry.config, configWarnings:[], configBlobSha:'config',
+        scan:{ ok:true, baselineSha:'head', branch:'main', baselineFiles:[], workspaceFiles:[], overlay:[], scannedAt:NOW, modules:[], errors:[], importAnalysisRan:false, observedDependencies:[] },
+        collab, version:1, snapshotId:'snap', now:NOW });
+      expect(JSON.stringify(snap.modules.find(m => m.id === 'auth'))).toContain('42');
+    } finally { db.close(); vi.unstubAllGlobals(); rmSync(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100}); }
+  });
+});

@@ -1,8 +1,9 @@
-import type { CollabData } from '@archsync/contracts';
+import { CollabDataSchema, type CollabData } from '@archsync/contracts';
 import type { LocalDatabase } from '../db.js';
 
 export interface GithubApiResult<T> {
   ok: boolean;
+  completeness?: 'complete' | 'partial';
   status: number;
   data: T | null;
   etag: string | null;
@@ -143,17 +144,17 @@ export class GithubApiClient {
 
     // Cache identity binds to the FULL canonical request (path + sorted query),
     // so `issues?since=A` and `issues?since=B` can never share an ETag slot.
-    const [pathOnly, query = ''] = path.split('?');
+    const initial = trustedGithubUrl(path);
+    const [pathOnly, query = ''] = (initial.pathname + initial.search).split('?');
     const canonicalQuery = query.split('&').filter(Boolean).sort().join('&');
     const cacheKey = `${projectId}:${kind}:${pathOnly}${canonicalQuery ? `?${canonicalQuery}` : ''}`;
     // 条件请求的三重门：etag 存在 + payload 缓存存在（否则 304 会拿到空数据）。
     // 判定必须先于 header 写入，否则 fallback 请求仍携带过期条件头。
+    const payloadKind = `request:${cacheKey}:${options.paginate ? 'all' : 'one'}`;
     let conditional = options.conditional !== false;
     if (conditional) {
       const etag = this.etagFor(cacheKey);
-      const hasPayload =
-        this.readCache<unknown>(projectId, `${kind}:${canonicalQuery}`) !== null ||
-        this.readCache<unknown>(projectId, kind) !== null;
+      const hasPayload = this.readCache<unknown>(projectId, payloadKind) !== null;
       conditional = etag !== null && hasPayload;
     }
     if (conditional) {
@@ -169,7 +170,7 @@ export class GithubApiClient {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30_000);
       try {
-        res = await fetch(`https://api.github.com${path}`, { headers, signal: controller.signal });
+        res = await fetch(initial.href, { headers, redirect: 'error', signal: controller.signal });
       } finally {
         clearTimeout(timeout);
       }
@@ -197,8 +198,7 @@ export class GithubApiClient {
     if (res.status === 304 && conditional) {
       // not modified: the payload cache must exist for this exact key; if it
       // does not (partial cache), fall through to an unconditional refetch
-      const cached = this.readCache<T>(projectId, `${kind}:${canonicalQuery}`) ??
-        this.readCache<T>(projectId, kind);
+      const cached = this.readCache<T>(projectId, payloadKind);
       if (cached !== null) {
         this.saveEtag(cacheKey, projectId, kind, this.etagFor(cacheKey), 'unchanged');
         return {
@@ -212,6 +212,8 @@ export class GithubApiClient {
         };
       }
     }
+
+    if (res.status === 304 && options.conditional !== false) return this.request<T>(projectId, kind, path, { ...options, conditional: false });
 
     if (res.status === 401) {
       return fail(res, 'auth', 'Token 无效或已过期（401）');
@@ -242,44 +244,49 @@ export class GithubApiClient {
     }
 
     // Link-header pagination: follow rel="next" up to maxPages, merging arrays.
-    const firstPageData = (await res.json()) as T;
+    let firstPageData: T;
+    try { firstPageData = await res.json() as T; } catch { return fail(res, 'server', '无效 JSON'); }
     if (options.paginate) {
-      const maxPages = options.maxPages ?? 3;
+      const maxPages = options.maxPages ?? 100;
+      if (!Array.isArray(firstPageData)) return fail(res, 'server', '分页响应必须为数组');
       const collected: unknown[] = Array.isArray(firstPageData) ? (firstPageData as unknown[]) : [];
       let nextUrl: string | null = parseNextLink(res.headers.get('link'));
       let pages = 1;
+      const seen = new Set([initial.href]);
       while (nextUrl && pages < maxPages) {
+        let next: URL;
+        try { next = trustedGithubUrl(nextUrl, initial); } catch { return fail(res, 'server', '不安全的 GitHub 分页链接'); }
+        if (seen.has(next.href)) return fail(res, 'server', '分页链接循环');
+        seen.add(next.href);
+        if (!this.hasBudget()) return fail(res, 'rate_limited', '分页未完成：预算不足或限流');
         this.budget.used += 1;
-        if (this.budget.used >= this.budget.max) break;
-        const pageRes = await fetch(nextUrl.startsWith('http') ? nextUrl : `https://api.github.com${nextUrl}`, {
-          headers,
-          signal: AbortSignal.timeout(30_000),
-        });
-        if (!pageRes.ok) break;
-        const pageData = (await pageRes.json()) as unknown;
-        if (!Array.isArray(pageData)) break;
+        let pageRes: Response;
+        try {
+          pageRes = await fetch(next.href, {
+            headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key !== 'If-None-Match')),
+            redirect: 'error', signal: AbortSignal.timeout(30_000),
+          });
+        } catch { return fail(res, 'network', '分页网络失败或重定向被拒绝'); }
+        if (!pageRes.ok) return fail(pageRes, pageRes.status === 429 ? 'rate_limited' : 'server', `分页 HTTP ${pageRes.status}`);
+        let pageData: unknown;
+        try { pageData = await pageRes.json(); } catch { return fail(pageRes, 'server', '分页无效 JSON'); }
+        if (!Array.isArray(pageData)) return fail(pageRes, 'server', '分页响应必须为数组');
         collected.push(...(pageData as unknown[]));
         nextUrl = parseNextLink(pageRes.headers.get('link'));
         pages += 1;
       }
-      return {
-        ok: true,
-        status: 200,
-        data: collected as T,
-        etag: res.headers.get('etag'),
-        remaining: Number.isFinite(remaining) ? remaining : null,
-        resetAt,
-        retryAfterSeconds,
-      };
+      if (nextUrl) return fail(res, 'server', '分页截断：达到 maxPages');
+      firstPageData = collected as T;
     }
 
     const data = firstPageData;
     const etag = res.headers.get('etag');
-    this.writeCache(projectId, `${kind}:${canonicalQuery}`, data); // 304 readback, query-scoped
+    this.writeCache(projectId, payloadKind, data); // 304 readback, query-scoped
     this.writeCache(projectId, kind, data); // convenience: latest snapshot for the kind
     this.saveEtag(cacheKey, projectId, kind, etag, 'fresh');
     return {
       ok: true,
+      completeness: 'complete',
       status: 200,
       data,
       etag,
@@ -295,6 +302,7 @@ export class GithubApiClient {
     ): GithubApiResult<T> {
       return {
         ok: false,
+        completeness: 'partial',
         status: response.status,
         data: null,
         etag: response.headers.get('etag'),
@@ -366,4 +374,42 @@ export function collabFromCache(cached: {
     moduleIssues: {},
     manualApprovals: {},
   };
+}
+
+/** Credential boundary: pagination may only change page on the original endpoint. */
+function trustedGithubUrl(value: string, initial?: URL): URL {
+  const url = new URL(value, 'https://api.github.com');
+  if (url.origin !== 'https://api.github.com' || url.username || url.password || url.hash || !/^\/repos\/[^/]+\/[^/]+(?:\/|$)/.test(url.pathname)) throw new Error('不安全的 GitHub URL');
+  if (initial) {
+    const a = new URLSearchParams(initial.search); a.delete('page'); a.sort();
+    const b = new URLSearchParams(url.search); b.delete('page'); b.sort();
+    if (url.pathname !== initial.pathname || a.toString() !== b.toString() || !/^[1-9][0-9]*$/.test(url.searchParams.get('page') ?? '')) throw new Error('不安全的分页 URL');
+  }
+  return url;
+}
+
+/** The sole persistent worker-state → presentation contract projection. */
+export function projectWorkerState(
+  pulls: Record<string, import('./github-worker.js').NormalizedPull>,
+  issues: Record<string, import('./github-worker.js').IssueSummary>,
+  read: <T>(kind: string) => T | null,
+  sync: { at: string; error: string | null } | null,
+): CollabData {
+  const pullRequests = Object.values(pulls).map(p => {
+    const mapping = read<{headSha:string;files:string[]}>(`pr-files:${p.number}`);
+    const ci = read<{sha:string;state:string}>(`pr-ci:${p.number}`);
+    const checks = ci?.sha === p.headSha ? ci.state : 'unknown';
+    return { ...p, assignees:p.assignees ?? [],
+      changedFiles: mapping?.headSha === p.headSha ? mapping.files : [],
+      checks: ['success','failure','pending'].includes(checks) ? checks : 'unknown' };
+  });
+  const normalizedIssues = Object.values(issues).filter(i => !i.pull_request).map(i => ({
+    number:i.number, title:i.title, state:i.state, author:i.user?.login ?? 'unknown',
+    assignees:(i.assignees ?? []).flatMap(a => a.login ? [a.login] : []),
+    labels:(i.labels ?? []).flatMap(l => typeof l === 'string' ? [l] : l.name ? [l.name] : []),
+    createdAt:i.created_at ?? '', updatedAt:i.updated_at ?? '', closedAt:i.closed_at ?? null,
+    completion:i.state === 'closed' ? i.state_reason === 'completed' ? 'completed' : 'not_completed' : 'none',
+  }));
+  return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:sync?.at ?? null,
+    error:sync?.error ?? null, pullRequests, issues:normalizedIssues, team:[], moduleIssues:{}, manualApprovals:{}});
 }

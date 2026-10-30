@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { CollabData, DemoIssue, DemoPullRequest } from '@archsync/contracts';
-import { collabFromCache } from './sync/github-client.js';
+import { projectWorkerState } from './sync/github-client.js';
 import { CollabDataSchema } from '@archsync/contracts';
 import type { ProjectEntry } from './projects.js';
 
@@ -27,18 +27,14 @@ export async function loadCollab(
   if (cacheReader) {
     // 统一数据源：读取 SyncWorker 维护的规范化模型（pulls-state/issues-state），
     // 与时间线、模块映射使用同一份事实；旧键 pulls/issues-previous 已废弃
-    const cachedIssues = cacheReader.readCache<CollabData['issues']>(entry.id, 'issues-state');
-    const cachedPulls = cacheReader.readCache<CollabData['pullRequests']>(entry.id, 'pulls-state');
-    if (Array.isArray(cachedPulls) && cachedPulls.length > 0) {
-      const fromWorker = collabFromCache({
-        pullRequests: cachedPulls,
-        issues: Array.isArray(cachedIssues) ? cachedIssues : [],
-        fetchedAt: null,
-        error: null,
-      });
-      if (fromWorker) return fromWorker;
+    const pullState = cacheReader.readCache<Record<string, import('./sync/github-worker.js').NormalizedPull>>(entry.id, 'pulls-state');
+    const issueState = cacheReader.readCache<Record<string, import('./sync/github-worker.js').IssueSummary>>(entry.id, 'issues-state');
+    const sync = cacheReader.readCache<{ at: string; error: string | null }>(entry.id, 'sync-status');
+    if (pullState !== null || issueState !== null) {
+      return projectWorkerState(pullState ?? {}, issueState ?? {}, (kind) => cacheReader.readCache(entry.id, kind), sync);
     }
   }
+
   if (token) {
     try {
       return await fetchLiveCollab(entry, token);

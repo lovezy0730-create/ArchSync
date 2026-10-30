@@ -21,3 +21,10 @@
 - P1/P2 与全部最终门禁尚待完成。状态：未达到 Ready for User Trial。
 
 恢复入口：git fetch origin；检查本分支最新提交，顺序完成 B/C/D/E，每阶段追加真实结果。
+
+## B/C 修复阶段（清理提交 5a266ae 后）
+
+- request payload 以完整路径/查询/分页模式隔离；分页失败/超限拒绝覆盖最后完整缓存；后续页不发送首屏 ETag；HTTPS/API host/相同 endpoint+filters 校验并禁止 fetch redirect。
+- Worker PR/Issue 全分页对账，去除 slice 截断；Issue 首轮基线；同一数据库 Record 经 projectWorkerState 单一投影（PR assignees、HEAD 对应 files/checks，raw Issue 字段）进入 Snapshot；无缓存不伪造 live。
+- 新增 7 项分页/安全回归与 1 项真实 SQLite 关闭重开至 Snapshot 的集成回归（GitHub 为显式 fixture），曾失败后通过。定向 23 项通过；lint/typecheck/build 通过。全 test 的 137 assertions 通过但 server afterAll EBUSY；正在补齐关闭等待及 Windows 删除重试，需重跑。
+- 仍待完整 raw schema/多页 Checks、端到端 REST/UI 证据及线上验收；不可宣称 B/C 所有验收完成。
