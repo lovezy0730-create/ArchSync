@@ -81,6 +81,7 @@ export const SymbolDraftSchema = z.object({
   filePath: RelativeSourcePathSchema,
   language: z.enum(["typescript", "javascript", "python"]),
   kind: z.enum([
+    "module",
     "function",
     "method",
     "class",
@@ -116,6 +117,10 @@ export const SymbolDraftSchema = z.object({
   analysisStatus: z.enum(["resolved", "partial", "unsupported", "failed"]),
   evidence: z.array(SymbolEvidenceSchema),
   fingerprint: id,
+  declarationAnchor: z.string().optional(),
+  parentSymbolKey: z.string().nullable().optional(),
+  startColumn: z.number().int().positive().optional(),
+  endColumn: z.number().int().positive().optional(),
 });
 export type SymbolDraft = z.infer<typeof SymbolDraftSchema>;
 export const CodeSymbolSchema = SymbolDraftSchema.extend({

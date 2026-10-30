@@ -37,6 +37,13 @@ export class CodeIndex {
       .get(projectId, filePath) as Row | undefined;
     return row ? SourceFileSchema.parse(JSON.parse(row.payload_json)) : null;
   }
+  files(projectId: string): SourceFile[] {
+    return (
+      this.db
+        .prepare("SELECT payload_json FROM code_index_files WHERE project_id=?")
+        .all(projectId) as Row[]
+    ).map((r) => SourceFileSchema.parse(JSON.parse(r.payload_json)));
+  }
   history(projectId: string, filePath: string): SourceFile[] {
     return (
       this.db
@@ -103,7 +110,7 @@ export class CodeIndex {
         .filter((f) => !affected.has(f.filePath) && f.status === "fresh")
         .flatMap((f) => f.symbols);
       const matched = matchSymbols(
-        previous,
+        [...new Map(previous.map((s) => [s.symbolUid, s])).values()],
         [
           ...unchanged,
           ...updates
@@ -161,6 +168,9 @@ export class CodeIndex {
               : (success?.contentHash ?? null),
           symbols: symbols.map((s) => ({
             ...s,
+            parentSymbolUid: s.parentSymbolKey
+              ? (byKey.get(s.parentSymbolKey)?.symbolUid ?? null)
+              : s.parentSymbolUid,
             indexRevision:
               u.status === "fresh" ? (old?.revision ?? 0) + 1 : s.indexRevision,
           })),

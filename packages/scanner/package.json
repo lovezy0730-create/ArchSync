@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./pure": "./src/pure.ts",
-    "./identity": "./src/identity.ts"
+    "./identity": "./src/identity.ts",
+    "./ast": "./src/ast.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,7 +16,8 @@
   },
   "dependencies": {
     "@archsync/contracts": "workspace:*",
-    "picomatch": "^4.0.2"
+    "picomatch": "^4.0.2",
+    "typescript": "5.7.2"
   },
   "devDependencies": {
     "@types/picomatch": "^4.0.3"

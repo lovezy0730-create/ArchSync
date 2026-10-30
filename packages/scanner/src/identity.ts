@@ -5,7 +5,7 @@ import {
   type SymbolDraft,
   type CodeSymbol,
 } from "@archsync/contracts";
-export const IDENTITY_VERSION = "rc5-identity-1";
+export const IDENTITY_VERSION = "rc5-identity-2";
 export function symbolKey(s: SymbolDraft): string {
   return createHash("sha256")
     .update(
@@ -39,7 +39,44 @@ export function matchSymbols(
     a.fingerprint === b.fingerprint;
   return drafts.map((s, index) => {
     const candidates = previous.filter((p) => compatible(s, p));
-    const exact = candidates.filter((p) => p.symbolKey === keys[index]);
+    const exact = previous.filter(
+      (p) =>
+        p.symbolKey === keys[index] &&
+        p.parserVersion === s.parserVersion &&
+        (p.fingerprint === s.fingerprint ||
+          (s.declarationAnchor &&
+            p.declarationAnchor === s.declarationAnchor &&
+            JSON.stringify(
+              previous
+                .filter(
+                  (d) =>
+                    d.projectId === s.projectId &&
+                    d.filePath === s.filePath &&
+                    d.parentSymbolKey === s.parentSymbolKey,
+                )
+                .map(symbolKey)
+                .sort(),
+            ) ===
+              JSON.stringify(
+                drafts
+                  .filter(
+                    (d) =>
+                      d.projectId === s.projectId &&
+                      d.filePath === s.filePath &&
+                      d.parentSymbolKey === s.parentSymbolKey,
+                  )
+                  .map(symbolKey)
+                  .sort(),
+              ) &&
+            !drafts.some(
+              (d) =>
+                symbolKey(d) !== keys[index] && d.fingerprint === p.fingerprint,
+            ) &&
+            !previous.some(
+              (d) =>
+                d.symbolKey !== p.symbolKey && d.fingerprint === s.fingerprint,
+            ))),
+    );
     const moved = candidates.filter(
       (p) =>
         renames[p.filePath] === s.filePath &&
