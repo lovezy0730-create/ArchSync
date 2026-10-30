@@ -55,3 +55,9 @@
 
 回滚：按本轮提交逆序用git revert创建回退PR；不降级/删除SQLite，v2迁移仅添加kind列。历史敏感数据不因回滚清理提交而重新跟踪。
 人工与产品限制见rc4-user-trial.md，不宣称正式发布就绪。
+
+## 最终源代码候选
+
+源码候选 0b7a5feb6689fff28e07fc198d071031cfa727fe（前一功能提交 cded3e5）。本地 lint/typecheck/test/build/build:pages/verify:pages/verify:workflow 全通过；143 项测试，lint 仅1条既有warning；Pages本机匿名限流已降级标记，构建通过不等同实时数据成功。
+CI run 40989499857、Pages 40989499863、Windows 40989499871 已触发，待最终读取结果。新建独立portable/setup artifact，每个包含SHA256SUMS；evidence包含截图和哈希。不发布Release、不合并main。
+后续恢复：先检查本分支最新GitHub工作流，若E2E失败修复至通过，再更新PR#11。仅将全部成功的同SHA安装器交付试用。人工未运行项仍见rc4-user-trial.md。

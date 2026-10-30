@@ -64,12 +64,29 @@ jobs:
             "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLower())  $($_.Name)"
           } | Set-Content apps/desktop/release/SHA256SUMS.txt
           Get-Content apps/desktop/release/SHA256SUMS.txt
-      - name: Upload Windows installers
+      - name: Upload portable EXE
         uses: actions/upload-artifact@v4
         with:
-          name: archsync-windows
+          name: archsync-portable-rc4
           path: |
-            apps/desktop/release/*.exe
+            apps/desktop/release/ArchSync-Portable-*.exe
+            apps/desktop/release/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload setup EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: archsync-setup-rc4
+          path: |
+            apps/desktop/release/ArchSync-Setup-*.exe
+            apps/desktop/release/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload Windows test evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: archsync-windows-evidence
+          path: |
             apps/desktop/release/SHA256SUMS.txt
             docs/screenshots/rc4-packaged-*.png
           retention-days: 30

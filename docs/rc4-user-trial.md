@@ -4,7 +4,7 @@
 
 ## 安装
 
-从 PR #11 最新成功的 Windows Desktop Build 下载 archsync-windows artifact，解压。
+从 PR #11 最新成功的 Windows Desktop Build 下载 archsync-portable-rc4 或 archsync-setup-rc4 artifact，解压。
 - 便携版：双击 ArchSync-Portable-1.2.0-rc.4.exe。
 - 安装版：运行 ArchSync-Setup-1.2.0-rc.4.exe，按向导安装。
 - 不需要 Node.js、pnpm、tsx、VSCode 或手工启动 Agent。读取/克隆本地 Git 仓库仍需要系统安装 Git；公开远端只读监控可独立使用。
