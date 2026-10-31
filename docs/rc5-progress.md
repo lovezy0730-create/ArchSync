@@ -51,11 +51,14 @@ The baseline 1000-file report contains 10 samples each: cold P95 11.39 s and
 edit P95 13.16 s on a 22-logical-CPU / 32-GB Windows machine (not the fixed
 reference). `docs/benchmarks/rc5-large-optimized.json` re-runs the identical
 harness after the identity index and batch fast path: cold P95 2.25 s and
-warm-rescan P95 2.21 s on the same host. Both scenarios are **scans of the
-whole fixture tree**; the watcher path is still a warm full rescan, so there
-is no per-file incremental scan to report. The numbers exclude HTTP, snapshot
-publication and UI updates, and remain observational (the machine is not the
-frozen reference).
+warm-rescan P95 2.13 s. `docs/benchmarks/rc5-watch-latency.json` measures the
+path a user actually sees (save → watcher → rebuild → fresh index) at P50
+3.88 s and P95 4.46 s, inside the 5 s target on this host; registration to a
+ready index is 1.25 s against the 30 s first-scan target. Both benchmarks use
+the same frozen 1000-file fixture and remain observational (this machine is
+not the fixed reference). The watcher still performs a warm **full** rescan -
+per-file incremental parsing is not implemented - and the UI/snapshot work
+after the index update is not part of the watch number.
 
 The Windows GUI E2E failure at `a[href$="/pull/11"]` was two defects, not an
 environment problem. `page.waitForFunction` does not await async predicates
