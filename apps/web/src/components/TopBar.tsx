@@ -12,7 +12,7 @@ import { HistoryPanel } from './HistoryPanel.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
 
-export function TopBar({ onAddProject }: { onAddProject: () => void }) {
+export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; showCode: boolean }) {
   const projects = useStore((s) => s.projects);
   const projectId = useStore((s) => s.projectId);
   const snapshot = useStore((s) => s.snapshot);
@@ -131,7 +131,7 @@ export function TopBar({ onAddProject }: { onAddProject: () => void }) {
         ● {gh.label}
       </span>
 
-      <div className="searchbox">
+      {!showCode && <><div className="searchbox">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -172,7 +172,7 @@ export function TopBar({ onAddProject }: { onAddProject: () => void }) {
             清除筛选 ({filterCount})
           </button>
         )}
-      </div>
+      </div></>}
 
       <div className="topbar-right">
         <div className="sync-info" title={isStatic

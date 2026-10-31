@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Background, Controls, MarkerType, Position, ReactFlow } from '@xyflow/react';
 import type { CodeSymbol, SourceFile } from '@archsync/contracts';
 import { loadCodeIndex, loadCodeSource, loadWorkspace, saveWorkspace, type CodeIndexResponse, type SourceResponse } from '../lib/code-index-api.js';
 
@@ -63,13 +64,24 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
   const trusted = new Set((index?.trustedRelations ?? []).map((r) => `${r.sourceUid}|${r.targetUid}|${r.kind}`));
   const relations = selectedFile?.status === 'fresh' && selectedSymbol
     ? selectedFile.relations.filter((relation) => relation.sourceUid === selectedSymbol.symbolUid) : [];
+  const moduleBySymbol = new Map((index?.files ?? []).filter((file) => file.status === 'fresh').flatMap((file) => file.symbols.map((symbol) => [symbol.symbolUid, file.moduleId] as const)));
+  const edgeCounts = new Map<string, { source: string; target: string; count: number }>();
+  for (const relation of index?.trustedRelations ?? []) {
+    if (!['imports', 'calls'].includes(relation.kind) || !relation.targetUid) continue;
+    const sourceModule = moduleBySymbol.get(relation.sourceUid);
+    const targetModule = moduleBySymbol.get(relation.targetUid);
+    if (!sourceModule || !targetModule || sourceModule === targetModule) continue;
+    const key = `${sourceModule}|${targetModule}`;
+    const current = edgeCounts.get(key);
+    if (current) current.count++; else edgeCounts.set(key, { source: sourceModule, target: targetModule, count: 1 });
+  }
   useEffect(() => {
     if (source && selectedSymbol) selectedLine.current?.scrollIntoView({ block: 'center' });
   }, [source, symbolUid]);
 
   return <section className="code-workbench" aria-label="真实代码架构">
     <div className="code-heading"><div><strong>代码架构</strong><span>真实源码 · {index?.origin === 'inferred' ? '分组为推断' : '规划与实际分别显示'}</span></div>
-      <span>{index ? `${index.state} · ${index.summary.fresh} 个有效文件 · ${index.summary.freshSymbols} 个符号 · ${index.summary.stale} 个过期文件` : '正在加载索引…'}</span></div>
+      <span>{index ? `${({ idle: '待扫描', scanning: '扫描中', ready: '扫描完成', error: '扫描失败', unavailable: '不可用' })[index.state]} · ${index.summary.fresh} 个有效文件 · ${index.summary.freshSymbols} 个符号 · ${index.summary.stale} 个过期文件` : '正在加载索引…'}</span></div>
     {(error || index?.error) && <p className="code-alert" role="alert">{error || index?.error}</p>}
     <div className="code-controls">
       <input aria-label="搜索代码" placeholder="搜索文件或符号" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -84,7 +96,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
       {selectedSymbol && <><span>›</span><span>{selectedSymbol.name}</span></>}
     </nav>
     <div className="code-content">
-      {!moduleId && <div className="code-grid">{index?.modules.map((module) => {
+      {!moduleId && index && <div className="code-graph"><ReactFlow fitView nodesDraggable={false} nodesConnectable={false} fitViewOptions={{ padding: 0.2, maxZoom: 1 }} nodes={index.modules.map((module, i) => {
         const group = files.filter((file) => file.moduleId === module.id && matches(file));
         const indexed = index.files.filter((file) => file.moduleId === module.id && file.status !== 'deleted');
         const comparison = index.origin !== 'planned' ? '自动分组（推断）'
@@ -92,8 +104,8 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
             : index.state !== 'ready' ? '扫描未完成'
               : indexed.some((file) => file.status === 'fresh') ? '规划与实际匹配'
                 : indexed.length ? '实际分析不完整' : '仅规划，未检测到源码';
-        return <button className="code-card" data-module-id={module.id} key={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{comparison}</span><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button>;
-      })}</div>}
+        return { id: module.id, sourcePosition: Position.Right, targetPosition: Position.Left, position: { x: (i % 4) * 290, y: Math.floor(i / 4) * 160 }, style: { width: 250, padding: 0, border: 0, background: 'transparent' }, data: { label: <button className="code-card" data-module-id={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{comparison}</span><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button> } };
+      })} edges={[...edgeCounts.values()].map((edge) => ({ id: `${edge.source}|${edge.target}`, source: edge.source, target: edge.target, label: String(edge.count), markerEnd: { type: MarkerType.ArrowClosed, color: '#58a6ff' }, style: { stroke: '#58a6ff' }, labelStyle: { fill: '#e6edf3' }, labelBgStyle: { fill: '#18212c' } }))}><Background /><Controls /></ReactFlow></div>}
       {moduleId && !filePath && <div className="code-list">{moduleFiles.map((file) => <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}><strong>{file.filePath}</strong><span>{file.language} · {file.status} · {file.symbols.filter((s) => s.kind !== 'module').length} 个声明</span></button>)}{moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}</div>}
       {filePath && <div className="code-file-view"><div className="code-list code-symbols">{selectedFile?.status !== 'fresh' && <p className="code-alert">{selectedFile?.status ?? '文件不可用'}：历史符号不是当前代码事实。</p>}{symbols.map((symbol) => <button key={symbol.symbolUid} className={symbol.symbolUid === symbolUid ? 'selected' : ''} onClick={() => navigate(moduleId, filePath, symbol.symbolUid)}><strong>{symbol.qualifiedName}</strong><span>{symbol.kind} · 第 {symbol.startLine} 行</span></button>)}{symbols.length === 0 && <p>没有符合条件的声明。</p>}</div>
         <div className="code-detail">{selectedSymbol ? <><h3>{selectedSymbol.qualifiedName}</h3><code>{selectedSymbol.signature}</code><p>{selectedSymbol.filePath}:{selectedSymbol.startLine}:{selectedSymbol.startColumn ?? 1} · {selectedSymbol.exported ? '导出' : '未确认导出'}</p><p>返回类型：{selectedSymbol.returnType ?? '未知'}</p>{selectedSymbol.docComment && <pre>{selectedSymbol.docComment}</pre>}<h4>静态关系与证据</h4>{relations.length ? relations.map((relation, i) => {

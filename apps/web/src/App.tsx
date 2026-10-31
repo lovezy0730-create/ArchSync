@@ -34,7 +34,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar onAddProject={() => setAddOpen(true)} />
+      <TopBar onAddProject={() => setAddOpen(true)} showCode={codeMode} />
       <div className="app-body">
         {!codeMode && <Sidebar />}
         <main className="canvas-area">
