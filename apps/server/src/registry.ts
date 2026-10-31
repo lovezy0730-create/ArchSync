@@ -81,7 +81,12 @@ export async function inspectGitRepo(rawPath: string): Promise<
   let remoteOriginUrl: string | null = null;
   try {
     branch = (await git(absPath, ['branch', '--show-current'])).trim() || null;
-    headSha = (await git(absPath, ['rev-parse', 'HEAD'])).trim() || null;
+    try {
+      headSha = (await git(absPath, ['rev-parse', '--verify', 'HEAD'])).trim() || null;
+    } catch {
+      // A newly initialized repository legitimately has no HEAD commit yet.
+      headSha = null;
+    }
     try {
       remoteOriginUrl = (await git(absPath, ['remote', 'get-url', 'origin'])).trim() || null;
     } catch {

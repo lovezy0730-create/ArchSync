@@ -10,6 +10,9 @@ rebuild queue runs both AST scanners and exposes their SQLite index at
 schedule another scan. A real mixed-language fixture covers registration,
 indexing, a watched edit and restart. These are initial integration steps,
 not a completed Phase B or a desktop acceptance result.
+Unmatched files in configured projects are reported as unplanned observed
+code instead of being assigned to a planned module. Repositories without a
+first Git commit can be registered.
 
 Read-only source retrieval checks the indexed path, resolves it inside the
 project root and reports whether the content still matches the fresh index.

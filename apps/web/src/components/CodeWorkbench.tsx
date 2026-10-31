@@ -86,7 +86,13 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
     <div className="code-content">
       {!moduleId && <div className="code-grid">{index?.modules.map((module) => {
         const group = files.filter((file) => file.moduleId === module.id && matches(file));
-        return <button className="code-card" data-module-id={module.id} key={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button>;
+        const indexed = index.files.filter((file) => file.moduleId === module.id && file.status !== 'deleted');
+        const comparison = index.origin !== 'planned' ? '自动分组（推断）'
+          : module.id === '__observed_unplanned__' ? '实际存在，未规划'
+            : index.state !== 'ready' ? '扫描未完成'
+              : indexed.some((file) => file.status === 'fresh') ? '规划与实际匹配'
+                : indexed.length ? '实际分析不完整' : '仅规划，未检测到源码';
+        return <button className="code-card" data-module-id={module.id} key={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{comparison}</span><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button>;
       })}</div>}
       {moduleId && !filePath && <div className="code-list">{moduleFiles.map((file) => <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}><strong>{file.filePath}</strong><span>{file.language} · {file.status} · {file.symbols.filter((s) => s.kind !== 'module').length} 个声明</span></button>)}{moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}</div>}
       {filePath && <div className="code-file-view"><div className="code-list code-symbols">{selectedFile?.status !== 'fresh' && <p className="code-alert">{selectedFile?.status ?? '文件不可用'}：历史符号不是当前代码事实。</p>}{symbols.map((symbol) => <button key={symbol.symbolUid} className={symbol.symbolUid === symbolUid ? 'selected' : ''} onClick={() => navigate(moduleId, filePath, symbol.symbolUid)}><strong>{symbol.qualifiedName}</strong><span>{symbol.kind} · 第 {symbol.startLine} 行</span></button>)}{symbols.length === 0 && <p>没有符合条件的声明。</p>}</div>

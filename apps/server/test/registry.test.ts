@@ -138,6 +138,17 @@ describe('ProjectRegistry: multi-repo across different parent directories', () =
     registry.remove(result.project!.id);
   });
 
+  it('accepts an initialized repository with no commit', async () => {
+    const empty = join(repoC, 'new-repo');
+    await mkdir(empty, { recursive: true });
+    await execFileAsync('git', ['init', '-q'], { cwd: empty });
+    await writeFile(join(empty, 'main.py'), 'def main():\n    pass\n');
+    const added = await registry.addLocal(empty);
+    expect(added.ok).toBe(true);
+    expect(added.project?.entry.configOrigin).toBe('inferred');
+    registry.remove(added.project!.id);
+  });
+
   it('disable stops monitoring; enable resumes; data survives restart', async () => {
     const disabled = registry.setMonitoring('repo-a', false);
     expect(disabled?.monitoringEnabled).toBe(false);

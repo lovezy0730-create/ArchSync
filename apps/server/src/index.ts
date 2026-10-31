@@ -124,7 +124,7 @@ export async function createServer(overrides?: {
       if (entry.rootDir) {
         codeStates.set(entryId, { state: 'scanning', error: null, scannedAt: null });
         try {
-          const moduleFor = (path: string) => entry.config.modules.find((m) => matchPaths(m.paths, [path]).length > 0)?.id ?? entry.config.modules[0]?.id ?? 'unassigned';
+          const moduleFor = (path: string) => entry.config.modules.find((m) => matchPaths(m.paths, [path]).length > 0)?.id ?? '__observed_unplanned__';
           scanAstIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
           await scanPythonIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
           codeStates.set(entryId, { state: 'ready', error: null, scannedAt: new Date().toISOString() });
@@ -229,7 +229,10 @@ export async function createServer(overrides?: {
       if (file.status === 'fresh') summary.freshSymbols += file.symbols.length;
       else if (file.status === 'stale' || file.status === 'unavailable') summary.historicalSymbols += file.symbols.length;
     }
-    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules: entry.config.modules,
+    const modules = files.some((file) => file.status !== 'deleted' && file.moduleId === '__observed_unplanned__')
+      ? [...entry.config.modules, { id: '__observed_unplanned__', label: '未规划的实际代码' }]
+      : entry.config.modules;
+    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules,
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
       summary, files, trustedRelations: codeIndex.trustedRelations(entry.id) };
   });
