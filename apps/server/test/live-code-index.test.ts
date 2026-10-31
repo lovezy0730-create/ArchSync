@@ -62,10 +62,13 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
     }
     expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.status).toBe('fresh');
     expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.symbols.find((s) => s.name === 'updated')?.symbolUid).toBe(updated?.symbolUid);
+    const selection = { moduleId: 'module-example', filePath: 'src/a.ts', symbolUid: updated!.symbolUid };
+    expect((await fetch(server.url + `/api/v1/projects/${project.id}/workspace`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(selection) })).status).toBe(200);
     await server.close();
     server = await createServer({ repoRoot: root, quiet: true });
     const restored = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;
     expect(restored?.files.flatMap((file) => file.symbols.map((s) => s.name))).toEqual(expect.arrayContaining(['updated', 'greet']));
+    expect(await (await fetch(server.url + `/api/v1/projects/${project.id}/workspace`)).json()).toEqual(selection);
   } finally {
     await server.close();
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

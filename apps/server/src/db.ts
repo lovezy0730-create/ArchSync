@@ -87,6 +87,8 @@ export class LocalDatabase {
       CREATE TABLE IF NOT EXISTS code_index_history(project_id TEXT NOT NULL,file_path TEXT NOT NULL,revision INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,file_path,revision));
     `);
     try {this.recordMigration(3);this.db.exec('COMMIT');} catch(error){this.db.exec('ROLLBACK');throw error;}
+    this.db.exec('BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS workspace_preferences (project_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);');
+    try {this.recordMigration(4);this.db.exec('COMMIT');} catch(error){this.db.exec('ROLLBACK');throw error;}
   }
 
   private recordMigration(version: number): void {

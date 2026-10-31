@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CodeSymbol, SourceFile } from '@archsync/contracts';
-import { loadCodeIndex, loadCodeSource, type CodeIndexResponse, type SourceResponse } from '../lib/code-index-api.js';
+import { loadCodeIndex, loadCodeSource, loadWorkspace, saveWorkspace, type CodeIndexResponse, type SourceResponse } from '../lib/code-index-api.js';
 
 export function CodeWorkbench({ projectId }: { projectId: string }) {
   const [index, setIndex] = useState<CodeIndexResponse | null>(null);
@@ -13,22 +13,24 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
   const [language, setLanguage] = useState('all');
   const [publicOnly, setPublicOnly] = useState(false);
   const [includeStale, setIncludeStale] = useState(false);
+  const selectionTouched = useRef(false);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const selectedLine = useRef<HTMLSpanElement>(null);
   const sourceRevision = index?.files.find((file) => file.filePath === filePath)?.revision;
 
   const navigate = (nextModule: string | null, nextFile: string | null, nextSymbol: string | null) => {
     setModuleId(nextModule); setFilePath(nextFile); setSymbolUid(nextSymbol);
-    try { localStorage.setItem(`archsync-code-view:${projectId}`, JSON.stringify({ moduleId: nextModule, filePath: nextFile, symbolUid: nextSymbol })); } catch { /* storage can be disabled */ }
+    selectionTouched.current = true;
+    const selection = { moduleId: nextModule, filePath: nextFile, symbolUid: nextSymbol };
+    saveQueue.current = saveQueue.current.then(() => saveWorkspace(projectId, selection)).catch((err: unknown) => { setError(err instanceof Error ? err.message : '工作台状态保存失败'); });
   };
 
   useEffect(() => {
     let alive = true;
-    setIndex(null); setError(''); setSource(null);
-    try {
-      const saved = JSON.parse(localStorage.getItem(`archsync-code-view:${projectId}`) ?? '{}') as Record<string, unknown>;
-      setModuleId(typeof saved.moduleId === 'string' ? saved.moduleId : null);
-      setFilePath(typeof saved.filePath === 'string' ? saved.filePath : null);
-      setSymbolUid(typeof saved.symbolUid === 'string' ? saved.symbolUid : null);
-    } catch { setModuleId(null); setFilePath(null); setSymbolUid(null); }
+    setIndex(null); setError(''); setSource(null); setModuleId(null); setFilePath(null); setSymbolUid(null); selectionTouched.current = false;
+    void loadWorkspace(projectId).then((saved) => {
+      if (alive && !selectionTouched.current) { setModuleId(saved.moduleId); setFilePath(saved.filePath); setSymbolUid(saved.symbolUid); }
+    }).catch((err: unknown) => { if (alive) setError(err instanceof Error ? err.message : '工作台状态不可用'); });
     const load = async () => {
       try {
         const next = await loadCodeIndex(projectId);
@@ -58,8 +60,12 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
   const moduleFiles = files.filter((file) => file.moduleId === moduleId && matches(file));
   const symbols = (selectedFile?.symbols ?? []).filter((symbol) => symbol.kind !== 'module' && (!publicOnly || symbol.exported === true) && (!terms || symbol.qualifiedName.toLowerCase().includes(terms) || selectedFile?.filePath.toLowerCase().includes(terms)));
   const nameByUid = new Map((index?.files ?? []).flatMap((f) => f.symbols).map((s) => [s.symbolUid, `${s.qualifiedName} · ${s.filePath}:${s.startLine}`]));
+  const trusted = new Set((index?.trustedRelations ?? []).map((r) => `${r.sourceUid}|${r.targetUid}|${r.kind}`));
   const relations = selectedFile?.status === 'fresh' && selectedSymbol
     ? selectedFile.relations.filter((relation) => relation.sourceUid === selectedSymbol.symbolUid) : [];
+  useEffect(() => {
+    if (source && selectedSymbol) selectedLine.current?.scrollIntoView({ block: 'center' });
+  }, [source, symbolUid]);
 
   return <section className="code-workbench" aria-label="真实代码架构">
     <div className="code-heading"><div><strong>代码架构</strong><span>真实源码 · {index?.origin === 'inferred' ? '分组为推断' : '规划与实际分别显示'}</span></div>
@@ -80,12 +86,15 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
     <div className="code-content">
       {!moduleId && <div className="code-grid">{index?.modules.map((module) => {
         const group = files.filter((file) => file.moduleId === module.id && matches(file));
-        return <button className="code-card" key={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button>;
+        return <button className="code-card" data-module-id={module.id} key={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button>;
       })}</div>}
       {moduleId && !filePath && <div className="code-list">{moduleFiles.map((file) => <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}><strong>{file.filePath}</strong><span>{file.language} · {file.status} · {file.symbols.filter((s) => s.kind !== 'module').length} 个声明</span></button>)}{moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}</div>}
       {filePath && <div className="code-file-view"><div className="code-list code-symbols">{selectedFile?.status !== 'fresh' && <p className="code-alert">{selectedFile?.status ?? '文件不可用'}：历史符号不是当前代码事实。</p>}{symbols.map((symbol) => <button key={symbol.symbolUid} className={symbol.symbolUid === symbolUid ? 'selected' : ''} onClick={() => navigate(moduleId, filePath, symbol.symbolUid)}><strong>{symbol.qualifiedName}</strong><span>{symbol.kind} · 第 {symbol.startLine} 行</span></button>)}{symbols.length === 0 && <p>没有符合条件的声明。</p>}</div>
-        <div className="code-detail">{selectedSymbol ? <><h3>{selectedSymbol.qualifiedName}</h3><code>{selectedSymbol.signature}</code><p>{selectedSymbol.filePath}:{selectedSymbol.startLine}:{selectedSymbol.startColumn ?? 1} · {selectedSymbol.exported ? '导出' : '未确认导出'}</p><p>返回类型：{selectedSymbol.returnType ?? '未知'}</p>{selectedSymbol.docComment && <pre>{selectedSymbol.docComment}</pre>}<h4>静态关系与证据</h4>{relations.length ? relations.map((relation, i) => <p key={`${relation.kind}-${i}`}>{relation.kind} · {relation.strength} · {relation.targetUid ? nameByUid.get(relation.targetUid) ?? '目标不可用' : relation.reason ?? '未解析'} · {relation.evidence[0]?.filePath}:{relation.evidence[0]?.startLine}</p>) : <p>无可显示的当前关系。</p>}</> : <p>选择声明以查看签名、证据和源码。</p>}
-          {source && <><h4>源码 {source.indexedContentMatches ? '' : '（内容与索引不一致）'}</h4><pre className="code-source">{source.content.split('\n').map((line, i) => <span key={i} className={selectedSymbol && i + 1 === selectedSymbol.startLine ? 'code-line-selected' : ''}><i>{i + 1}</i>{line || ' '}{'\n'}</span>)}</pre></>}
+        <div className="code-detail">{selectedSymbol ? <><h3>{selectedSymbol.qualifiedName}</h3><code>{selectedSymbol.signature}</code><p>{selectedSymbol.filePath}:{selectedSymbol.startLine}:{selectedSymbol.startColumn ?? 1} · {selectedSymbol.exported ? '导出' : '未确认导出'}</p><p>返回类型：{selectedSymbol.returnType ?? '未知'}</p>{selectedSymbol.docComment && <pre>{selectedSymbol.docComment}</pre>}<h4>静态关系与证据</h4>{relations.length ? relations.map((relation, i) => {
+          const valid = relation.strength !== 'resolved' || trusted.has(`${relation.sourceUid}|${relation.targetUid}|${relation.kind}`);
+          return <p key={`${relation.kind}-${i}`}>{relation.kind} · {valid ? relation.strength : '失效'} · {valid ? (relation.targetUid ? nameByUid.get(relation.targetUid) ?? '目标不可用' : relation.reason ?? '未解析') : '目标不再可信'} · {relation.evidence[0]?.filePath}:{relation.evidence[0]?.startLine}</p>;
+        }) : <p>无可显示的当前关系。</p>}</> : <p>选择声明以查看签名、证据和源码。</p>}
+          {source && <><h4>源码 {source.indexedContentMatches ? '' : '（内容与索引不一致）'}</h4><pre className="code-source">{source.content.split('\n').map((line, i) => <span ref={selectedSymbol && i + 1 === selectedSymbol.startLine ? selectedLine : undefined} key={i} className={selectedSymbol && i + 1 === selectedSymbol.startLine ? 'code-line-selected' : ''}><i>{i + 1}</i>{line || ' '}{'\n'}</span>)}</pre></>}
         </div></div>}
     </div>
   </section>;

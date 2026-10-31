@@ -18,12 +18,16 @@ checks fresh → stale → fresh and verifies that the cached UID survives.
 The index response separates status counts and current versus historical
 symbol counts; projects without a GitHub remote do not attempt live fetches.
 
-The initial code workspace reads the live index and supports module → file →
-declaration navigation, source and evidence, filters and persisted selection.
-This still needs packaged GUI acceptance and interaction/visual coverage.
+The code workspace reads the live index and supports module → file →
+declaration navigation, source and evidence, filters and SQLite-persisted
+selection. The Windows unpacked application passed a Playwright GUI test with
+an isolated TS/Python repository, watched edit, UID and restart, plus the real
+ArchSync scanner source. This is not Portable/Setup installer acceptance.
 
-Next: finish project-isolation and UI validation, integrate the Python WASM
-resources into the desktop package, and run packaged Windows E2E. The app is
-not yet ready for user trial.
+Python WASM resources are copied into desktop packaging; local Portable/Setup
+building was blocked by downloads timing out, while the unpacked GUI was
+tested with a locally available Electron 35.7.5 runtime. Next: complete CI
+for both EXEs, actual installer/portable E2E, diagnostics and remaining UI
+and performance gates. The app is not yet ready for user trial.
 
 Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts`.

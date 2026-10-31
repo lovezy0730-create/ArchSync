@@ -11,6 +11,7 @@ export interface CodeIndexResponse {
   summary: { fresh: number; stale: number; partial: number; unavailable: number; unsupported: number; freshSymbols: number; historicalSymbols: number };
 }
 export interface SourceResponse { content: string; indexedContentMatches: boolean; status: string }
+export interface WorkspaceSelection { moduleId: string | null; filePath: string | null; symbolUid: string | null }
 export async function loadCodeIndex(projectId: string): Promise<CodeIndexResponse> {
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/code-index`, { credentials: 'same-origin' });
   if (!response.ok) throw new Error(`索引请求失败：HTTP ${response.status}`);
@@ -20,4 +21,13 @@ export async function loadCodeSource(projectId: string, filePath: string): Promi
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/source?path=${encodeURIComponent(filePath)}`, { credentials: 'same-origin' });
   if (!response.ok) throw new Error(`源码不可读取：HTTP ${response.status}`);
   return await response.json() as SourceResponse;
+}
+export async function loadWorkspace(projectId: string): Promise<WorkspaceSelection> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace`, { credentials: 'same-origin' });
+  if (!response.ok) throw new Error(`工作台状态不可用：HTTP ${response.status}`);
+  return await response.json() as WorkspaceSelection;
+}
+export async function saveWorkspace(projectId: string, selection: WorkspaceSelection): Promise<void> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace`, { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(selection) });
+  if (!response.ok) throw new Error(`工作台状态保存失败：HTTP ${response.status}`);
 }

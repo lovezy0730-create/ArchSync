@@ -7,6 +7,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
+import { z } from 'zod';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
 import { discoverProjects } from './projects.js';
 import { LocalDatabase } from './db.js';
@@ -20,7 +21,7 @@ import { scanAstIndex } from './ast-index.js';
 import { scanPythonIndex, releasePythonIndex } from './python-index.js';
 import { GithubSyncWorker } from './sync/github-worker.js';
 import { GithubApiClient } from './sync/github-client.js';
-import { registerRoutes } from './routes.js';
+import { isSameOrigin, registerRoutes } from './routes.js';
 import { registerRegistryRoutes } from './registry-routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
 import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
@@ -111,6 +112,7 @@ export async function createServer(overrides?: {
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
   const rebuildQueue = new ProjectQueue();
+  const rewatchQueue = new ProjectQueue();
   // liveEntries is shared by reference with the registry: dynamic add/remove
   // takes effect in routes immediately, no restart needed.
   const entryById = liveEntries;
@@ -231,6 +233,21 @@ export async function createServer(overrides?: {
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
       summary, files, trustedRelations: codeIndex.trustedRelations(entry.id) };
   });
+  const selectionSchema = z.object({ moduleId: z.string().max(256).nullable(), filePath: z.string().max(4096).nullable(), symbolUid: z.string().max(256).nullable() }).strict();
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/workspace', async (request, reply) => {
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get(request.params.id) as { payload_json: string } | undefined;
+    const parsed = row ? selectionSchema.safeParse(JSON.parse(row.payload_json)) : null;
+    return parsed?.success ? parsed.data : { moduleId: null, filePath: null, symbolUid: null };
+  });
+  app.put<{ Params: { id: string } }>('/api/v1/projects/:id/workspace', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: { message: '跨源写请求被拒绝' } });
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const parsed = selectionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: { message: '工作台状态无效' } });
+    db.prepare('INSERT INTO workspace_preferences VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET payload_json=excluded.payload_json').run(request.params.id, JSON.stringify(parsed.data));
+    return parsed.data;
+  });
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/v1/projects/:id/source', async (request, reply) => {
     const entry = entryById.get(request.params.id);
     const filePath = request.query.path;
@@ -333,7 +350,7 @@ export async function createServer(overrides?: {
   } else {
     watcher.start();
   }
-  dynamicRefs.rewatch = async () => {
+  dynamicRefs.rewatch = () => rewatchQueue.run('watcher', async () => {
     await watcher.stop();
     watcher = new WorkspaceWatcher(
       watchedEntries(),
@@ -350,7 +367,7 @@ export async function createServer(overrides?: {
     );
     if (!monitorPaused) watcher.start();
     log(`文件监听已重建（${liveEntries.size} 个项目）`);
-  };
+  });
 
   // ---- GitHub sync worker (阶段 B): budgeted polling with ETag cache ----
   const syncClient = new GithubApiClient(db, () => env.githubToken);
@@ -397,6 +414,7 @@ export async function createServer(overrides?: {
       clearInterval(sessionSweeper);
       await syncWorker.stop();
       dynamicRefs.rewatch = undefined;
+      await rewatchQueue.drain();
       await watcher.stop();
       await rebuildQueue.drain();
       releasePythonIndex(codeIndex);
