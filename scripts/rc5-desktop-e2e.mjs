@@ -174,7 +174,10 @@ try {
     }, remoteId, { timeout: 120000 });
     const remoteIndex = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), remoteId);
     assert.equal(remoteIndex.files.length, 0, 'remote-only project must not invent local symbols');
+    await page.locator('.project-select').selectOption(remoteId);
+    await page.waitForFunction((id) => document.querySelector('.project-select')?.value === id, remoteId);
     await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
+    await page.getByRole('dialog', { name: '项目动态' }).getByLabel('GitHub 当前状态').waitFor({ timeout: 30000 });
     await page.locator('a[href$="/pull/11"]').waitFor({ timeout: 30000 });
     await page.getByText(/Issue（/).first().waitFor();
     await page.getByText(/远端 HEAD.*CI/).first().waitFor();
