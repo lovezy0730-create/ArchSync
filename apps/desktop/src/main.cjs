@@ -16,6 +16,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const {randomUUID} = require('node:crypto');
+const debugPort = Number(process.env.ARCHSYNC_E2E_DEBUG_PORT);
+if (Number.isInteger(debugPort) && debugPort > 0 && debugPort < 65536) {
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+  app.commandLine.appendSwitch('remote-debugging-port', String(debugPort));
+}
 const instanceId = randomUUID();
 if (process.env.ARCHSYNC_DESKTOP_DATA_DIR) {
   fs.mkdirSync(process.env.ARCHSYNC_DESKTOP_DATA_DIR,{recursive:true});
@@ -220,5 +225,5 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  // 托盘常驻：不退出，保持监控
+  if (process.env.ARCHSYNC_CLOSE_TO_TRAY === '0') app.quit();
 });

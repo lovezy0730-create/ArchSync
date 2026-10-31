@@ -1,8 +1,9 @@
-import { _electron as electron } from 'playwright';
+import { _electron as electron, chromium } from 'playwright';
 import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import assert from 'node:assert/strict';
 
 const temp = await mkdtemp(join(tmpdir(), 'archsync-rc5-e2e-'));
@@ -10,25 +11,62 @@ const repo = join(temp, 'mixed-repo');
 const data = join(temp, 'user-data');
 const evidence = resolve('apps/desktop/release/evidence');
 await mkdir(join(repo, 'src'), { recursive: true });
+await mkdir(join(repo, 'lib'), { recursive: true });
 await mkdir(evidence, { recursive: true });
-await writeFile(join(repo, 'src', 'main.ts'), 'export function hello(n: number): number { return n + 1; }\n');
+await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 1; }\n");
+await writeFile(join(repo, 'lib', 'tool.ts'), 'export function helper(n: number): number { return n; }\n');
 await writeFile(join(repo, 'src', 'service.py'), 'class Service:\n    def greet(self):\n        return "hello"\n');
 for (const args of [['init', '-q'], ['add', '-A'], ['-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture']]) execFileSync('git', args, { cwd: repo, windowsHide: true });
 const executablePath = process.env.ARCHSYNC_E2E_EXE ?? resolve('apps/desktop/release/win-unpacked/ArchSync.exe');
 let application;
+let browser;
+let portableProcess;
+let currentPage;
 let agentPid;
+async function availablePort() {
+  return await new Promise((resolvePort, reject) => {
+    const socket = createServer();
+    socket.once('error', reject);
+    socket.listen(0, '127.0.0.1', () => {
+      const port = socket.address().port;
+      socket.close(() => resolvePort(port));
+    });
+  });
+}
 async function launch() {
   const env = { ...process.env, ARCHSYNC_DESKTOP_DATA_DIR: data, ARCHSYNC_CLOSE_TO_TRAY: '0', PORT: '0', AUTH_CODE: '', DEV_AUTH_MODE: 'mock', GITHUB_TOKEN: '' };
   delete env.ELECTRON_RUN_AS_NODE;
-  application = await electron.launch({ executablePath, env, timeout: 60000 });
-  const page = await application.firstWindow();
+  let page;
+  if (process.env.ARCHSYNC_E2E_PORTABLE === '1') {
+    const port = await availablePort();
+    env.ARCHSYNC_E2E_DEBUG_PORT = String(port);
+    portableProcess = spawn(executablePath, [], { env, windowsHide: true, stdio: 'ignore' });
+    const deadline = Date.now() + 120000;
+    while (!browser && Date.now() < deadline) {
+      try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2000 }); }
+      catch { await new Promise((resolveWait) => setTimeout(resolveWait, 500)); }
+    }
+    if (!browser) throw new Error('portable application did not expose its test browser');
+    const context = browser.contexts()[0];
+    page = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 60000 });
+  } else {
+    application = await electron.launch({ executablePath, env, timeout: 60000 });
+    page = await application.firstWindow();
+  }
+  currentPage = page;
   await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
   const health = await page.evaluate(async () => (await fetch('/healthz')).json());
   agentPid = health.pid;
   return page;
 }
 async function stop() {
-  await application.close(); application = undefined;
+  if (application) { await application.close(); application = undefined; }
+  else if (browser) {
+    await currentPage.close();
+    await browser.close().catch(() => undefined);
+    browser = undefined; currentPage = undefined;
+    portableProcess = undefined;
+  }
   for (let i = 0; i < 100; i++) {
     try { process.kill(agentPid, 0); } catch { return; }
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
@@ -47,10 +85,13 @@ try {
   }, repo).then((handle) => handle.jsonValue());
   await page.waitForFunction(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
-    return index.state === 'ready' && index.summary.fresh === 2;
+    return index.state === 'ready' && index.summary.fresh === 3;
   }, projectId, { timeout: 60000 });
   const before = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), projectId);
   const uid = before.files.flatMap((file) => file.symbols).find((symbol) => symbol.name === 'hello').symbolUid;
+  await page.getByText(/扫描完成 · 3 个有效文件/).waitFor({ timeout: 30000 });
+  await page.locator('.react-flow__edge').first().waitFor();
+  await page.screenshot({ path: join(evidence, 'rc5-module-graph.png') });
   await page.getByRole('button', { name: /src（推断）/ }).click();
   await page.getByRole('button', { name: /src\/main.ts/ }).click();
   await page.getByRole('button', { name: /hello.*function/ }).click();
@@ -64,7 +105,7 @@ try {
   await page.getByRole('button', { name: '刷新 GitHub' }).click();
   await page.locator('.registry-status [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
-  await writeFile(join(repo, 'src', 'main.ts'), 'export function hello(n: number): number { return n + 2; }\n');
+  await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
   await page.waitForFunction(async ({ id, previous }) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     const symbol = index.files.flatMap((file) => file.symbols).find((item) => item.name === 'hello');
@@ -106,5 +147,7 @@ try {
   console.log('PASS: packaged mixed repository, TS/Python navigation, source, watched edit, UID, restart, offline GitHub state and self-scan');
 } finally {
   if (application) await application.close();
+  if (browser) await browser.close().catch(() => undefined);
+  if (portableProcess && portableProcess.exitCode === null) portableProcess.kill();
   await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
