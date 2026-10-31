@@ -13,6 +13,7 @@ import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
+import { ProjectQueue } from './sync/project-queue.js';
 import { GithubSyncWorker } from './sync/github-worker.js';
 import { GithubApiClient } from './sync/github-client.js';
 import { registerRoutes } from './routes.js';
@@ -103,17 +104,16 @@ export async function createServer(overrides?: {
   const sessionSweeper = setInterval(() => sessions.sweep(), 10 * 60_000);
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
-  const inFlight = new Map<string, Promise<RebuildResult>>();
+  const rebuildQueue = new ProjectQueue();
   // liveEntries is shared by reference with the registry: dynamic add/remove
   // takes effect in routes immediately, no restart needed.
   const entryById = liveEntries;
 
   async function runRebuild(entryId: string, jobId: string): Promise<RebuildResult> {
-    const entry = entryById.get(entryId);
-    if (!entry) throw new Error(`项目不存在: ${entryId}`);
-    const previous = inFlight.get(entryId);
-    if (previous) await previous.catch(() => undefined);
-    const task = rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+    return rebuildQueue.run(entryId, async () => {
+      const entry = entryById.get(entryId);
+      if (!entry) throw new Error(`项目不存在: ${entryId}`);
+      return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
       registry.markScan(
         entryId,
         result.snapshot?.version ?? 0,
@@ -124,13 +124,8 @@ export async function createServer(overrides?: {
         log(`快照已发布 ${entry.name} v${result.snapshot.version}`);
       }
       return result;
+      });
     });
-    inFlight.set(entryId, task);
-    try {
-      return await task;
-    } finally {
-      inFlight.delete(entryId);
-    }
   }
 
   function scheduleRebuild(entryId: string): string {
@@ -352,7 +347,7 @@ export async function createServer(overrides?: {
       await syncWorker.stop();
       dynamicRefs.rewatch = undefined;
       await watcher.stop();
-      await Promise.allSettled([...inFlight.values()]);
+      await rebuildQueue.drain();
       await hub.stop();
       await app.close();
       db.close();
