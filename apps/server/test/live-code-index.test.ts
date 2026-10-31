@@ -29,6 +29,9 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
     }
     expect(data?.state).toBe('ready');
     expect(data?.files.flatMap((file) => file.symbols.map((s) => s.name))).toEqual(expect.arrayContaining(['hello', 'greet']));
+    const source = await fetch(server.url + `/api/v1/projects/${project.id}/source?path=src%2Fa.ts`);
+    expect(await source.json()).toMatchObject({ path: 'src/a.ts', indexedContentMatches: true, content: expect.stringContaining('function hello') });
+    expect((await fetch(server.url + `/api/v1/projects/${project.id}/source?path=..%2Fsecret`)).status).toBe(404);
     await new Promise((resolve) => setTimeout(resolve, 2000));
     await writeFile(join(repo, 'src', 'a.ts'), 'export function updated(): number { return 2; }');
     for (let i = 0; i < 120; i++) {

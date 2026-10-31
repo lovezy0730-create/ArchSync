@@ -11,7 +11,11 @@ schedule another scan. A real mixed-language fixture covers registration,
 indexing, a watched edit and restart. These are initial integration steps,
 not a completed Phase B or a desktop acceptance result.
 
-Next: complete diagnostics and safe source retrieval, test stale and project
+Read-only source retrieval checks the indexed path, resolves it inside the
+project root and reports whether the content still matches the fresh index.
+The implementation is in the commit following `97d1778`.
+
+Next: complete diagnostics, test stale and project
 isolation through the server, then connect the actual four-level workspace.
 The application still requires desktop packaging, GUI and packaged E2E work.
 

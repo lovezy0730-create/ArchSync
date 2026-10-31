@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { matchPaths } from '@archsync/scanner';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -224,6 +224,25 @@ export async function createServer(overrides?: {
     return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules: entry.config.modules,
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
       files, trustedRelations: codeIndex.trustedRelations(entry.id) };
+  });
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/v1/projects/:id/source', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    const filePath = request.query.path;
+    const file = entry && filePath ? codeIndex.get(entry.id, filePath) : null;
+    if (!entry?.rootDir || !file || file.status === 'deleted') return reply.code(404).send({ error: { message: '索引文件不存在' } });
+    try {
+      const rootPath = realpathSync(entry.rootDir);
+      const sourcePath = realpathSync(join(rootPath, file.filePath));
+      const rel = relative(rootPath, sourcePath);
+      if (!rel || rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel))
+        return reply.code(403).send({ error: { message: '文件不在项目目录内' } });
+      if (statSync(sourcePath).size > 1024 * 1024) return reply.code(413).send({ error: { message: '文件超过读取限制' } });
+      const content = readFileSync(sourcePath, 'utf8');
+      const contentHash = createHash('sha256').update(content).digest('hex');
+      return { path: file.filePath, content, contentHash, indexedContentMatches: file.status === 'fresh' && contentHash === file.lastSuccessfulHash, status: file.status };
+    } catch {
+      return reply.code(404).send({ error: { message: '文件不可读取' } });
+    }
   });
 
   registerRoutes(app, {
