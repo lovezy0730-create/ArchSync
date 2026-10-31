@@ -45,6 +45,9 @@ jobs:
         run: node scripts/agent-smoke.cjs
 
       - name: Unpacked Windows GUI E2E
+        env:
+          ARCHSYNC_E2E_GITHUB: '1'
+          ARCHSYNC_E2E_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/rc5-desktop-e2e.mjs
 
       - name: Portable Windows GUI E2E

@@ -34,7 +34,7 @@ async function availablePort() {
   });
 }
 async function launch() {
-  const env = { ...process.env, ARCHSYNC_DESKTOP_DATA_DIR: data, ARCHSYNC_CLOSE_TO_TRAY: '0', PORT: '0', AUTH_CODE: '', DEV_AUTH_MODE: 'mock', GITHUB_TOKEN: '' };
+  const env = { ...process.env, ARCHSYNC_DESKTOP_DATA_DIR: data, ARCHSYNC_CLOSE_TO_TRAY: '0', PORT: '0', AUTH_CODE: '', DEV_AUTH_MODE: 'mock', GITHUB_TOKEN: process.env.ARCHSYNC_E2E_GITHUB_TOKEN ?? '' };
   delete env.ELECTRON_RUN_AS_NODE;
   let page;
   if (process.env.ARCHSYNC_E2E_PORTABLE === '1') {
@@ -158,6 +158,30 @@ try {
   assert.equal(await page.locator('.project-select').inputValue(), '');
   await stop();
   await rename(`${repo}-missing`, repo);
+  if (process.env.ARCHSYNC_E2E_GITHUB === '1') {
+    page = await launch();
+    await page.locator('.add-project-btn').click();
+    await page.getByRole('button', { name: 'GitHub 仓库', exact: true }).click();
+    await page.getByPlaceholder('https://github.com/owner/repo 或 owner/repo').fill('lovezy0730-create/ArchSync');
+    await page.getByRole('button', { name: '添加远端监控' }).click();
+    await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+    const remoteId = 'remote-lovezy0730-create-archsync';
+    await page.waitForFunction(async (id) => {
+      const response = await fetch(`/api/v1/registry/${id}/github`);
+      if (!response.ok) return false;
+      const status = await response.json();
+      return status.collab.source === 'live' && status.collab.pullRequests.some((pr) => pr.number === 11);
+    }, remoteId, { timeout: 120000 });
+    const remoteIndex = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), remoteId);
+    assert.equal(remoteIndex.files.length, 0, 'remote-only project must not invent local symbols');
+    await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
+    await page.locator('a[href$="/pull/11"]').waitFor({ timeout: 30000 });
+    await page.getByText(/Issue（/).first().waitFor();
+    await page.getByText(/远端 HEAD.*CI/).first().waitFor();
+    await page.screenshot({ path: join(evidence, 'rc5-github-live.png') });
+    await stop();
+    console.log('PASS: public GitHub GUI registration and live PR/Issue/CI view');
+  }
   console.log('PASS: packaged mixed repository, TS/Python navigation, source, watched edit, UID, restart, offline GitHub state and self-scan');
 } finally {
   if (application) await application.close();
