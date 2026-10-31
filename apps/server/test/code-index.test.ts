@@ -10,6 +10,20 @@ import {
   generateDataset,
   runBenchmark,
 } from "../src/index-benchmark.js";
+
+it("does not add history for an unchanged fresh scan, but records configuration changes", () => {
+  const db = new LocalDatabase(":memory:");
+  try {
+    const index = new CodeIndex(db);
+    index.applyBatch("p", [file()]);
+    index.applyBatch("p", [{ ...file(), scannedAt: "2026-10-31T00:00:00Z" }]);
+    expect(index.history("p", "src/a.ts")).toHaveLength(1);
+    index.applyBatch("p", [{ ...file(), configVersion: "2" }]);
+    expect(index.history("p", "src/a.ts")).toHaveLength(2);
+  } finally {
+    db.close();
+  }
+});
 const draft = (
   name = "f",
   fingerprint = "body",

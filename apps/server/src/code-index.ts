@@ -26,6 +26,14 @@ export const FileUpdateSchema = z.object({
 });
 export type FileUpdate = z.infer<typeof FileUpdateSchema>;
 type Row = { payload_json: string; last_success_json: string | null };
+// Scan timestamps and identity explanations do not change indexed facts. Keep
+// history compact while still detecting changed relations and parser settings.
+function comparableFacts(file: SourceFile): string {
+  const volatile = new Set(["scannedAt", "revision", "indexRevision", "identity"]);
+  return JSON.stringify(file, (key, value: unknown) =>
+    volatile.has(key) ? undefined : value,
+  );
+}
 /** Storage only: callers provide parser outcomes, never execute repository code. */
 export class CodeIndex {
   constructor(private readonly db: LocalDatabase) {}
@@ -180,6 +188,11 @@ export class CodeIndex {
               u.status === "fresh" ? (old?.revision ?? 0) + 1 : r.indexRevision,
           })),
         });
+        if (
+          old?.status === "fresh" &&
+          state.status === "fresh" &&
+          comparableFacts(old) === comparableFacts(state)
+        ) continue;
         const payload = JSON.stringify(state);
         this.db
           .prepare("INSERT INTO code_index_history VALUES (?,?,?,?)")
