@@ -200,8 +200,8 @@ export async function createServer(overrides?: {
       if (!entry) return { state: 'skipped' as const, events: 0, errors: ['项目不存在'] };
       // 连续点击合并：worker.syncNow 内部串行，重复调用排队等待上一轮完成
       const summary = await syncWorker.syncNow(entry);
+      registry.markSync(entryId, summary.errors.length ? summary.errors.join('; ') : null);
       if (summary.changed || summary.errors.length > 0) {
-        registry.markSync(entryId, null);
         scheduleRebuild(entryId); // rebuild + WS 推送由 runRebuild 处理
       }
       const rateLimited = summary.errors.some((e) => e.includes('限流') || e.includes('预算'));
@@ -395,9 +395,9 @@ export async function createServer(overrides?: {
     () => registry.monitoredEntries(),
     {
       onRemoteChanged: (entry) => {
-        registry.markSync(entry.id, null);
         scheduleRebuild(entry.id);
       },
+      onSyncFinished: (entry, errors) => registry.markSync(entry.id, errors.length ? errors.join('; ') : null),
       log,
     },
   );

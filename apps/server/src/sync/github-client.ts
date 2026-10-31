@@ -12,7 +12,7 @@ export interface GithubApiResult<T> {
   resetAt: string | null;
   retryAfterSeconds: number | null;
   error?: string;
-  errorKind?: 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'server' | 'network';
+  errorKind?: 'bad_request' | 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'server' | 'network' | 'timeout';
 }
 
 /**
@@ -184,12 +184,13 @@ export class GithubApiClient {
         remaining: null,
         resetAt: null,
         retryAfterSeconds: null,
-        error: aborted ? '请求超时（30s）' : `网络请求失败: ${(err as Error).message}`,
-        errorKind: 'network',
+        error: aborted ? '请求超时（30s）' : '网络请求失败，请检查网络连接',
+        errorKind: aborted ? 'timeout' : 'network',
       };
     }
 
-    const remaining = Number(res.headers.get('x-ratelimit-remaining'));
+    const remainingHeader = res.headers.get('x-ratelimit-remaining');
+    const remaining = remainingHeader === null ? null : Number(remainingHeader);
     const resetEpoch = Number(res.headers.get('x-ratelimit-reset'));
     const resetAt = Number.isFinite(resetEpoch) && resetEpoch > 0 ? new Date(resetEpoch * 1000).toISOString() : null;
     const retryAfterRaw = res.headers.get('retry-after');
@@ -215,6 +216,9 @@ export class GithubApiClient {
 
     if (res.status === 304 && options.conditional !== false) return this.request<T>(projectId, kind, path, { ...options, conditional: false });
 
+    if (res.status === 400) {
+      return fail(res, 'bad_request', 'GitHub 请求参数无效（400）');
+    }
     if (res.status === 401) {
       return fail(res, 'auth', 'Token 无效或已过期（401）');
     }

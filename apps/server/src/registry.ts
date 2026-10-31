@@ -24,6 +24,8 @@ export interface RegistryProject {
   lastScanAt: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  lastScanError: string | null;
+  lastSyncError: string | null;
   snapshotVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -398,15 +400,15 @@ export class ProjectRegistry {
   markScan(id: string, snapshotVersion: number, error: string | null = null): void {
     this.db
       .prepare(
-        'UPDATE registry_projects SET last_scan_at = ?, snapshot_version = ?, last_error = ?, updated_at = ? WHERE id = ?',
+        'UPDATE registry_projects SET last_scan_at = ?, snapshot_version = ?, last_scan_error = ?, last_error = COALESCE(last_sync_error, ?), updated_at = ? WHERE id = ?',
       )
-      .run(new Date().toISOString(), snapshotVersion, error, new Date().toISOString(), id);
+      .run(new Date().toISOString(), snapshotVersion, error, error, new Date().toISOString(), id);
   }
 
   markSync(id: string, error: string | null = null): void {
     this.db
-      .prepare('UPDATE registry_projects SET last_sync_at = ?, last_error = ?, updated_at = ? WHERE id = ?')
-      .run(new Date().toISOString(), error, new Date().toISOString(), id);
+      .prepare('UPDATE registry_projects SET last_sync_at = CASE WHEN ? IS NULL THEN ? ELSE last_sync_at END, last_sync_error = ?, last_error = COALESCE(?, last_scan_error), updated_at = ? WHERE id = ?')
+      .run(error, new Date().toISOString(), error, error, new Date().toISOString(), id);
   }
 
   /** Reload an entry from disk (e.g. after project.yaml edits). */
@@ -491,6 +493,8 @@ function rowToProject(row: Record<string, unknown>): RegistryProject {
     lastScanAt: row.last_scan_at === null ? null : String(row.last_scan_at),
     lastSyncAt: row.last_sync_at === null ? null : String(row.last_sync_at),
     lastError: row.last_error === null ? null : String(row.last_error),
+    lastScanError: row.last_scan_error == null ? null : String(row.last_scan_error),
+    lastSyncError: row.last_sync_error == null ? null : String(row.last_sync_error),
     snapshotVersion: Number(row.snapshot_version),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),

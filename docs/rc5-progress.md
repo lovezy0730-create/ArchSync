@@ -28,6 +28,9 @@ an isolated TS/Python repository, watched edit, UID and restart, plus the real
 ArchSync scanner source. This is not Portable/Setup installer acceptance.
 The selected project and declaration survive port changes; a missing project
 is reported instead of silently switching to a different repository.
+GitHub and local-scan errors are persisted separately; unsuccessful syncs do
+not advance the last successful timestamp. HTTP 400/401/403/429 and
+timeout/network failure classifications have regression tests.
 The system view now draws module dependencies only from trusted static edges;
 unplanned code is separated from the YAML plan and marked explicitly.
 

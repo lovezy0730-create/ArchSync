@@ -89,6 +89,15 @@ export class LocalDatabase {
     try {this.recordMigration(3);this.db.exec('COMMIT');} catch(error){this.db.exec('ROLLBACK');throw error;}
     this.db.exec('BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS workspace_preferences (project_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);');
     try {this.recordMigration(4);this.db.exec('COMMIT');} catch(error){this.db.exec('ROLLBACK');throw error;}
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const registryColumns = this.db.prepare('PRAGMA table_info(registry_projects)').all() as { name: string }[];
+      if (!registryColumns.some((column) => column.name === 'last_scan_error')) this.db.exec('ALTER TABLE registry_projects ADD COLUMN last_scan_error TEXT');
+      if (!registryColumns.some((column) => column.name === 'last_sync_error')) {
+        this.db.exec('ALTER TABLE registry_projects ADD COLUMN last_sync_error TEXT; UPDATE registry_projects SET last_sync_error=last_error WHERE last_error IS NOT NULL;');
+      }
+      this.recordMigration(5); this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
   private recordMigration(version: number): void {

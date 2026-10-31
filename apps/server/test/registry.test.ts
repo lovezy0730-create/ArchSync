@@ -149,6 +149,20 @@ describe('ProjectRegistry: multi-repo across different parent directories', () =
     registry.remove(added.project!.id);
   });
 
+  it('preserves GitHub failures across successful local scans and keeps the last successful sync time', () => {
+    registry.markSync('repo-a', 'HTTP 400');
+    registry.markScan('repo-a', 1, null);
+    expect(registry.get('repo-a')?.lastSyncError).toBe('HTTP 400');
+    expect(registry.get('repo-a')?.lastSyncAt).toBeNull();
+    registry.markSync('repo-a', null);
+    const successAt = registry.get('repo-a')?.lastSyncAt;
+    expect(successAt).toBeTruthy();
+    registry.markSync('repo-a', 'HTTP 429');
+    expect(registry.get('repo-a')?.lastSyncAt).toBe(successAt);
+    expect(registry.get('repo-a')?.lastSyncError).toBe('HTTP 429');
+    registry.markSync('repo-a', null);
+  });
+
   it('disable stops monitoring; enable resumes; data survives restart', async () => {
     const disabled = registry.setMonitoring('repo-a', false);
     expect(disabled?.monitoringEnabled).toBe(false);

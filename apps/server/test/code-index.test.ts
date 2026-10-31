@@ -11,6 +11,20 @@ import {
   runBenchmark,
 } from "../src/index-benchmark.js";
 
+it("migrates legacy registry errors without deleting existing records", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rc5-error-migration-"));
+  const path = join(dir, "registry.sqlite");
+  let db = new LocalDatabase(path);
+  try {
+    db.exec("INSERT INTO registry_projects (id,name,local_path,monitoring_enabled,sync_interval_seconds,last_error,snapshot_version,created_at,updated_at) VALUES ('legacy','Legacy','/legacy',1,120,'HTTP 400',0,'now','now')");
+    db.exec("ALTER TABLE registry_projects DROP COLUMN last_scan_error; ALTER TABLE registry_projects DROP COLUMN last_sync_error; DELETE FROM schema_migrations WHERE version=5");
+    db.close();
+    db = new LocalDatabase(path);
+    const row = db.prepare("SELECT last_error,last_sync_error FROM registry_projects WHERE id='legacy'").get();
+    expect(row).toMatchObject({ last_error: 'HTTP 400', last_sync_error: 'HTTP 400' });
+  } finally { db.close(); rmSync(dir, { recursive: true, force: true, maxRetries: 10 }); }
+});
+
 it("does not add history for an unchanged fresh scan, but records configuration changes", () => {
   const db = new LocalDatabase(":memory:");
   try {
