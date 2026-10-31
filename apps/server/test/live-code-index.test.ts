@@ -21,7 +21,7 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
     });
     expect(response.status).toBe(201);
     const { project } = await response.json() as { project: { id: string } };
-    let data: { files: { symbols: { name: string }[] }[]; state: string } | undefined;
+    let data: { files: { filePath: string; status: string; symbols: { name: string; symbolUid: string }[] }[]; state: string } | undefined;
     for (let i = 0; i < 100; i++) {
       data = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;
       if (data?.state === 'ready') break;
@@ -40,6 +40,26 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(data?.files.flatMap((file) => file.symbols.map((s) => s.name))).toContain('updated');
+    const updated = data?.files.find((file) => file.filePath === 'src/a.ts')?.symbols.find((s) => s.name === 'updated');
+    expect(updated?.symbolUid).toBeTruthy();
+    await writeFile(join(repo, 'src', 'a.ts'), 'export function updated( {');
+    for (let i = 0; i < 120; i++) {
+      data = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;
+      if (data?.files.find((file) => file.filePath === 'src/a.ts')?.status === 'stale') break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.status).toBe('stale');
+    expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.symbols.find((s) => s.name === 'updated')?.symbolUid).toBe(updated?.symbolUid);
+    const staleSource = await (await fetch(server.url + `/api/v1/projects/${project.id}/source?path=src%2Fa.ts`)).json();
+    expect(staleSource).toMatchObject({ status: 'stale', indexedContentMatches: false });
+    await writeFile(join(repo, 'src', 'a.ts'), 'export function updated(): number { return 3; }');
+    for (let i = 0; i < 120; i++) {
+      data = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;
+      if (data?.files.find((file) => file.filePath === 'src/a.ts')?.status === 'fresh') break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.status).toBe('fresh');
+    expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.symbols.find((s) => s.name === 'updated')?.symbolUid).toBe(updated?.symbolUid);
     await server.close();
     server = await createServer({ repoRoot: root, quiet: true });
     const restored = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;

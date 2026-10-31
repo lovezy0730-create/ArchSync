@@ -13,9 +13,10 @@ not a completed Phase B or a desktop acceptance result.
 
 Read-only source retrieval checks the indexed path, resolves it inside the
 project root and reports whether the content still matches the fresh index.
-The implementation is in the commit following `97d1778`.
+The source endpoint was added in `ba737be`. A watcher integration test also
+checks fresh → stale → fresh and verifies that the cached UID survives.
 
-Next: complete diagnostics, test stale and project
+Next: complete diagnostics, test project
 isolation through the server, then connect the actual four-level workspace.
 The application still requires desktop packaging, GUI and packaged E2E work.
 
