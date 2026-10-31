@@ -78,6 +78,7 @@ export async function createServer(overrides?: {
   const db = new LocalDatabase(join(dataDir, 'registry.sqlite'));
   const codeIndex = new CodeIndex(db);
   const codeStates = new Map<string, { state: 'scanning' | 'ready' | 'error'; error: string | null; scannedAt: string | null }>();
+  const localChanges = new Map<string, RebuildResult['overlay']>();
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -133,6 +134,7 @@ export async function createServer(overrides?: {
         }
       }
       return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+      localChanges.set(entryId, result.overlay ?? null);
       registry.markScan(
         entryId,
         result.snapshot?.version ?? 0,
@@ -234,7 +236,7 @@ export async function createServer(overrides?: {
       : entry.config.modules;
     return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules,
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
-      summary, files, trustedRelations: codeIndex.trustedRelations(entry.id) };
+      summary, files, changes: localChanges.get(entry.id) ?? null, trustedRelations: codeIndex.trustedRelations(entry.id) };
   });
   const selectionSchema = z.object({ moduleId: z.string().max(256).nullable(), filePath: z.string().max(4096).nullable(), symbolUid: z.string().max(256).nullable() }).strict();
   app.get('/api/v1/workspace/active-project', async () => {

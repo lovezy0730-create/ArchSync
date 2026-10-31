@@ -14,10 +14,12 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
   const [language, setLanguage] = useState('all');
   const [publicOnly, setPublicOnly] = useState(false);
   const [includeStale, setIncludeStale] = useState(false);
+  const [onlyChanged, setOnlyChanged] = useState(false);
   const selectionTouched = useRef(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const selectedLine = useRef<HTMLSpanElement>(null);
   const sourceRevision = index?.files.find((file) => file.filePath === filePath)?.revision;
+  useEffect(() => { if (index?.changes === null) setOnlyChanged(false); }, [index?.changes]);
 
   const navigate = (nextModule: string | null, nextFile: string | null, nextSymbol: string | null) => {
     setModuleId(nextModule); setFilePath(nextFile); setSymbolUid(nextSymbol);
@@ -52,7 +54,8 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
     return () => { alive = false; };
   }, [projectId, filePath, sourceRevision]);
 
-  const files = useMemo(() => (index?.files ?? []).filter((file) => file.status !== 'deleted' && (includeStale || file.status === 'fresh') && (language === 'all' || file.language === language)), [index, includeStale, language]);
+  const changedPaths = new Set((index?.changes ?? []).map((change) => change.path));
+  const files = useMemo(() => (index?.files ?? []).filter((file) => file.status !== 'deleted' && (includeStale || file.status === 'fresh') && (language === 'all' || file.language === language) && (!onlyChanged || index?.changes?.some((change) => change.path === file.filePath))), [index, includeStale, language, onlyChanged]);
   const selectedModule = index?.modules.find((item) => item.id === moduleId);
   const selectedFile = files.find((item) => item.filePath === filePath);
   const selectedSymbol: CodeSymbol | undefined = selectedFile?.symbols.find((item) => item.symbolUid === symbolUid);
@@ -88,6 +91,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
       <select aria-label="语言筛选" value={language} onChange={(event) => setLanguage(event.target.value)}><option value="all">全部语言</option><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select>
       <label><input type="checkbox" checked={publicOnly} onChange={(event) => setPublicOnly(event.target.checked)} />仅公开接口</label>
       <label><input type="checkbox" checked={includeStale} onChange={(event) => setIncludeStale(event.target.checked)} />显示过期索引</label>
+      <label title={index?.changes === null ? 'Git 状态不可用' : '仅本机未提交变更'}><input type="checkbox" disabled={!index?.changes} checked={onlyChanged} onChange={(event) => setOnlyChanged(event.target.checked)} />仅未提交变更</label>
     </div>
     <nav className="code-crumbs" aria-label="代码层级">
       <button onClick={() => navigate(null, null, null)}>系统</button>
@@ -106,7 +110,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                 : indexed.length ? '实际分析不完整' : '仅规划，未检测到源码';
         return { id: module.id, sourcePosition: Position.Right, targetPosition: Position.Left, position: { x: (i % 4) * 290, y: Math.floor(i / 4) * 160 }, style: { width: 250, padding: 0, border: 0, background: 'transparent' }, data: { label: <button className="code-card" data-module-id={module.id} onClick={() => navigate(module.id, null, null)}><strong>{module.label}</strong><span>{comparison}</span><span>{group.length} 个文件 · {group.reduce((n, file) => n + file.symbols.filter((s) => s.kind !== 'module').length, 0)} 个声明</span></button> } };
       })} edges={[...edgeCounts.values()].map((edge) => ({ id: `${edge.source}|${edge.target}`, source: edge.source, target: edge.target, label: String(edge.count), markerEnd: { type: MarkerType.ArrowClosed, color: '#58a6ff' }, style: { stroke: '#58a6ff' }, labelStyle: { fill: '#e6edf3' }, labelBgStyle: { fill: '#18212c' } }))}><Background /><Controls /></ReactFlow></div>}
-      {moduleId && !filePath && <div className="code-list">{moduleFiles.map((file) => <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}><strong>{file.filePath}</strong><span>{file.language} · {file.status} · {file.symbols.filter((s) => s.kind !== 'module').length} 个声明</span></button>)}{moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}</div>}
+      {moduleId && !filePath && <div className="code-list">{moduleFiles.map((file) => <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}><strong>{file.filePath}</strong><span>{file.language} · {file.status} · {file.symbols.filter((s) => s.kind !== 'module').length} 个声明{changedPaths.has(file.filePath) ? ' · 未提交' : ''}</span></button>)}{moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}</div>}
       {filePath && <div className="code-file-view"><div className="code-list code-symbols">{selectedFile?.status !== 'fresh' && <p className="code-alert">{selectedFile?.status ?? '文件不可用'}：历史符号不是当前代码事实。</p>}{symbols.map((symbol) => <button key={symbol.symbolUid} className={symbol.symbolUid === symbolUid ? 'selected' : ''} onClick={() => navigate(moduleId, filePath, symbol.symbolUid)}><strong>{symbol.qualifiedName}</strong><span>{symbol.kind} · 第 {symbol.startLine} 行</span></button>)}{symbols.length === 0 && <p>没有符合条件的声明。</p>}</div>
         <div className="code-detail">{selectedSymbol ? <><h3>{selectedSymbol.qualifiedName}</h3><code>{selectedSymbol.signature}</code><p>{selectedSymbol.filePath}:{selectedSymbol.startLine}:{selectedSymbol.startColumn ?? 1} · {selectedSymbol.exported ? '导出' : '未确认导出'}</p><p>返回类型：{selectedSymbol.returnType ?? '未知'}</p>{selectedSymbol.docComment && <pre>{selectedSymbol.docComment}</pre>}<h4>静态关系与证据</h4>{relations.length ? relations.map((relation, i) => {
           const valid = relation.strength !== 'resolved' || trusted.has(`${relation.sourceUid}|${relation.targetUid}|${relation.kind}`);

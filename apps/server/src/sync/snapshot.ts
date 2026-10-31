@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Snapshot, SyncJobStatus } from '@archsync/contracts';
+import type { Snapshot, SyncJobStatus, ScanOverlayChange } from '@archsync/contracts';
 import { buildSnapshot } from '@archsync/graph';
 import { scanProject } from '@archsync/scanner';
 import { loadCollab } from '../github.js';
@@ -11,6 +11,7 @@ export interface RebuildResult {
   changed: boolean;
   jobId: string;
   error: string | null;
+  overlay?: ScanOverlayChange[] | null;
 }
 
 /**
@@ -67,7 +68,8 @@ export async function rebuildSnapshot(
       p.jobs[jobId]!.state = 'done';
       p.jobs[jobId]!.finishedAt = new Date().toISOString();
     });
-    return { snapshot: store.project(entry.id).currentSnapshot, changed, jobId, error: null };
+    return { snapshot: store.project(entry.id).currentSnapshot, changed, jobId, error: null,
+      overlay: !entry.rootDir || scan.errors.some((error) => error.startsWith('git status 失败:')) ? null : scan.overlay };
   } catch (err) {
     const message = (err as Error).message;
     await store.mutate((data) => {

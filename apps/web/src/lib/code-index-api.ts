@@ -7,6 +7,7 @@ export interface CodeIndexResponse {
   error: string | null;
   modules: { id: string; label: string }[];
   files: SourceFile[];
+  changes: { path: string; kind: 'added' | 'modified' | 'deleted'; untracked: boolean }[] | null;
   trustedRelations: CodeRelation[];
   summary: { fresh: number; stale: number; partial: number; unavailable: number; unsupported: number; freshSymbols: number; historicalSymbols: number };
 }
