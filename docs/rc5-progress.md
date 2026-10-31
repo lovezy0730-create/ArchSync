@@ -43,5 +43,9 @@ and performance gates. The app is not yet ready for user trial.
 CI built both EXEs at `03402a6` and passed unpacked GUI E2E, but direct
 Playwright attachment to the Portable wrapper timed out. A CDP-based launcher
 was tested locally against an unpacked executable and needs Portable CI proof.
+The later Windows run for `026208f` passed unpacked, Portable and installed
+Setup GUI scenarios; later HEADs need their own CI result. The 1000-file real
+AST benchmark can be reproduced with `pnpm exec tsx apps/server/src/large-ast-benchmark.ts --out <report.json>`;
+its results are observational unless the machine matches the frozen reference.
 
 Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts`.
