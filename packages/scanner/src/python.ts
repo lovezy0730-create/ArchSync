@@ -1,7 +1,7 @@
 import type Parser from "web-tree-sitter";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { symbolKey } from "./identity.js";
 import { sourcePaths } from "./files.js";
@@ -73,6 +73,7 @@ export class PythonScanner {
   ) {}
   private cache = new Map<string, { hash: string; tree: Parser.Tree }>();
   async scan(root: string, projectId: string) {
+    root = resolve(root).replace(/\\/g, "/");
     const grammar = await load();
     const parser = new Runtime();
     parser.setLanguage(grammar);
@@ -693,7 +694,7 @@ export class PythonScanner {
       }
       const live = new Set(sourcePaths(root, /\.py$/));
       for (const [key, entry] of this.cache)
-        if (!live.has(key)) {
+        if (key.startsWith(root + "/") && !live.has(key)) {
           entry.tree.delete();
           this.cache.delete(key);
         }

@@ -485,7 +485,7 @@ export class AstScanner {
       visit(source, f.symbols[0]!);
     }
     for (const key of this.cache.keys())
-      if (!texts.has(key)) this.cache.delete(key);
+      if (key.startsWith(root + "/") && !texts.has(key)) this.cache.delete(key);
     return {
       updates: files.map(({ path: _path, source: _source, ...f }) => f),
       parseMs,
