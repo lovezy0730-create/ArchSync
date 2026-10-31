@@ -1,5 +1,5 @@
 import { _electron as electron, chromium } from 'playwright';
-import { mkdtemp, mkdir, writeFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -143,7 +143,21 @@ try {
   await page.getByRole('button', { name: /analyzeImports.*function/ }).click();
   await page.locator('.code-source').getByText('function analyzeImports', { exact: false }).waitFor();
   await page.screenshot({ path: join(evidence, 'rc5-archsync-source.png') });
+  await page.waitForFunction(async () => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === 'archsync');
   await stop();
+  page = await launch();
+  await page.locator('.project-select').waitFor();
+  await page.waitForFunction(() => document.querySelector('.project-select')?.value === 'archsync', null, { timeout: 60000 });
+  await page.getByText('analyzeImports', { exact: true }).first().waitFor({ timeout: 60000 });
+  await page.locator('.project-select').selectOption(projectId);
+  await page.waitForFunction(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId);
+  await stop();
+  await rename(repo, `${repo}-missing`);
+  page = await launch();
+  await page.getByText('上次打开的项目不可用，请重新选择或检查路径。').waitFor({ timeout: 60000 });
+  assert.equal(await page.locator('.project-select').inputValue(), '');
+  await stop();
+  await rename(`${repo}-missing`, repo);
   console.log('PASS: packaged mixed repository, TS/Python navigation, source, watched edit, UID, restart, offline GitHub state and self-scan');
 } finally {
   if (application) await application.close();

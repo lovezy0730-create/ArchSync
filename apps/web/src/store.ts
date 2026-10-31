@@ -23,6 +23,7 @@ import { parseProjectConfig } from '@archsync/config';
 import { buildSnapshot } from '@archsync/graph';
 import type { ScanResult } from '@archsync/contracts';
 import { activeView, resolveViewGroups, snapshotViews, type ViewOrderOverride } from './lib/view-layout.js';
+import { loadActiveProject, saveActiveProject } from './lib/code-index-api.js';
 
 export interface Filters {
   workflow: Set<WorkflowState>;
@@ -104,6 +105,7 @@ interface AppState {
 }
 
 const provider: DataProvider = currentMode() === 'static' ? createStaticProvider() : createServerProvider();
+let activeProjectSave = Promise.resolve();
 
 let presenceClient: PresenceClient | null = null;
 
@@ -250,9 +252,9 @@ export const useStore = create<AppState>((set, get) => ({
         identity,
       });
       const { projects } = await provider.listProjects();
-      const stored = readStoredProject();
-      const fallback = projects.find((p) => p.id === stored) ?? projects[0];
-      set({ projects, projectId: fallback?.id ?? null, loadError: null });
+      const stored = provider.mode === 'server' ? (await loadActiveProject().catch(() => null)) ?? readStoredProject() : readStoredProject();
+      const fallback = stored ? projects.find((p) => p.id === stored) : projects[0];
+      set({ projects, projectId: fallback?.id ?? null, loadError: stored && !fallback ? '上次打开的项目不可用，请重新选择或检查路径。' : null });
       if (fallback) {
         await loadProjectData(fallback.id, set);
         if (identity) connectPresence(fallback.id, identity.name, set, get);
@@ -329,6 +331,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       localStorage.setItem('archsync-project', projectId);
     } catch { /* storage unavailable: session-only selection */ }
+    if (provider.mode === 'server') activeProjectSave = activeProjectSave.then(() => saveActiveProject(projectId)).catch(() => undefined);
     await loadProjectData(projectId, set);
     if (identity && get().projectId === projectId) connectPresence(projectId, identity.name, set, get);
   },

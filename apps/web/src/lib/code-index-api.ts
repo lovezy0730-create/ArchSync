@@ -31,3 +31,12 @@ export async function saveWorkspace(projectId: string, selection: WorkspaceSelec
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/workspace`, { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(selection) });
   if (!response.ok) throw new Error(`工作台状态保存失败：HTTP ${response.status}`);
 }
+export async function loadActiveProject(): Promise<string | null> {
+  const response = await fetch('/api/v1/workspace/active-project', { credentials: 'same-origin' });
+  if (!response.ok) throw new Error(`项目状态不可用：HTTP ${response.status}`);
+  return ((await response.json()) as { projectId: string | null }).projectId;
+}
+export async function saveActiveProject(projectId: string): Promise<void> {
+  const response = await fetch('/api/v1/workspace/active-project', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projectId }) });
+  if (!response.ok) throw new Error(`项目状态保存失败：HTTP ${response.status}`);
+}

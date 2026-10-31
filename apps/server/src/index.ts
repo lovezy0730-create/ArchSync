@@ -237,6 +237,18 @@ export async function createServer(overrides?: {
       summary, files, trustedRelations: codeIndex.trustedRelations(entry.id) };
   });
   const selectionSchema = z.object({ moduleId: z.string().max(256).nullable(), filePath: z.string().max(4096).nullable(), symbolUid: z.string().max(256).nullable() }).strict();
+  app.get('/api/v1/workspace/active-project', async () => {
+    const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get('@active-project') as { payload_json: string } | undefined;
+    const parsed = row ? z.object({ projectId: z.string().max(256).nullable() }).safeParse(JSON.parse(row.payload_json)) : null;
+    return parsed?.success ? parsed.data : { projectId: null };
+  });
+  app.put('/api/v1/workspace/active-project', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: { message: '跨源写请求被拒绝' } });
+    const parsed = z.object({ projectId: z.string().max(256) }).strict().safeParse(request.body);
+    if (!parsed.success || !registry.get(parsed.data.projectId)) return reply.code(400).send({ error: { message: '项目不存在' } });
+    db.prepare('INSERT INTO workspace_preferences VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET payload_json=excluded.payload_json').run('@active-project', JSON.stringify(parsed.data));
+    return parsed.data;
+  });
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id/workspace', async (request, reply) => {
     if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { message: '项目不存在' } });
     const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get(request.params.id) as { payload_json: string } | undefined;

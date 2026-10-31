@@ -42,7 +42,7 @@ export function App() {
           {codeMode && projectId ? <CodeWorkbench projectId={projectId} /> : !codeMode && <ReactFlowProvider>
             <GraphCanvas />
           </ReactFlowProvider>}
-          {codeMode && booted && !projectId && <div className="welcome-panel"><h2>欢迎使用 ArchSync</h2><p>打开本地仓库，发现真实代码架构。扫描在本机完成。</p><button onClick={() => setAddOpen(true)}>打开或克隆仓库</button><p>也可以添加 GitHub 远端只读监控。</p></div>}
+          {codeMode && booted && !projectId && <div className="welcome-panel"><h2>欢迎使用 ArchSync</h2>{loadError && <p role="alert">{loadError}</p>}<p>打开本地仓库，发现真实代码架构。扫描在本机完成。</p><button onClick={() => setAddOpen(true)}>打开或克隆仓库</button><p>也可以添加 GitHub 远端只读监控。</p></div>}
           {!codeMode && loadError && (
             <div className="canvas-error">
               <strong>数据加载失败</strong>

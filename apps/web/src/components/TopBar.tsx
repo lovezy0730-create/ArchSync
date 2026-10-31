@@ -94,6 +94,7 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
           onChange={(e) => void switchProject(e.target.value)}
           aria-label="切换项目"
         >
+          {!projectId && <option value="">选择项目</option>}
           {projectOptions.map((p) => (
             <option key={p.id} value={p.id}>{p.label}</option>
           ))}
