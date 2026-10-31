@@ -24,7 +24,8 @@ selection. The Windows unpacked application passed a Playwright GUI test with
 an isolated TS/Python repository, watched edit, UID and restart, plus the real
 ArchSync scanner source. This is not Portable/Setup installer acceptance.
 
-Python WASM resources are copied into desktop packaging; local Portable/Setup
+`45c9442` copies Python WASM and license resources into desktop packaging;
+local Portable/Setup
 building was blocked by downloads timing out, while the unpacked GUI was
 tested with a locally available Electron 35.7.5 runtime. Next: complete CI
 for both EXEs, actual installer/portable E2E, diagnostics and remaining UI
