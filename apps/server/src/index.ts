@@ -221,9 +221,15 @@ export async function createServer(overrides?: {
     const entry = entryById.get(request.params.id);
     if (!entry) return reply.code(404).send({ error: { message: '项目不存在' } });
     const files = codeIndex.files(entry.id);
+    const summary = { fresh: 0, partial: 0, stale: 0, unsupported: 0, unavailable: 0, deleted: 0, freshSymbols: 0, historicalSymbols: 0 };
+    for (const file of files) {
+      summary[file.status]++;
+      if (file.status === 'fresh') summary.freshSymbols += file.symbols.length;
+      else if (file.status === 'stale' || file.status === 'unavailable') summary.historicalSymbols += file.symbols.length;
+    }
     return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules: entry.config.modules,
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
-      files, trustedRelations: codeIndex.trustedRelations(entry.id) };
+      summary, files, trustedRelations: codeIndex.trustedRelations(entry.id) };
   });
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/v1/projects/:id/source', async (request, reply) => {
     const entry = entryById.get(request.params.id);

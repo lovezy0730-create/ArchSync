@@ -15,6 +15,8 @@ Read-only source retrieval checks the indexed path, resolves it inside the
 project root and reports whether the content still matches the fresh index.
 The source endpoint was added in `ba737be`. A watcher integration test also
 checks fresh → stale → fresh and verifies that the cached UID survives.
+The index response separates status counts and current versus historical
+symbol counts; projects without a GitHub remote do not attempt live fetches.
 
 Next: complete diagnostics, test project
 isolation through the server, then connect the actual four-level workspace.

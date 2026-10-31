@@ -22,6 +22,10 @@ export async function loadCollab(
   token: string | null,
   cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
 ): Promise<CollabData> {
+  if (!entry.config.project.github.owner || !entry.config.project.github.repo) {
+    return CollabDataSchema.parse({ source: 'unavailable', demo: false,
+      fetchedAt: new Date().toISOString(), error: '此项目未配置 GitHub 远端' });
+  }
   // SyncWorker 缓存优先：worker 轮询已把 issues/pulls 写入 github_cache，
   // 复用它避免同一轮询窗口内的重复匿名请求。
   if (cacheReader) {

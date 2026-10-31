@@ -21,13 +21,14 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
     });
     expect(response.status).toBe(201);
     const { project } = await response.json() as { project: { id: string } };
-    let data: { files: { filePath: string; status: string; symbols: { name: string; symbolUid: string }[] }[]; state: string } | undefined;
+    let data: { files: { filePath: string; status: string; symbols: { name: string; symbolUid: string }[] }[]; state: string; summary: { fresh: number; stale: number } } | undefined;
     for (let i = 0; i < 100; i++) {
       data = await (await fetch(server.url + `/api/v1/projects/${project.id}/code-index`)).json() as typeof data;
       if (data?.state === 'ready') break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     expect(data?.state).toBe('ready');
+    expect(data?.summary.fresh).toBe(2);
     expect(data?.files.flatMap((file) => file.symbols.map((s) => s.name))).toEqual(expect.arrayContaining(['hello', 'greet']));
     const source = await fetch(server.url + `/api/v1/projects/${project.id}/source?path=src%2Fa.ts`);
     expect(await source.json()).toMatchObject({ path: 'src/a.ts', indexedContentMatches: true, content: expect.stringContaining('function hello') });
@@ -49,6 +50,7 @@ it('registers an unconfigured mixed repository and restores its indexed facts af
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.status).toBe('stale');
+    expect(data?.summary.stale).toBe(1);
     expect(data?.files.find((file) => file.filePath === 'src/a.ts')?.symbols.find((s) => s.name === 'updated')?.symbolUid).toBe(updated?.symbolUid);
     const staleSource = await (await fetch(server.url + `/api/v1/projects/${project.id}/source?path=src%2Fa.ts`)).json();
     expect(staleSource).toMatchObject({ status: 'stale', indexedContentMatches: false });
