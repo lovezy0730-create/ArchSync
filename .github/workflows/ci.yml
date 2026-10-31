@@ -22,3 +22,20 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  python-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @archsync/server exec vitest run test/python-index.test.ts test/ast-index.test.ts
+      - run: node scripts/python-offline-smoke.mjs --electron --out python-offline-proof.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-windows-offline-proof
+          path: python-offline-proof.json
