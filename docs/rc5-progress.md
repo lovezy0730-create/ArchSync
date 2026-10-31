@@ -50,6 +50,19 @@ its results are observational unless the machine matches the frozen reference.
 The baseline 1000-file report contains 10 samples each: cold P95 11.39 s and
 edit P95 13.16 s on a 22-logical-CPU / 32-GB Windows machine (not the fixed
 reference). It exposed repeated per-file symbol-map construction; that work
-has been removed and must be measured again before drawing any conclusion.
+has been removed and the same harness must be re-run before drawing any
+conclusion. The reported figures are cold-scan numbers; incremental edit cost
+has not been measured separately yet.
 
-Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts`.
+The Windows GUI E2E failure at `a[href$="/pull/11"]` was two defects, not an
+environment problem. `page.waitForFunction` does not await async predicates
+(the returned Promise is truthy), so every async gate in the script passed on
+its first tick; the GitHub scenario opened the activity panel before the first
+sync pass had written `pulls-state`. Separately, the registry GitHub route
+returned HTTP 500 inside every sync pass because `sync-status` is stamped only
+at the end of a pass while `pulls-state` lands mid-pass, and `fetchedAt: null`
+fails `CollabDataSchema`. The script now polls through `page.evaluate`, the
+route falls back to the cache write time, and the panel re-reads the registry
+until the first live payload arrives.
+
+Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts test/github-cache-window.test.ts`.
