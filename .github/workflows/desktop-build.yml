@@ -32,10 +32,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Quality gates
+        shell: pwsh
         run: |
+          # PowerShell does not stop on a failed native command: without these
+          # checks a lint/typecheck failure would be hidden by a passing test
+          # run (the step's exit code is the last command's).
           pnpm lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build desktop (bundle + web dist + agent bundle + electron-builder)
         run: node apps/desktop/build.mjs --package
