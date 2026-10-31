@@ -390,6 +390,7 @@ export async function createServer(overrides?: {
   const syncClient = new GithubApiClient(db, () => env.githubToken);
   const syncCacheReader = {
     readCache: <T>(projectId: string, kind: string): T | null => syncClient.readCache<T>(projectId, kind),
+    cacheUpdatedAt: (projectId: string): string | null => syncClient.cacheUpdatedAt(projectId),
   };
   const syncWorker = new GithubSyncWorker(
     db,

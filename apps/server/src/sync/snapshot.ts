@@ -23,7 +23,11 @@ export async function rebuildSnapshot(
   store: StateStore,
   githubToken: string | null,
   jobId: string = randomUUID(),
-  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
+  cacheReader?: {
+    readCache: <T>(projectId: string, kind: string) => T | null;
+    /** Optional: newest cache write time, used when sync-status is not stamped yet. */
+    cacheUpdatedAt?: (projectId: string) => string | null;
+  },
 ): Promise<RebuildResult> {
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());

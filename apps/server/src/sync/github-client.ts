@@ -90,6 +90,20 @@ export class GithubApiClient {
     }
   }
 
+  /**
+   * Newest write time across a project's cached GitHub payloads.
+   *
+   * `sync-status` is written at the END of a polling pass, while `pulls-state`
+   * lands in the middle of it. Readers must be able to report a truthful
+   * "data observed at" timestamp during that window instead of failing.
+   */
+  cacheUpdatedAt(projectId: string): string | null {
+    const row = this.db
+      .prepare('SELECT MAX(updated_at) AS updated_at FROM github_cache WHERE project_id = ?')
+      .get(projectId) as { updated_at: string | null } | undefined;
+    return row?.updated_at ?? null;
+  }
+
   writeCache(projectId: string, kind: string, payload: unknown): void {
     this.db
       .prepare(
@@ -404,6 +418,8 @@ export function projectWorkerState(
   issues: Record<string, import('./github-worker.js').IssueSummary>,
   read: <T>(kind: string) => T | null,
   sync: { at: string; error: string | null } | null,
+  /** Timestamp of the payload actually served; must never be null (schema-valid ISO string). */
+  observedAt: string = sync?.at ?? new Date().toISOString(),
 ): CollabData {
   const pullRequests = Object.values(pulls).map(p => {
     const mapping = read<{headSha:string;files:string[]}>(`pr-files:${p.number}`);
@@ -420,6 +436,6 @@ export function projectWorkerState(
     createdAt:i.created_at ?? '', updatedAt:i.updated_at ?? '', closedAt:i.closed_at ?? null,
     completion:i.state === 'closed' ? i.state_reason === 'completed' ? 'completed' : i.state_reason === 'not_planned' ? 'not_completed' : 'none' : 'none',
   }));
-  return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:sync?.at ?? null,
+  return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:observedAt,
     error:sync?.error ?? null, pullRequests, issues:normalizedIssues, team:[], moduleIssues:{}, manualApprovals:{}});
 }
