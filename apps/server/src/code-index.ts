@@ -8,7 +8,7 @@ import {
   ScanDiagnosticSchema,
   type SourceFile,
 } from "@archsync/contracts";
-import { matchSymbols, symbolKey } from "@archsync/scanner/identity";
+import { matchSymbols } from "@archsync/scanner/identity";
 import type { LocalDatabase } from "./db.js";
 export const FileUpdateSchema = z.object({
   projectId: z.string().min(1),
@@ -127,6 +127,15 @@ export class CodeIndex {
         ],
         renames,
       );
+      // These maps describe the complete batch, so construct them once rather
+      // than re-hashing every symbol for every file in a large project.
+      const byKey = new Map(matched.map((s) => [s.symbolKey, s]));
+      const byFile = new Map<string, typeof matched>();
+      for (const symbol of matched) {
+        const group = byFile.get(symbol.filePath) ?? [];
+        group.push(symbol);
+        byFile.set(symbol.filePath, group);
+      }
       for (const u of updates) {
         const row = this.db
           .prepare(
@@ -141,13 +150,12 @@ export class CodeIndex {
           : null;
         const symbols =
           u.status === "fresh"
-            ? matched.filter((s) => s.filePath === u.filePath)
+            ? (byFile.get(u.filePath) ?? [])
             : u.status === "partial"
               ? matchSymbols([], u.symbols)
               : u.status === "deleted"
                 ? []
                 : (success?.symbols ?? []);
-        const byKey = new Map(matched.map((s) => [symbolKey(s), s]));
         const relations =
           u.status === "fresh"
             ? u.relations.map((r) => {

@@ -47,5 +47,9 @@ The later Windows run for `026208f` passed unpacked, Portable and installed
 Setup GUI scenarios; later HEADs need their own CI result. The 1000-file real
 AST benchmark can be reproduced with `pnpm exec tsx apps/server/src/large-ast-benchmark.ts --out <report.json>`;
 its results are observational unless the machine matches the frozen reference.
+The baseline 1000-file report contains 10 samples each: cold P95 11.39 s and
+edit P95 13.16 s on a 22-logical-CPU / 32-GB Windows machine (not the fixed
+reference). It exposed repeated per-file symbol-map construction; that work
+has been removed and must be measured again before drawing any conclusion.
 
 Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts`.
