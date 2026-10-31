@@ -1,0 +1,15 @@
+{
+  "pass": true,
+  "platform": "win32",
+  "node": "v22.16.0",
+  "electron": "35.7.5",
+  "files": 1,
+  "symbols": 3,
+  "network": "fetch forbidden",
+  "resources": "isolated copied local WASM; no node_modules or Python",
+  "assetHashes": {
+    "tree-sitter.cjs": "0d94b84976dc199f7cdfecf2ed4489758bf62dc4633169081fa500932a56c244",
+    "tree-sitter.wasm": "17382e1a69bd628107e8dfe37d31d57f7ba948e5f2da77e56a8aa010488dc5ae",
+    "tree-sitter-python.wasm": "9056d0fb0c337810d019fae350e8167786119da98f0f282aceae7ab89ee8253b"
+  }
+}
