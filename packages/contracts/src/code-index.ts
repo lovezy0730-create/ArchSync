@@ -116,6 +116,7 @@ export const SymbolDraftSchema = z.object({
   scannedAt: z.string().datetime(),
   analysisStatus: z.enum(["resolved", "partial", "unsupported", "failed"]),
   evidence: z.array(SymbolEvidenceSchema),
+  exportNames: z.array(z.string()).optional(),
   fingerprint: id,
   declarationAnchor: z.string().optional(),
   parentSymbolKey: z.string().nullable().optional(),
@@ -152,6 +153,21 @@ export const RelationDraftSchema = z.object({
     "planned_depends_on",
     "unresolved_reference",
   ]),
+  reason: z
+    .enum([
+      "external_dependency",
+      "dynamic_call",
+      "local_unresolved",
+      "unsupported_structure",
+    ])
+    .optional(),
+  route: z
+    .object({
+      method: z.string(),
+      path: z.string(),
+      framework: z.string().nullable(),
+    })
+    .optional(),
   sourceKey: id,
   targetKey: z.string().nullable(),
   strength: z.enum(["observed", "resolved", "inferred"]),
