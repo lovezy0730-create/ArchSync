@@ -622,7 +622,7 @@ export class PythonScanner {
               shadowed = true;
               break;
             }
-            const parentKey = scope.parentSymbolKey;
+            const parentKey: string | null | undefined = scope.parentSymbolKey;
             scope = f.symbols.find((s) => symbolKey(s) === parentKey);
           }
           const target =
