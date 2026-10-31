@@ -124,6 +124,7 @@ try {
   await page.getByRole('button', { name: /src\/main.ts/ }).click();
   await page.getByRole('button', { name: /hello.*function/ }).click();
   await page.locator('.code-source').getByText('export function hello', { exact: false }).waitFor();
+  await page.getByText('参数：n: number', { exact: false }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: join(evidence, 'rc5-ts-source.png') });
   await page.getByRole('button', { name: /src（推断）/ }).first().click();
   await page.getByRole('button', { name: /src\/service.py/ }).click();
