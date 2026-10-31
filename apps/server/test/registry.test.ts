@@ -125,11 +125,17 @@ describe('ProjectRegistry: multi-repo across different parent directories', () =
     expect(result.error).toContain('不是 Git 仓库');
   });
 
-  it('flags repos without project.yaml as needsInit (never fabricates config)', async () => {
+  it('registers and reloads a repository without YAML without writing into it', async () => {
+    await mkdir(join(repoC, 'src'), { recursive: true });
+    await writeFile(join(repoC, 'src', 'main.ts'), 'export function main() {}');
     const result = await registry.addLocal(repoC);
-    expect(result.ok).toBe(false);
-    expect(result.needsInit).toBe(true);
-    expect(result.initSuggestion?.totalFiles).toBeGreaterThanOrEqual(0);
+    expect(result.ok).toBe(true);
+    expect(result.project?.entry.configOrigin).toBe('inferred');
+    expect(result.project?.entry.config.modules[0]?.label).toContain('src');
+    expect(registry.reloadProjectEntry(result.project!.id)?.configOrigin).toBe('inferred');
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(repoC, '.archsync', 'project.yaml'))).toBe(false);
+    registry.remove(result.project!.id);
   });
 
   it('disable stops monitoring; enable resumes; data survives restart', async () => {

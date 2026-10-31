@@ -7,6 +7,7 @@ export function scanAstIndex(
   projectId: string,
   index: CodeIndex,
   renames: Record<string, string> = {},
+  moduleFor?: (path: string) => string,
 ) {
   let scanner = scanners.get(index);
   if (!scanner) {
@@ -16,7 +17,10 @@ export function scanAstIndex(
   const start = performance.now();
   const result = scanner.scan(root, projectId);
   const parsedAt = performance.now();
-  const updates = result.updates.map((u) => FileUpdateSchema.parse(u));
+  const updates = result.updates.map((u) => {
+    const moduleId = moduleFor?.(u.filePath) ?? u.moduleId;
+    return FileUpdateSchema.parse({ ...u, moduleId, symbols: u.symbols.map((s) => ({ ...s, moduleId })) });
+  });
   const known = index.files(projectId);
   for (const f of known)
     if (

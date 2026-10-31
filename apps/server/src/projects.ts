@@ -1,10 +1,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
+import { sourcePaths } from '@archsync/scanner/ast';
 import type { ProjectConfigFile, ConfigError, ProjectViewConfig, ViewDiagnostic } from '@archsync/contracts';
 import { parseProjectConfig, parseProjectViews } from '@archsync/config';
 
 export interface ProjectEntry {
+  configOrigin?: 'planned' | 'inferred';
   id: string;
   name: string;
   rootDir: string;
@@ -18,6 +20,33 @@ export interface ProjectEntry {
   /** path of collab.demo.json when the project ships demo collaboration data */
   demoCollabPath: string | null;
   demoCollabFetchedAt: string | null;
+}
+
+/** In-memory discovery only. Inferred groups are never written to the repo. */
+export function inferProjectEntry(rootDir: string, id: string, name: string, github: { owner: string; repo: string; defaultBranch: string }): ProjectEntry {
+  const paths = sourcePaths(rootDir, /\.(tsx?|jsx?|mjs|cjs|py)$/);
+  const groups = new Set(paths.map((path) => {
+    const parts = relative(rootDir, path).replace(/\\/g, '/').split('/');
+    if (parts.length === 1) return '.';
+    return (parts[0] === 'packages' || parts[0] === 'apps') && parts.length > 2
+      ? parts.slice(0, 2).join('/') : parts[0]!;
+  }));
+  if (!groups.size) groups.add('.');
+  const modules = [...groups].sort().map((dir) => ({
+    id: `module-${createHash('sha256').update(dir).digest('hex').slice(0, 12)}`,
+    label: `${dir}（推断）`, layer: 'observed', description: '基于源码路径自动推断',
+    owners: [], paths: [dir === '.' ? '*' : `${dir}/**`], issues: [], plannedDependsOn: [],
+    acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false },
+  }));
+  const config: ProjectConfigFile = {
+    schemaVersion: 1, project: { id, name, github, root: '.' },
+    layers: [{ id: 'observed', label: '自动发现（推断）', order: 1 }], modules,
+  };
+  const configText = JSON.stringify(config);
+  return { id, name, rootDir, config, configOrigin: 'inferred', configText,
+    configBlobSha: createHash('sha256').update(configText).digest('hex'),
+    configWarnings: [], views: [], defaultViewId: '', viewDiagnostics: [],
+    demoCollabPath: null, demoCollabFetchedAt: null };
 }
 
 export function loadProjectEntry(configPath: string): ProjectEntry | { error: string } {

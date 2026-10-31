@@ -2,18 +2,22 @@ import { existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { matchPaths } from '@archsync/scanner';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
-import { discoverProjects, loadProjectEntry } from './projects.js';
+import { discoverProjects } from './projects.js';
 import { LocalDatabase } from './db.js';
 import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
 import { ProjectQueue } from './sync/project-queue.js';
+import { CodeIndex } from './code-index.js';
+import { scanAstIndex } from './ast-index.js';
+import { scanPythonIndex, releasePythonIndex } from './python-index.js';
 import { GithubSyncWorker } from './sync/github-worker.js';
 import { GithubApiClient } from './sync/github-client.js';
 import { registerRoutes } from './routes.js';
@@ -71,6 +75,8 @@ export async function createServer(overrides?: {
   const store = new StateStore(databasePath);
   await store.load();
   const db = new LocalDatabase(join(dataDir, 'registry.sqlite'));
+  const codeIndex = new CodeIndex(db);
+  const codeStates = new Map<string, { state: 'scanning' | 'ready' | 'error'; error: string | null; scannedAt: string | null }>();
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -113,6 +119,17 @@ export async function createServer(overrides?: {
     return rebuildQueue.run(entryId, async () => {
       const entry = entryById.get(entryId);
       if (!entry) throw new Error(`项目不存在: ${entryId}`);
+      if (entry.rootDir) {
+        codeStates.set(entryId, { state: 'scanning', error: null, scannedAt: null });
+        try {
+          const moduleFor = (path: string) => entry.config.modules.find((m) => matchPaths(m.paths, [path]).length > 0)?.id ?? entry.config.modules[0]?.id ?? 'unassigned';
+          scanAstIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          await scanPythonIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          codeStates.set(entryId, { state: 'ready', error: null, scannedAt: new Date().toISOString() });
+        } catch (error) {
+          codeStates.set(entryId, { state: 'error', error: error instanceof Error ? error.message : '扫描失败', scannedAt: new Date().toISOString() });
+        }
+      }
       return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
       registry.markScan(
         entryId,
@@ -200,6 +217,15 @@ export async function createServer(overrides?: {
     },
   });
 
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/code-index', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    if (!entry) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const files = codeIndex.files(entry.id);
+    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules: entry.config.modules,
+      ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
+      files, trustedRelations: codeIndex.trustedRelations(entry.id) };
+  });
+
   registerRoutes(app, {
     entries: entryById,
     store,
@@ -265,9 +291,9 @@ export async function createServer(overrides?: {
     watchedEntries(),
     { onProjectChanged: (entry) => {
         // project.yaml/views 变更时热重载配置；失败保留上一份有效配置
-        const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
-        if ('error' in reloaded) {
-          log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+        const reloaded = registry.reloadProjectEntry(entry.id);
+        if (!reloaded) {
+          log(`项目重载失败，保留上一份有效配置: ${entry.id}`);
           return;
         }
         liveEntries.set(reloaded.id, reloaded);
@@ -287,9 +313,9 @@ export async function createServer(overrides?: {
     watcher = new WorkspaceWatcher(
       watchedEntries(),
       { onProjectChanged: (entry) => {
-          const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
-          if ('error' in reloaded) {
-            log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+          const reloaded = registry.reloadProjectEntry(entry.id);
+          if (!reloaded) {
+            log(`项目重载失败，保留上一份有效配置: ${entry.id}`);
             return;
           }
           liveEntries.set(reloaded.id, reloaded);
@@ -348,6 +374,7 @@ export async function createServer(overrides?: {
       dynamicRefs.rewatch = undefined;
       await watcher.stop();
       await rebuildQueue.drain();
+      releasePythonIndex(codeIndex);
       await hub.stop();
       await app.close();
       db.close();

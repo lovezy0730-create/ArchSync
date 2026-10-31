@@ -6,6 +6,7 @@ export async function scanPythonIndex(
   projectId: string,
   index: CodeIndex,
   renames: Record<string, string> = {},
+  moduleFor?: (path: string) => string,
 ) {
   let scanner = scanners.get(index);
   if (!scanner) {
@@ -15,7 +16,10 @@ export async function scanPythonIndex(
   const start = performance.now();
   const result = await scanner.scan(root, projectId);
   const parsedAt = performance.now();
-  const updates = result.updates.map((u) => FileUpdateSchema.parse(u));
+  const updates = result.updates.map((u) => {
+    const moduleId = moduleFor?.(u.filePath) ?? u.moduleId;
+    return FileUpdateSchema.parse({ ...u, moduleId, symbols: u.symbols.map((s) => ({ ...s, moduleId })) });
+  });
   for (const f of index.files(projectId))
     if (
       f.language === "python" &&
