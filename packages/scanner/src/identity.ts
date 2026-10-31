@@ -37,55 +37,101 @@ export function matchSymbols(
     a.kind === b.kind &&
     a.parserVersion === b.parserVersion &&
     a.fingerprint === b.fingerprint;
+  // Index the previous generation instead of scanning it once per draft:
+  // large repositories repeat the same structural fingerprint thousands of
+  // times, which made the naive filter quadratic (multi-second on 1000 files).
+  const compatibleKey = (s: SymbolDraft) =>
+    [s.projectId, s.language, s.kind, s.parserVersion, s.fingerprint].join("\u0000");
+  const siblingGroup = (s: {
+    projectId: string;
+    filePath: string;
+    parentSymbolKey?: string | null;
+  }) => JSON.stringify([s.projectId, s.filePath, s.parentSymbolKey ?? null]);
+  const groupKeys = <T extends { symbolKey: string }>(
+    items: T[],
+    group: (item: T) => string,
+  ): Map<string, string> => {
+    const groups = new Map<string, string[]>();
+    for (const item of items) {
+      const key = group(item);
+      const list = groups.get(key);
+      if (list) list.push(item.symbolKey);
+      else groups.set(key, [item.symbolKey]);
+    }
+    const serialized = new Map<string, string>();
+    for (const [key, list] of groups) serialized.set(key, JSON.stringify([...list].sort()));
+    return serialized;
+  };
+  const previousByKey = new Map<string, CodeSymbol[]>();
+  const previousByCompatible = new Map<string, CodeSymbol[]>();
+  const previousKeysByFingerprint = new Map<string, Set<string>>();
+  for (const p of previous) {
+    const byKey = previousByKey.get(p.symbolKey);
+    if (byKey) byKey.push(p);
+    else previousByKey.set(p.symbolKey, [p]);
+    const ck = compatibleKey(p);
+    const byCompatible = previousByCompatible.get(ck);
+    if (byCompatible) byCompatible.push(p);
+    else previousByCompatible.set(ck, [p]);
+    const fingerprintKeys = previousKeysByFingerprint.get(p.fingerprint);
+    if (fingerprintKeys) fingerprintKeys.add(p.symbolKey);
+    else previousKeysByFingerprint.set(p.fingerprint, new Set([p.symbolKey]));
+  }
+  const draftCompatibleCount = new Map<string, number>();
+  const draftKeysByFingerprint = new Map<string, Set<string>>();
+  for (const d of drafts) {
+    const ck = compatibleKey(d);
+    draftCompatibleCount.set(ck, (draftCompatibleCount.get(ck) ?? 0) + 1);
+    const fingerprintKeys = draftKeysByFingerprint.get(d.fingerprint);
+    if (fingerprintKeys) fingerprintKeys.add(symbolKey(d));
+    else draftKeysByFingerprint.set(d.fingerprint, new Set([symbolKey(d)]));
+  }
+  const previousSiblings = groupKeys(previous, siblingGroup);
+  const draftSiblings = groupKeys(
+    drafts.map((d, i) => ({ ...d, symbolKey: keys[i]! })),
+    siblingGroup,
+  );
+  const renameSources = Object.keys(renames);
   return drafts.map((s, index) => {
-    const candidates = previous.filter((p) => compatible(s, p));
-    const exact = previous.filter(
-      (p) =>
-        p.symbolKey === keys[index] &&
-        p.parserVersion === s.parserVersion &&
-        (p.fingerprint === s.fingerprint ||
-          (s.declarationAnchor &&
-            p.declarationAnchor === s.declarationAnchor &&
-            JSON.stringify(
-              previous
-                .filter(
-                  (d) =>
-                    d.projectId === s.projectId &&
-                    d.filePath === s.filePath &&
-                    d.parentSymbolKey === s.parentSymbolKey,
-                )
-                .map(symbolKey)
-                .sort(),
-            ) ===
-              JSON.stringify(
-                drafts
-                  .filter(
-                    (d) =>
-                      d.projectId === s.projectId &&
-                      d.filePath === s.filePath &&
-                      d.parentSymbolKey === s.parentSymbolKey,
-                  )
-                  .map(symbolKey)
-                  .sort(),
-              ) &&
-            !drafts.some(
-              (d) =>
-                symbolKey(d) !== keys[index] && d.fingerprint === p.fingerprint,
-            ) &&
-            !previous.some(
-              (d) =>
-                d.symbolKey !== p.symbolKey && d.fingerprint === s.fingerprint,
-            ))),
-    );
-    const moved = candidates.filter(
-      (p) =>
-        renames[p.filePath] === s.filePath &&
-        p.qualifiedName === s.qualifiedName &&
-        p.overload === s.overload,
-    );
+    const ck = compatibleKey(s);
+    const candidates = () => previousByCompatible.get(ck) ?? [];
+    // `exact` only ever inspects previous symbols with this symbolKey, so the
+    // key bucket replaces a full-generation scan.
+    const exact: CodeSymbol[] = [];
+    for (const p of previousByKey.get(keys[index]!) ?? []) {
+      if (p.parserVersion !== s.parserVersion) continue;
+      if (p.fingerprint === s.fingerprint) {
+        exact.push(p);
+        continue;
+      }
+      if (!s.declarationAnchor || p.declarationAnchor !== s.declarationAnchor)
+        continue;
+      if (previousSiblings.get(siblingGroup(s)) !== draftSiblings.get(siblingGroup(s)))
+        continue;
+      const draftFingerprintKeys = draftKeysByFingerprint.get(p.fingerprint);
+      if (draftFingerprintKeys && [...draftFingerprintKeys].some((key) => key !== keys[index]))
+        continue;
+      const previousFingerprintKeys = previousKeysByFingerprint.get(s.fingerprint);
+      if (
+        previousFingerprintKeys &&
+        (previousFingerprintKeys.size > 1 || !previousFingerprintKeys.has(p.symbolKey))
+      )
+        continue;
+      exact.push(p);
+    }
+    // With no rename mapping, `moved` can never match; skip the bucket scan.
+    const moved =
+      renameSources.length === 0
+        ? []
+        : candidates().filter(
+            (p) =>
+              renames[p.filePath] === s.filePath &&
+              p.qualifiedName === s.qualifiedName &&
+              p.overload === s.overload,
+          );
     const unique =
-      candidates.length === 1 &&
-      drafts.filter((d) => compatible(d, s)).length === 1;
+      (previousByCompatible.get(ck)?.length ?? 0) === 1 &&
+      draftCompatibleCount.get(ck) === 1;
     const old =
       exact.length === 1
         ? exact[0]
@@ -93,15 +139,16 @@ export function matchSymbols(
             drafts.filter((d) => compatible(d, s)).length === 1
           ? moved[0]
           : unique
-            ? candidates[0]
+            ? candidates()[0]
             : undefined;
     const valid = old && !used.has(old.symbolUid) ? old : undefined;
     if (valid) used.add(valid.symbolUid);
+    const predecessors = valid ? [] : candidates().map((p) => p.symbolUid);
     return CodeSymbolSchema.parse({
       ...s,
       symbolKey: keys[index],
       symbolUid: valid?.symbolUid ?? randomUUID(),
-      possiblePredecessors: valid ? [] : candidates.map((p) => p.symbolUid),
+      possiblePredecessors: valid ? [] : predecessors,
       identity: {
         reason: valid
           ? exact.includes(valid)

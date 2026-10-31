@@ -107,13 +107,23 @@ export class CodeIndex {
         SourceFileSchema.parse(JSON.parse(r.payload_json)),
       );
       const affected = new Set(updates.map((u) => u.filePath));
-      const previous = rows.flatMap((r, i) =>
-        affected.has(current[i]!.filePath) && r.last_success_json
-          ? SourceFileSchema.parse(JSON.parse(r.last_success_json)).symbols
-          : current[i]!.status === "fresh"
-            ? current[i]!.symbols
-            : [],
+      // Index rows are loaded once for the whole batch. Parsing last_success
+      // for a file whose committed payload is already fresh is redundant:
+      // every fresh write stores the same payload in both columns.
+      const currentByPath = new Map(current.map((f) => [f.filePath, f]));
+      const successJsonByPath = new Map(
+        rows.map((r, i) => [current[i]!.filePath, r.last_success_json]),
       );
+      const previous = rows.flatMap((r, i) => {
+        const file = current[i]!;
+        // Fresh files keep their committed identity whether or not this batch
+        // touches them; only partial/deleted files fall back to last_success.
+        if (file.status === "fresh") return file.symbols;
+        if (!affected.has(file.filePath)) return [];
+        return r.last_success_json
+          ? SourceFileSchema.parse(JSON.parse(r.last_success_json)).symbols
+          : [];
+      });
       const unchanged = current
         .filter((f) => !affected.has(f.filePath) && f.status === "fresh")
         .flatMap((f) => f.symbols);
@@ -136,17 +146,81 @@ export class CodeIndex {
         group.push(symbol);
         byFile.set(symbol.filePath, group);
       }
+      const insertHistory = this.db.prepare(
+        "INSERT INTO code_index_history VALUES (?,?,?,?)",
+      );
+      const upsertFile = this.db.prepare(
+        "INSERT INTO code_index_files VALUES (?,?,?,?) ON CONFLICT(project_id,file_path) DO UPDATE SET payload_json=excluded.payload_json,last_success_json=excluded.last_success_json",
+      );
       for (const u of updates) {
-        const row = this.db
-          .prepare(
-            "SELECT payload_json,last_success_json FROM code_index_files WHERE project_id=? AND file_path=?",
-          )
-          .get(projectId, u.filePath) as Row | undefined;
-        const old = row
-          ? SourceFileSchema.parse(JSON.parse(row.payload_json))
-          : null;
-        const success = row?.last_success_json
-          ? SourceFileSchema.parse(JSON.parse(row.last_success_json))
+        const old = currentByPath.get(u.filePath) ?? null;
+        // Fast path: identical source for an already-fresh file whose symbol
+        // and relation identity mappings are unchanged. Parsing is
+        // deterministic for the same contentHash/parserVersion/configVersion,
+        // so scanning 1000 unchanged files must not rebuild and serialize
+        // 1000 states just to discover they are fact-identical.
+        if (
+          old &&
+          old.status === "fresh" &&
+          u.status === "fresh" &&
+          old.contentHash === u.contentHash &&
+          old.parserVersion === u.parserVersion &&
+          old.configVersion === u.configVersion &&
+          old.language === u.language &&
+          old.moduleId === u.moduleId &&
+          old.symbols.length === u.symbols.length &&
+          old.relations.length === u.relations.length
+        ) {
+          // `byFile` keeps the same declaration order as `u.symbols` (the
+          // matcher returns inputs in order), and its keys are already
+          // normalized by the draft schema - unlike the raw draft, whose
+          // optional fields are still `undefined` and would hash differently.
+          const nextSymbols = byFile.get(u.filePath) ?? [];
+          let identical = true;
+          for (let i = 0; i < u.symbols.length; i++) {
+            const symbol = u.symbols[i]!;
+            const previousSymbol = old.symbols[i]!;
+            const nextSymbol = nextSymbols[i];
+            const parentUid = symbol.parentSymbolKey
+              ? (byKey.get(symbol.parentSymbolKey)?.symbolUid ?? null)
+              : null;
+            if (
+              !nextSymbol ||
+              nextSymbol.symbolKey !== previousSymbol.symbolKey ||
+              nextSymbol.symbolUid !== previousSymbol.symbolUid ||
+              parentUid !== previousSymbol.parentSymbolUid
+            ) {
+              identical = false;
+              break;
+            }
+          }
+          if (identical) {
+            for (let i = 0; i < u.relations.length; i++) {
+              const relation = u.relations[i]!;
+              const previousRelation = old.relations[i]!;
+              const source = byKey.get(relation.sourceKey);
+              const targetUid = relation.targetKey
+                ? (byKey.get(relation.targetKey)?.symbolUid ?? null)
+                : null;
+              if (
+                previousRelation.kind !== relation.kind ||
+                previousRelation.sourceKey !== relation.sourceKey ||
+                previousRelation.targetKey !== relation.targetKey ||
+                !source ||
+                source.filePath !== u.filePath ||
+                source.symbolUid !== previousRelation.sourceUid ||
+                targetUid !== previousRelation.targetUid
+              ) {
+                identical = false;
+                break;
+              }
+            }
+          }
+          if (identical) continue;
+        }
+        const successJson = successJsonByPath.get(u.filePath) ?? null;
+        const success = successJson
+          ? SourceFileSchema.parse(JSON.parse(successJson))
           : null;
         const symbols =
           u.status === "fresh"
@@ -202,19 +276,13 @@ export class CodeIndex {
           comparableFacts(old) === comparableFacts(state)
         ) continue;
         const payload = JSON.stringify(state);
-        this.db
-          .prepare("INSERT INTO code_index_history VALUES (?,?,?,?)")
-          .run(projectId, u.filePath, state.revision, payload);
-        this.db
-          .prepare(
-            "INSERT INTO code_index_files VALUES (?,?,?,?) ON CONFLICT(project_id,file_path) DO UPDATE SET payload_json=excluded.payload_json,last_success_json=excluded.last_success_json",
-          )
-          .run(
-            projectId,
-            u.filePath,
-            payload,
-            u.status === "fresh" ? payload : (row?.last_success_json ?? null),
-          );
+        insertHistory.run(projectId, u.filePath, state.revision, payload);
+        upsertFile.run(
+          projectId,
+          u.filePath,
+          payload,
+          u.status === "fresh" ? payload : successJson,
+        );
       }
       this.db.exec("COMMIT");
     } catch (error) {

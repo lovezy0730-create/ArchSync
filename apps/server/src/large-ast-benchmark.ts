@@ -21,6 +21,9 @@ const dataset = Array.from({ length: 1000 }, (_, i) => {
 const datasetHash = createHash('sha256').update(JSON.stringify(dataset)).digest('hex');
 const output = process.argv[process.argv.indexOf('--out') + 1];
 if (!process.argv.includes('--out') || !output) throw new Error('--out required');
+/** Samples per scenario; the frozen report uses the default, profiling runs shrink it. */
+const iterations = Number(process.env.BENCH_ITERATIONS ?? 10);
+if (!Number.isInteger(iterations) || iterations < 1) throw new Error('BENCH_ITERATIONS must be a positive integer');
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim();
 const dirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8', windowsHide: true }).trim().length > 0;
 type Sample = { parseMs: number; analysisMs: number; indexMs: number; totalMs: number; rssBytes: number; peakRssBytes: number; cpuMicros: NodeJS.CpuUsage; fsRead: number; fsWrite: number };
@@ -30,7 +33,7 @@ mkdirSync(dirname(resolve(output)), { recursive: true });
 for (const scenario of ['cold', 'single-file-edit']) {
   const item: typeof scenarios[number] = { name: scenario, samples: [] };
   scenarios.push(item);
-  for (let iteration = 0; iteration < 10; iteration++) {
+  for (let iteration = 0; iteration < iterations; iteration++) {
     const dir = mkdtempSync(join(tmpdir(), 'archsync-rc5-large-'));
     const db = new LocalDatabase(':memory:');
     try {
@@ -46,7 +49,7 @@ for (const scenario of ['cold', 'single-file-edit']) {
       if (result.files !== dataset.length || result.diagnostics.length) throw new Error('invalid benchmark sample');
       item.samples.push({ parseMs: result.parseMs, analysisMs: result.analysisMs, indexMs: result.commitMs, totalMs: result.totalMs, rssBytes: process.memoryUsage().rss, peakRssBytes: after.maxRSS * 1024, cpuMicros: process.cpuUsage(cpu), fsRead: after.fsRead - io.fsRead, fsWrite: after.fsWrite - io.fsWrite });
       writeFileSync(output, JSON.stringify(report, null, 2));
-      console.log(`${scenario} ${iteration + 1}/10: ${Math.round(result.totalMs)}ms`);
+      console.log(`${scenario} ${iteration + 1}/${iterations}: ${Math.round(result.totalMs)}ms`);
     } finally { db.close(); rmSync(dir, { recursive: true, force: true, maxRetries: 10 }); }
   }
   item.statistics = { parse: summarize(item.samples.map((sample) => sample.parseMs)), index: summarize(item.samples.map((sample) => sample.indexMs)), total: summarize(item.samples.map((sample) => sample.totalMs)) };
