@@ -554,7 +554,12 @@ export class PythonScanner {
             targetKey:
               target?.status === "fresh" ? symbolKey(target.symbols[0]!) : null,
             strength: target?.status === "fresh" ? "resolved" : "observed",
-            reason: target ? "local_unresolved" : "external_dependency",
+            reason:
+              target?.status === "fresh"
+                ? undefined
+                : target
+                  ? "local_unresolved"
+                  : "external_dependency",
             evidence: module.evidence,
           });
         }

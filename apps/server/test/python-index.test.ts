@@ -73,6 +73,11 @@ def dynamic(x):
         .some((e) => e.kind === "calls" && e.targetUid === f.symbolUid),
     ).toBe(true);
     expect(r.routes).toBe(1);
+    const resolvedImport = r.relations.find(
+      (e) => e.kind === "imports" && e.strength === "resolved",
+    );
+    expect(resolvedImport).toBeDefined();
+    expect(resolvedImport?.reason).toBeUndefined();
     expect(r.relations.some((e) => e.reason === "dynamic_call")).toBe(true);
     expect(
       index.get("p", "包/api.py")!.symbols.filter((s) => s.name === "same"),
