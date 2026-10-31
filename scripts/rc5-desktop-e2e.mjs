@@ -59,6 +59,34 @@ async function launch() {
   agentPid = health.pid;
   return page;
 }
+/**
+ * Poll an async predicate against the current page until it is truthy.
+ *
+ * `page.waitForFunction` does NOT await async functions: the returned Promise
+ * is a truthy object, so every async gate would silently pass on its first
+ * tick. `page.evaluate` does await promises, so polling through it is the only
+ * honest way to wait for server state.
+ */
+async function waitFor(predicate, arg, { timeout = 60000, interval = 250, label = 'condition' } = {}) {
+  const deadline = Date.now() + timeout;
+  let lastValue;
+  let lastError = null;
+  for (;;) {
+    try {
+      lastValue = await currentPage.evaluate(predicate, arg);
+      if (lastValue) return lastValue;
+    } catch (err) {
+      lastError = err;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `${label} not reached within ${timeout}ms (last=${JSON.stringify(lastValue)}` +
+          `${lastError ? `, lastError=${lastError.message}` : ''})`,
+      );
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, interval));
+  }
+}
 async function stop() {
   if (application) { await application.close(); application = undefined; }
   else if (browser) {
@@ -79,14 +107,14 @@ try {
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(repo);
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
-  const projectId = await page.waitForFunction(async (p) => {
+  const projectId = await waitFor(async (p) => {
     const list = await (await fetch('/api/v1/registry')).json();
     return list.projects.find((project) => project.localPath === p)?.id;
-  }, repo).then((handle) => handle.jsonValue());
-  await page.waitForFunction(async (id) => {
+  }, repo, { label: 'local project registration' });
+  await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     return index.state === 'ready' && index.summary.fresh === 3;
-  }, projectId, { timeout: 60000 });
+  }, projectId, { label: 'mixed repository index ready' });
   const before = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), projectId);
   const uid = before.files.flatMap((file) => file.symbols).find((symbol) => symbol.name === 'hello').symbolUid;
   await page.getByText(/扫描完成 · 3 个有效文件/).waitFor({ timeout: 30000 });
@@ -106,18 +134,26 @@ try {
   await page.locator('.registry-status [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
   await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
-  await page.waitForFunction(async ({ id, previous }) => {
+  await waitFor(async ({ id, previous }) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     const symbol = index.files.flatMap((file) => file.symbols).find((item) => item.name === 'hello');
     return symbol && symbol.symbolUid === previous && index.files.find((file) => file.filePath === 'src/main.ts').revision > 1;
-  }, { id: projectId, previous: uid }, { timeout: 30000 });
+  }, { id: projectId, previous: uid }, { label: 'watched edit reindexed', timeout: 30000 });
+  await waitFor(async (id) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    return index.changes?.some((change) => change.path === 'src/main.ts' && change.kind === 'modified');
+  }, projectId, { label: 'uncommitted change overlay', timeout: 30000 });
+  await page.getByRole('button', { name: /src（推断）/ }).first().click();
+  await page.getByRole('button', { name: /src\/main.ts.*未提交/ }).waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: /src\/service.py/ }).click();
+  await page.getByRole('button', { name: /Service.greet/ }).click();
   await access(join(data, 'data', 'registry.sqlite'));
   await stop();
   page = await launch();
-  await page.waitForFunction(async (id) => {
+  await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     return index.files?.some((file) => file.filePath === 'src/main.ts' && file.status === 'fresh');
-  }, projectId, { timeout: 60000 });
+  }, projectId, { label: 'index restored after restart' });
   const registry = await page.evaluate(async () => (await fetch('/api/v1/registry')).json());
   assert.ok(registry.projects.some((project) => project.id === projectId));
   await page.getByText('Service.greet', { exact: false }).first().waitFor({ timeout: 30000 });
@@ -129,28 +165,28 @@ try {
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(resolve('.'));
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
-  const self = await page.waitForFunction(async () => {
+  const self = await waitFor(async () => {
     const list = await (await fetch('/api/v1/registry')).json();
     return list.projects.find((project) => project.id === 'archsync')?.id;
-  }).then((handle) => handle.jsonValue());
-  const scannerModule = await page.waitForFunction(async (id) => {
+  }, undefined, { label: 'self repository registration' });
+  const scannerModule = await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     const file = index.files?.find((item) => item.filePath === 'packages/scanner/src/imports.ts');
     return index.state === 'ready' && file?.symbols.some((item) => item.name === 'analyzeImports') ? file.moduleId : null;
-  }, self, { timeout: 180000 }).then((handle) => handle.jsonValue());
+  }, self, { label: 'real scanner self-index ready', timeout: 180000 });
   await page.locator(`[data-module-id="${scannerModule}"]`).click();
   await page.getByRole('button', { name: /packages\/scanner\/src\/imports.ts/ }).click();
   await page.getByRole('button', { name: /analyzeImports.*function/ }).click();
   await page.locator('.code-source').getByText('function analyzeImports', { exact: false }).waitFor();
   await page.screenshot({ path: join(evidence, 'rc5-archsync-source.png') });
-  await page.waitForFunction(async () => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === 'archsync');
+  await waitFor(async () => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === 'archsync', undefined, { label: 'active project persisted as archsync' });
   await stop();
   page = await launch();
   await page.locator('.project-select').waitFor();
   await page.waitForFunction(() => document.querySelector('.project-select')?.value === 'archsync', null, { timeout: 60000 });
   await page.getByText('analyzeImports', { exact: true }).first().waitFor({ timeout: 60000 });
   await page.locator('.project-select').selectOption(projectId);
-  await page.waitForFunction(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId);
+  await waitFor(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId, { label: 'active project switch persisted' });
   await stop();
   await rename(repo, `${repo}-missing`);
   page = await launch();
@@ -166,19 +202,42 @@ try {
     await page.getByRole('button', { name: '添加远端监控' }).click();
     await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
     const remoteId = 'remote-lovezy0730-create-archsync';
-    await page.waitForFunction(async (id) => {
+    const live = await waitFor(async (id) => {
       const response = await fetch(`/api/v1/registry/${id}/github`);
       if (!response.ok) return false;
       const status = await response.json();
-      return status.collab.source === 'live' && status.collab.pullRequests.some((pr) => pr.number === 11);
-    }, remoteId, { timeout: 120000 });
+      if (status.collab.source !== 'live' || !status.collab.pullRequests.some((pr) => pr.number === 11)) return false;
+      return { pullCount: status.collab.pullRequests.length, issueCount: status.collab.issues.length };
+    }, remoteId, { label: 'live GitHub PR #11 in registry state', timeout: 120000 });
     const remoteIndex = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), remoteId);
     assert.equal(remoteIndex.files.length, 0, 'remote-only project must not invent local symbols');
     await page.locator('.project-select').selectOption(remoteId);
     await page.waitForFunction((id) => document.querySelector('.project-select')?.value === id, remoteId);
     await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
     await page.getByRole('dialog', { name: '项目动态' }).getByLabel('GitHub 当前状态').waitFor({ timeout: 30000 });
-    await page.locator('a[href$="/pull/11"]').waitFor({ timeout: 30000 });
+    try {
+      // The panel must render exactly the live facts the API reported, not a
+      // stale "unavailable" placeholder captured while the first sync ran.
+      await page.getByText(`PR（${live.pullCount}）`).first().waitFor({ timeout: 45000 });
+      await page.locator('a[href$="/pull/11"]').first().waitFor({ timeout: 15000 });
+    } catch (err) {
+      const dump = await page.evaluate(async (id) => {
+        const response = await fetch(`/api/v1/registry/${id}/github`);
+        const body = await response.json().catch(() => null);
+        return {
+          http: response.status,
+          source: body?.collab?.source ?? null,
+          fetchedAt: body?.collab?.fetchedAt ?? null,
+          error: body?.collab?.error ?? null,
+          apiPullNumbers: Array.isArray(body?.collab?.pullRequests) ? body.collab.pullRequests.map((pr) => pr.number) : null,
+          dialogText: document.querySelector('.history-overlay')?.innerText?.slice(0, 1200) ?? null,
+          anchors: [...document.querySelectorAll('.history-overlay a')].map((a) => a.getAttribute('href')),
+        };
+      }, remoteId);
+      await page.screenshot({ path: join(evidence, 'rc5-github-dialog-failure.png') });
+      console.error('[e2e] GitHub dialog diagnostics:', JSON.stringify(dump, null, 2));
+      throw new Error(`activity dialog did not render live PR #11: ${err.message}`);
+    }
     await page.getByText(/Issue（/).first().waitFor();
     await page.getByText(/远端 HEAD.*CI/).first().waitFor();
     await page.screenshot({ path: join(evidence, 'rc5-github-live.png') });
