@@ -18,7 +18,7 @@ checks fresh → stale → fresh and verifies that the cached UID survives.
 The index response separates status counts and current versus historical
 symbol counts; projects without a GitHub remote do not attempt live fetches.
 
-The code workspace reads the live index and supports module → file →
+As of `06836ef`, the code workspace reads the live index and supports module → file →
 declaration navigation, source and evidence, filters and SQLite-persisted
 selection. The Windows unpacked application passed a Playwright GUI test with
 an isolated TS/Python repository, watched edit, UID and restart, plus the real

@@ -15,21 +15,31 @@ const { spawn } = require('node:child_process');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const net = require('node:net');
+const os = require('node:os');
 
 const root = path.join(__dirname, '..');
-const dataDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || root, 'archsync-smoke-'));
+const dataDir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'archsync-smoke-'));
 const agentPath = path.join(root, 'apps', 'desktop', 'dist-electron', 'agent', 'agent.cjs');
-const port = 4399;
 
 if (!fs.existsSync(agentPath)) {
   console.error(`agent bundle missing: ${agentPath}`);
   process.exit(1);
 }
 
+const reservation = net.createServer();
+reservation.listen(0, '127.0.0.1', () => {
+  const port = reservation.address().port;
+  reservation.close(() => run(port));
+});
+
+function run(port) {
 const child = spawn(process.execPath, [agentPath], {
   env: {
     ...process.env,
     ARCHSYNC_DATA_DIR: dataDir,
+    ARCHSYNC_PYTHON_ASSETS: path.join(root, 'apps', 'desktop', 'dist-electron', 'python-assets'),
+    WORKSPACE_ROOT: dataDir,
     ARCHSYNC_WEB_DIST: path.join(root, 'apps', 'web', 'dist'),
     PORT: String(port),
   },
@@ -88,3 +98,4 @@ setTimeout(() => {
 child.on('exit', (code) => {
   if (!done) fail(`agent exited early with code ${code}`);
 });
+}

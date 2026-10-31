@@ -9,11 +9,10 @@ import {
 import type { ImplementationState, WorkflowState } from '@archsync/contracts';
 import type { YamlImportResult } from '../store.js';
 import { HistoryPanel } from './HistoryPanel.js';
-import { AddProjectDialog } from './AddProjectDialog.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
 
-export function TopBar() {
+export function TopBar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useStore((s) => s.projects);
   const projectId = useStore((s) => s.projectId);
   const snapshot = useStore((s) => s.snapshot);
@@ -43,13 +42,13 @@ export function TopBar() {
   const [remoteError,setRemoteError] = useState<string|null>(null);
   const registered = (registryList as RegistryProjectInfo[]).find(p => p.id === projectId);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
 
-  const gh = githubSourceLabel(snapshot?.githubSource ?? 'unavailable', snapshot?.githubDemo ?? false);
+  const ghState = remoteError || registered?.lastError ? 'unavailable' : snapshot?.githubSource ?? 'unavailable';
+  const gh = githubSourceLabel(ghState, snapshot?.githubDemo ?? false);
   const filterCount = filters.workflow.size + filters.implementation.size + filters.groups.size;
   const isStatic = mode === 'static';
 
@@ -103,7 +102,7 @@ export function TopBar() {
           <button
             className="import-btn add-project-btn"
             title="添加项目（本地或 GitHub 仓库）"
-            onClick={() => setAddOpen(true)}
+            onClick={onAddProject}
           >
             ＋
           </button>
@@ -128,7 +127,7 @@ export function TopBar() {
         {(remoteError || registered.lastError) && <span role="alert">{remoteError ?? registered.lastError} · 请检查网络后刷新</span>}
       </div>}
       {snapshot?.githubDemo && <span className="badge badge-demo" title="该项目的 Issue/PR/成员数据来自演示数据 fixture">DEMO 数据</span>}
-      <span className={`badge badge-gh badge-${snapshot?.githubSource ?? 'unavailable'}`} title={snapshot?.githubDemo ? '协作数据为演示 fixture' : 'GitHub 协作数据来源'}>
+      <span className={`badge badge-gh badge-${ghState}`} title={remoteError ?? registered?.lastError ?? (snapshot?.githubDemo ? '协作数据为演示 fixture' : 'GitHub 协作数据来源')}>
         ● {gh.label}
       </span>
 
@@ -252,15 +251,6 @@ export function TopBar() {
             : (importMessage.message ?? `配置无效: ${importMessage.errors?.[0]?.message ?? ''}`)}
           <button onClick={() => setImportMessage(null)}>×</button>
         </div>
-      )}
-      {addOpen && (
-        <AddProjectDialog
-          onClose={() => setAddOpen(false)}
-          onAdded={(newId) => {
-            void loadRegistry();
-            void switchProject(newId);
-          }}
-        />
       )}
       {timelineOpen && projectId && (
         <TimelinePanel projectId={projectId} onClose={() => setTimelineOpen(false)} />
