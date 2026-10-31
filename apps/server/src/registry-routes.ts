@@ -156,7 +156,6 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
       return reply.code(409).send({ error: { code: 'monitoring_disabled', message: '该项目已暂停监控' } });
     }
     const result = await ctx.syncGithubNow(request.params.id);
-    ctx.registry.markSync(request.params.id, result.state === 'failed' ? result.errors.join('; ') : null);
     return {
       ok: result.state !== 'failed' && result.state !== 'rate_limited',
       state: result.state,

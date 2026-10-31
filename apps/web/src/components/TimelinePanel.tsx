@@ -22,6 +22,23 @@ export function TimelinePanel({ projectId, onClose }: { projectId: string; onClo
     return ()=>{active=false;};
   }, [projectId, loadTimeline, githubState]);
 
+  // Opening this panel during the first GitHub sync used to freeze it on the
+  // pre-sync "unavailable" placeholder. Re-read the registry state while it is
+  // still not live, so real PR/Issue data appears as soon as the pass lands.
+  useEffect(() => {
+    if (github?.collab.source === 'live') return;
+    let active = true;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (!active || attempts > 10) { clearInterval(timer); return; }
+      void githubState(projectId)
+        .then((next) => { if (active) setGithub(next); })
+        .catch(() => undefined);
+    }, 3000);
+    return () => { active = false; clearInterval(timer); };
+  }, [github?.collab.source, projectId, githubState]);
+
   const filtered = useMemo(
     () => (filter === 'all' ? events : events.filter((e) => e.eventType.startsWith(filter))),
     [events, filter],

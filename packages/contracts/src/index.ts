@@ -456,3 +456,5 @@ export type WsServerMessage =
   | { type: 'presence.left'; projectId: string; sessionId: string }
   | { type: 'snapshot.published'; projectId: string; snapshotId: string; version: number }
   | { type: 'server.error'; code: string; message: string };
+
+export * from './code-index.js';

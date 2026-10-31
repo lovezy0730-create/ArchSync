@@ -20,8 +20,16 @@ import type { ProjectEntry } from './projects.js';
 export async function loadCollab(
   entry: ProjectEntry,
   token: string | null,
-  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
+  cacheReader?: {
+    readCache: <T>(projectId: string, kind: string) => T | null;
+    /** Optional: newest cache write time, used when sync-status is not yet stamped. */
+    cacheUpdatedAt?: (projectId: string) => string | null;
+  },
 ): Promise<CollabData> {
+  if (!entry.config.project.github.owner || !entry.config.project.github.repo) {
+    return CollabDataSchema.parse({ source: 'unavailable', demo: false,
+      fetchedAt: new Date().toISOString(), error: '此项目未配置 GitHub 远端' });
+  }
   // SyncWorker 缓存优先：worker 轮询已把 issues/pulls 写入 github_cache，
   // 复用它避免同一轮询窗口内的重复匿名请求。
   if (cacheReader) {
@@ -31,7 +39,11 @@ export async function loadCollab(
     const issueState = cacheReader.readCache<Record<string, import('./sync/github-worker.js').IssueSummary>>(entry.id, 'issues-state');
     const sync = cacheReader.readCache<{ at: string; error: string | null }>(entry.id, 'sync-status');
     if (pullState !== null || issueState !== null) {
-      return projectWorkerState(pullState ?? {}, issueState ?? {}, (kind) => cacheReader.readCache(entry.id, kind), sync);
+      // sync-status lands at the end of a polling pass; pulls-state lands in
+      // the middle of it. Fall back to the actual cache write time so readers
+      // always get a valid timestamp instead of a schema error (HTTP 500).
+      const observedAt = sync?.at ?? cacheReader.cacheUpdatedAt?.(entry.id) ?? new Date().toISOString();
+      return projectWorkerState(pullState ?? {}, issueState ?? {}, (kind) => cacheReader.readCache(entry.id, kind), sync, observedAt);
     }
   }
 

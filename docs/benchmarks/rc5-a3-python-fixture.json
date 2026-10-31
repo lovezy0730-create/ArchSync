@@ -1,0 +1,210 @@
+{
+  "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+  "gitSha": "bdee654b8d8a4faf6dbbdbce8671ec406967fb69",
+  "files": 3,
+  "symbols": 12,
+  "kinds": {
+    "module": 3,
+    "function": 6,
+    "class": 1,
+    "method": 2
+  },
+  "routes": 2,
+  "resolved": 9,
+  "unresolved": 9,
+  "diagnostics": [
+    {
+      "code": "external_dependency",
+      "message": "reference not statically resolved: FastAPI",
+      "severity": "info",
+      "filePath": "pkg/api.py",
+      "line": 4,
+      "occurredAt": "2026-10-31T02:30:41.366Z"
+    },
+    {
+      "code": "external_dependency",
+      "message": "reference not statically resolved: Flask",
+      "severity": "info",
+      "filePath": "pkg/api.py",
+      "line": 5,
+      "occurredAt": "2026-10-31T02:30:41.366Z"
+    },
+    {
+      "code": "dynamic_call",
+      "message": "reference not statically resolved: getattr",
+      "severity": "info",
+      "filePath": "pkg/api.py",
+      "line": 16,
+      "occurredAt": "2026-10-31T02:30:41.366Z"
+    },
+    {
+      "code": "local_unresolved",
+      "message": "reference not statically resolved: cls",
+      "severity": "info",
+      "filePath": "pkg/service.py",
+      "line": 12,
+      "occurredAt": "2026-10-31T02:30:41.366Z"
+    }
+  ],
+  "examples": [
+    {
+      "projectId": "fixture",
+      "moduleId": "pkg",
+      "filePath": "pkg/api.py",
+      "language": "python",
+      "kind": "function",
+      "name": "total",
+      "qualifiedName": "total",
+      "signature": "async def total(n: int = 1) -> int:",
+      "overload": "",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "int",
+          "defaultValue": "1",
+          "optional": true
+        }
+      ],
+      "returnType": "int",
+      "exported": true,
+      "visibility": "public",
+      "startLine": 8,
+      "endLine": 9,
+      "parentSymbolUid": null,
+      "decorators": [
+        "@app.get(\"/sum\")"
+      ],
+      "modifiers": [
+        "async",
+        "app.get(\"/sum\")"
+      ],
+      "docComment": null,
+      "sourceHash": "242248f0870a9a5b992db58e86b3789c5858c7a1190e24a96c36c1f4f449c031",
+      "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+      "scannedAt": "2026-10-31T02:30:41.366Z",
+      "analysisStatus": "resolved",
+      "evidence": [
+        {
+          "projectId": "fixture",
+          "filePath": "pkg/api.py",
+          "startLine": 8,
+          "endLine": 9,
+          "sourceHash": "242248f0870a9a5b992db58e86b3789c5858c7a1190e24a96c36c1f4f449c031",
+          "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+          "strength": "observed"
+        }
+      ],
+      "fingerprint": "e921657d436e413bd6b59bb55f77f256a19b167a8e9234509b78a25f2f0de00e",
+      "declarationAnchor": "148c21ffb8184f325d6f6300e2b120dfeab788c9b95b7f934d30fa7833ba29b0",
+      "parentSymbolKey": "5a5c057c5ef7eae9e68ff55e5328aaf4c28e7f378964304e748cbe484a0bac8f",
+      "startColumn": 1,
+      "endColumn": 25
+    },
+    {
+      "projectId": "fixture",
+      "moduleId": "pkg",
+      "filePath": "pkg/service.py",
+      "language": "python",
+      "kind": "function",
+      "name": "add",
+      "qualifiedName": "add",
+      "signature": "def add(x: int = 1, y: int = 2) -> int:",
+      "overload": "",
+      "parameters": [
+        {
+          "name": "x",
+          "type": "int",
+          "defaultValue": "1",
+          "optional": true
+        },
+        {
+          "name": "y",
+          "type": "int",
+          "defaultValue": "2",
+          "optional": true
+        }
+      ],
+      "returnType": "int",
+      "exported": true,
+      "visibility": "public",
+      "startLine": 2,
+      "endLine": 4,
+      "parentSymbolUid": null,
+      "decorators": [],
+      "modifiers": [],
+      "docComment": "\"\"\"Add two annotated values.\"\"\"",
+      "sourceHash": "14fce681ff0ee09321f118760fa4300c358627bcc508485d4fe93328fcb574fe",
+      "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+      "scannedAt": "2026-10-31T02:30:41.366Z",
+      "analysisStatus": "resolved",
+      "evidence": [
+        {
+          "projectId": "fixture",
+          "filePath": "pkg/service.py",
+          "startLine": 2,
+          "endLine": 4,
+          "sourceHash": "14fce681ff0ee09321f118760fa4300c358627bcc508485d4fe93328fcb574fe",
+          "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+          "strength": "observed"
+        }
+      ],
+      "fingerprint": "6930d5036d3827fa85f78ae01598bd12d81a50ea0ae3a77c3c6854e0286d59b3",
+      "declarationAnchor": "f59a04a5858834eadc9a4db32179dbde68e470e8c183d1882672de26b51627a7",
+      "parentSymbolKey": "4c2b1ea5e28ceab9ec74fbe1c51169d1fc4e37276eb1a4e1c940f38195af3f94",
+      "startColumn": 1,
+      "endColumn": 17
+    },
+    {
+      "projectId": "fixture",
+      "moduleId": "pkg",
+      "filePath": "pkg/service.py",
+      "language": "python",
+      "kind": "method",
+      "name": "value",
+      "qualifiedName": "Service.value",
+      "signature": "def value(n: int = 1) -> int:",
+      "overload": "",
+      "parameters": [
+        {
+          "name": "n",
+          "type": "int",
+          "defaultValue": "1",
+          "optional": true
+        }
+      ],
+      "returnType": "int",
+      "exported": true,
+      "visibility": "public",
+      "startLine": 8,
+      "endLine": 9,
+      "parentSymbolUid": null,
+      "decorators": [
+        "@staticmethod"
+      ],
+      "modifiers": [
+        "staticmethod"
+      ],
+      "docComment": null,
+      "sourceHash": "14fce681ff0ee09321f118760fa4300c358627bcc508485d4fe93328fcb574fe",
+      "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+      "scannedAt": "2026-10-31T02:30:41.366Z",
+      "analysisStatus": "resolved",
+      "evidence": [
+        {
+          "projectId": "fixture",
+          "filePath": "pkg/service.py",
+          "startLine": 8,
+          "endLine": 9,
+          "sourceHash": "14fce681ff0ee09321f118760fa4300c358627bcc508485d4fe93328fcb574fe",
+          "parserVersion": "python-wasm-0.20.8-0.1.13-v1",
+          "strength": "observed"
+        }
+      ],
+      "fingerprint": "89e34a4b30d003c0c79ea32f610c9e857e23b1ccfd4b48556a49c2fe1d3da058",
+      "declarationAnchor": "316961aabdcfce5bbfa80de9b028417bd79080e3c438662c821323b98708db84",
+      "parentSymbolKey": "a74ecdaeea9a186bfde55829282b80c936d007644fc48cf926eb828905917760",
+      "startColumn": 5,
+      "endColumn": 22
+    }
+  ]
+}

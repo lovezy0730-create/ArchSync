@@ -1,0 +1,357 @@
+{
+  "scope": "observational real TS AST and SQLite; not a fixed-hardware performance gate or UI benchmark",
+  "datasetVersion": "rc5-ts-1000-v1",
+  "seed": 0,
+  "datasetHash": "098c20aa4d4124b2ed87fea5d479b08c6248fdcffd33c64905e2decfee9fb8fd",
+  "files": 1000,
+  "parserVersion": "ts-5.7.2-rc5-ast-1",
+  "gitSha": "24c9139f6edfc62a0644c540942178d6aeeb4439",
+  "gitDirty": false,
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) Ultra 9 185H",
+    "logicalCpus": 22,
+    "memoryBytes": 33832394752,
+    "node": "v24.14.0"
+  },
+  "scenarios": [
+    {
+      "name": "cold",
+      "samples": [
+        {
+          "parseMs": 68.59899999999834,
+          "analysisMs": 1745.8290000000002,
+          "indexMs": 9649.1266,
+          "totalMs": 11394.955600000001,
+          "rssBytes": 569421824,
+          "peakRssBytes": 578023424,
+          "cpuMicros": {
+            "user": 10781000,
+            "system": 1312000
+          },
+          "fsRead": 2024,
+          "fsWrite": 12
+        },
+        {
+          "parseMs": 49.9811999999838,
+          "analysisMs": 2176.8832,
+          "indexMs": 7812.591700000001,
+          "totalMs": 9989.474900000001,
+          "rssBytes": 775352320,
+          "peakRssBytes": 783183872,
+          "cpuMicros": {
+            "user": 9000000,
+            "system": 1125000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 49.07699999997203,
+          "analysisMs": 2072.7028000000028,
+          "indexMs": 7945.0545999999995,
+          "totalMs": 10017.757400000002,
+          "rssBytes": 804118528,
+          "peakRssBytes": 812154880,
+          "cpuMicros": {
+            "user": 9312000,
+            "system": 1031000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 68.64499999995314,
+          "analysisMs": 2050.585299999999,
+          "indexMs": 8085.6452999999965,
+          "totalMs": 10136.230599999995,
+          "rssBytes": 802672640,
+          "peakRssBytes": 812322816,
+          "cpuMicros": {
+            "user": 9594000,
+            "system": 797000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 50.1734000000215,
+          "analysisMs": 2148.6276,
+          "indexMs": 8172.002999999997,
+          "totalMs": 10320.630599999997,
+          "rssBytes": 807038976,
+          "peakRssBytes": 816693248,
+          "cpuMicros": {
+            "user": 9578000,
+            "system": 891000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 66.14670000015758,
+          "analysisMs": 2157.2978999999905,
+          "indexMs": 7961.649600000004,
+          "totalMs": 10118.947499999995,
+          "rssBytes": 817278976,
+          "peakRssBytes": 828698624,
+          "cpuMicros": {
+            "user": 9672000,
+            "system": 969000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 46.73309999985213,
+          "analysisMs": 2153.3852999999945,
+          "indexMs": 7776.027300000002,
+          "totalMs": 9929.412599999996,
+          "rssBytes": 820445184,
+          "peakRssBytes": 830083072,
+          "cpuMicros": {
+            "user": 9375000,
+            "system": 875000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 42.23129999982484,
+          "analysisMs": 1999.9758999999904,
+          "indexMs": 7866.0610000000015,
+          "totalMs": 9866.036899999992,
+          "rssBytes": 819146752,
+          "peakRssBytes": 831066112,
+          "cpuMicros": {
+            "user": 9687000,
+            "system": 703000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 43.02899999982037,
+          "analysisMs": 2029.7523999999976,
+          "indexMs": 7490.379000000001,
+          "totalMs": 9520.131399999998,
+          "rssBytes": 813662208,
+          "peakRssBytes": 831066112,
+          "cpuMicros": {
+            "user": 8968000,
+            "system": 719000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        },
+        {
+          "parseMs": 48.33830000003218,
+          "analysisMs": 2048.4544000000024,
+          "indexMs": 7724.528200000001,
+          "totalMs": 9772.982600000003,
+          "rssBytes": 815321088,
+          "peakRssBytes": 831066112,
+          "cpuMicros": {
+            "user": 9344000,
+            "system": 828000
+          },
+          "fsRead": 2020,
+          "fsWrite": 10
+        }
+      ],
+      "statistics": {
+        "parse": {
+          "p50": 49.07699999997203,
+          "p95": 68.64499999995314,
+          "min": 42.23129999982484,
+          "max": 68.64499999995314,
+          "count": 10
+        },
+        "index": {
+          "p50": 7866.0610000000015,
+          "p95": 9649.1266,
+          "min": 7490.379000000001,
+          "max": 9649.1266,
+          "count": 10
+        },
+        "total": {
+          "p50": 9989.474900000001,
+          "p95": 11394.955600000001,
+          "min": 9520.131399999998,
+          "max": 11394.955600000001,
+          "count": 10
+        }
+      }
+    },
+    {
+      "name": "single-file-edit",
+      "samples": [
+        {
+          "parseMs": 0.19980000000214204,
+          "analysisMs": 1946.8610000000044,
+          "indexMs": 9909.208299999998,
+          "totalMs": 11856.069300000003,
+          "rssBytes": 850989056,
+          "peakRssBytes": 869134336,
+          "cpuMicros": {
+            "user": 11672000,
+            "system": 969000
+          },
+          "fsRead": 2024,
+          "fsWrite": 12
+        },
+        {
+          "parseMs": 0.08460000000195578,
+          "analysisMs": 1950.6997000000265,
+          "indexMs": 11134.896899999992,
+          "totalMs": 13085.596600000019,
+          "rssBytes": 1059868672,
+          "peakRssBytes": 1070583808,
+          "cpuMicros": {
+            "user": 12969000,
+            "system": 859000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.09080000000540167,
+          "analysisMs": 1969.1907000000065,
+          "indexMs": 10502.6642,
+          "totalMs": 12471.854900000006,
+          "rssBytes": 1066233856,
+          "peakRssBytes": 1078489088,
+          "cpuMicros": {
+            "user": 12422000,
+            "system": 735000
+          },
+          "fsRead": 2024,
+          "fsWrite": 12
+        },
+        {
+          "parseMs": 0.11079999999492429,
+          "analysisMs": 1948.8309000000008,
+          "indexMs": 10737.32740000001,
+          "totalMs": 12686.15830000001,
+          "rssBytes": 1068220416,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12391000,
+            "system": 812000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.10940000001573935,
+          "analysisMs": 1974.7137999999977,
+          "indexMs": 11010.789799999999,
+          "totalMs": 12985.503599999996,
+          "rssBytes": 1067421696,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12875000,
+            "system": 797000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.12369999999646097,
+          "analysisMs": 1997.8733999999822,
+          "indexMs": 10181.090200000035,
+          "totalMs": 12178.963600000017,
+          "rssBytes": 1066913792,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12109000,
+            "system": 1047000
+          },
+          "fsRead": 2024,
+          "fsWrite": 12
+        },
+        {
+          "parseMs": 0.20190000004367903,
+          "analysisMs": 1893.6086999999825,
+          "indexMs": 11265.962800000038,
+          "totalMs": 13159.57150000002,
+          "rssBytes": 1066246144,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12797000,
+            "system": 891000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.13589999999385327,
+          "analysisMs": 1870.4038999999757,
+          "indexMs": 10614.83679999999,
+          "totalMs": 12485.240699999966,
+          "rssBytes": 1066676224,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12032000,
+            "system": 828000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.0884999999543652,
+          "analysisMs": 2001.3153000000166,
+          "indexMs": 10422.081599999976,
+          "totalMs": 12423.396899999992,
+          "rssBytes": 1056346112,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12469000,
+            "system": 750000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        },
+        {
+          "parseMs": 0.09129999997094274,
+          "analysisMs": 1826.8984000000055,
+          "indexMs": 10486.513199999987,
+          "totalMs": 12313.411599999992,
+          "rssBytes": 1065197568,
+          "peakRssBytes": 1080381440,
+          "cpuMicros": {
+            "user": 12297000,
+            "system": 781000
+          },
+          "fsRead": 2026,
+          "fsWrite": 13
+        }
+      ],
+      "statistics": {
+        "parse": {
+          "p50": 0.10940000001573935,
+          "p95": 0.20190000004367903,
+          "min": 0.08460000000195578,
+          "max": 0.20190000004367903,
+          "count": 10
+        },
+        "index": {
+          "p50": 10502.6642,
+          "p95": 11265.962800000038,
+          "min": 9909.208299999998,
+          "max": 11265.962800000038,
+          "count": 10
+        },
+        "total": {
+          "p50": 12471.854900000006,
+          "p95": 13159.57150000002,
+          "min": 11856.069300000003,
+          "max": 13159.57150000002,
+          "count": 10
+        }
+      }
+    }
+  ]
+}

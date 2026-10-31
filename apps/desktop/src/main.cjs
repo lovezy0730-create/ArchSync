@@ -16,6 +16,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const {randomUUID} = require('node:crypto');
+const debugPort = Number(process.env.ARCHSYNC_E2E_DEBUG_PORT);
+if (Number.isInteger(debugPort) && debugPort > 0 && debugPort < 65536) {
+  app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+  app.commandLine.appendSwitch('remote-debugging-port', String(debugPort));
+}
 const instanceId = randomUUID();
 if (process.env.ARCHSYNC_DESKTOP_DATA_DIR) {
   fs.mkdirSync(process.env.ARCHSYNC_DESKTOP_DATA_DIR,{recursive:true});
@@ -27,11 +32,6 @@ const isPackaged = app.isPackaged;
 const AGENT_CJS = isPackaged
   ? path.join(process.resourcesPath, 'agent.cjs')
   : path.join(__dirname, 'agent', 'agent.cjs');
-// 内置示例项目（resources/examples）；开发态为仓库根
-const BUILTIN_ROOT = isPackaged
-  ? path.join(process.resourcesPath, 'builtin-projects')
-  : path.join(__dirname, '..', '..', '..');
-
 let mainWindow = null;
 let tray = null;
 let agentProcess = null;
@@ -67,6 +67,8 @@ function findFreePort(startPort) {
 
 function agentEnv() {
   const userData = app.getPath('userData');
+  const workspace = path.join(userData, 'workspace');
+  fs.mkdirSync(workspace, { recursive: true });
   const env = {
     ...process.env,
     ARCHSYNC_INSTANCE_ID: instanceId,
@@ -76,7 +78,10 @@ function agentEnv() {
     ARCHSYNC_WEB_DIST: isPackaged
       ? path.join(process.resourcesPath, 'web-dist')
       : path.join(__dirname, '..', '..', '..', 'apps', 'web', 'dist'),
-    WORKSPACE_ROOT: BUILTIN_ROOT,
+    WORKSPACE_ROOT: workspace,
+    ARCHSYNC_PYTHON_ASSETS: isPackaged
+      ? path.join(process.resourcesPath, 'python-assets')
+      : path.join(__dirname, 'python-assets'),
   };
   if (monitorPaused) env.ARCHSYNC_MONITOR_PAUSED = '1';
   return env;
@@ -130,7 +135,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#0d1117',
-    icon: path.join(__dirname, 'icon.png'),
+    icon: path.join(app.getAppPath(), 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname,'preload.cjs'),
       contextIsolation: true,
@@ -156,7 +161,7 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'icon.png');
+  const iconPath = path.join(app.getAppPath(), 'icon.png');
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
   const rebuildMenu = () => {
     tray.setContextMenu(Menu.buildFromTemplate([
@@ -220,5 +225,5 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  // 托盘常驻：不退出，保持监控
+  if (process.env.ARCHSYNC_CLOSE_TO_TRAY === '0') app.quit();
 });

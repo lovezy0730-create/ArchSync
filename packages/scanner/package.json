@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./pure": "./src/pure.ts"
+    "./pure": "./src/pure.ts",
+    "./identity": "./src/identity.ts",
+    "./ast": "./src/ast.ts",
+    "./python": "./src/python.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,7 +17,11 @@
   },
   "dependencies": {
     "@archsync/contracts": "workspace:*",
-    "picomatch": "^4.0.2"
+    "ignore": "5.3.2",
+    "picomatch": "^4.0.2",
+    "tree-sitter-wasms": "0.1.13",
+    "typescript": "5.7.2",
+    "web-tree-sitter": "0.20.8"
   },
   "devDependencies": {
     "@types/picomatch": "^4.0.3"

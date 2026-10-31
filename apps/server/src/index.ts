@@ -1,21 +1,27 @@
-import { existsSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { matchPaths } from '@archsync/scanner';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
+import { z } from 'zod';
 import { loadEnv, isLoopbackHost, type AuthMode } from './env.js';
-import { discoverProjects, loadProjectEntry } from './projects.js';
+import { discoverProjects } from './projects.js';
 import { LocalDatabase } from './db.js';
 import { ProjectRegistry } from './registry.js';
 import { StateStore } from './store/index.js';
 import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
+import { ProjectQueue } from './sync/project-queue.js';
+import { CodeIndex } from './code-index.js';
+import { scanAstIndex } from './ast-index.js';
+import { scanPythonIndex, releasePythonIndex } from './python-index.js';
 import { GithubSyncWorker } from './sync/github-worker.js';
 import { GithubApiClient } from './sync/github-client.js';
-import { registerRoutes } from './routes.js';
+import { isSameOrigin, registerRoutes } from './routes.js';
 import { registerRegistryRoutes } from './registry-routes.js';
 import { PresenceHub, allowedOrigin } from './ws.js';
 import { SessionStore, parseCookies, SESSION_COOKIE, sessionTokenFromRequest } from './auth.js';
@@ -70,6 +76,9 @@ export async function createServer(overrides?: {
   const store = new StateStore(databasePath);
   await store.load();
   const db = new LocalDatabase(join(dataDir, 'registry.sqlite'));
+  const codeIndex = new CodeIndex(db);
+  const codeStates = new Map<string, { state: 'scanning' | 'ready' | 'error'; error: string | null; scannedAt: string | null }>();
+  const localChanges = new Map<string, RebuildResult['overlay']>();
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -103,17 +112,34 @@ export async function createServer(overrides?: {
   const sessionSweeper = setInterval(() => sessions.sweep(), 10 * 60_000);
 
   // ---- rebuild pipeline: serialized per project, publishes on change ----
-  const inFlight = new Map<string, Promise<RebuildResult>>();
+  const rebuildQueue = new ProjectQueue();
+  const rewatchQueue = new ProjectQueue();
   // liveEntries is shared by reference with the registry: dynamic add/remove
   // takes effect in routes immediately, no restart needed.
   const entryById = liveEntries;
 
   async function runRebuild(entryId: string, jobId: string): Promise<RebuildResult> {
-    const entry = entryById.get(entryId);
-    if (!entry) throw new Error(`项目不存在: ${entryId}`);
-    const previous = inFlight.get(entryId);
-    if (previous) await previous.catch(() => undefined);
-    const task = rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+    return rebuildQueue.run(entryId, async () => {
+      const entry = entryById.get(entryId);
+      if (!entry) throw new Error(`项目不存在: ${entryId}`);
+      const rebuildStartedAt = Date.now();
+      if (entry.rootDir) {
+        codeStates.set(entryId, { state: 'scanning', error: null, scannedAt: null });
+        try {
+          const moduleFor = (path: string) => entry.config.modules.find((m) => matchPaths(m.paths, [path]).length > 0)?.id ?? '__observed_unplanned__';
+          scanAstIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          const astDoneAt = Date.now();
+          await scanPythonIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          const pythonDoneAt = Date.now();
+          codeStates.set(entryId, { state: 'ready', error: null, scannedAt: new Date().toISOString() });
+          if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} ast=${astDoneAt - rebuildStartedAt}ms python=${pythonDoneAt - astDoneAt}ms`);
+        } catch (error) {
+          codeStates.set(entryId, { state: 'error', error: error instanceof Error ? error.message : '扫描失败', scannedAt: new Date().toISOString() });
+        }
+      }
+      return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+      if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} total=${Date.now() - rebuildStartedAt}ms`);
+      localChanges.set(entryId, result.overlay ?? null);
       registry.markScan(
         entryId,
         result.snapshot?.version ?? 0,
@@ -124,13 +150,8 @@ export async function createServer(overrides?: {
         log(`快照已发布 ${entry.name} v${result.snapshot.version}`);
       }
       return result;
+      });
     });
-    inFlight.set(entryId, task);
-    try {
-      return await task;
-    } finally {
-      inFlight.delete(entryId);
-    }
   }
 
   function scheduleRebuild(entryId: string): string {
@@ -186,8 +207,8 @@ export async function createServer(overrides?: {
       if (!entry) return { state: 'skipped' as const, events: 0, errors: ['项目不存在'] };
       // 连续点击合并：worker.syncNow 内部串行，重复调用排队等待上一轮完成
       const summary = await syncWorker.syncNow(entry);
+      registry.markSync(entryId, summary.errors.length ? summary.errors.join('; ') : null);
       if (summary.changed || summary.errors.length > 0) {
-        registry.markSync(entryId, null);
         scheduleRebuild(entryId); // rebuild + WS 推送由 runRebuild 处理
       }
       const rateLimited = summary.errors.some((e) => e.includes('限流') || e.includes('预算'));
@@ -203,6 +224,70 @@ export async function createServer(overrides?: {
         errors: summary.errors,
       };
     },
+  });
+
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/code-index', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    if (!entry) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const files = codeIndex.files(entry.id);
+    const summary = { fresh: 0, partial: 0, stale: 0, unsupported: 0, unavailable: 0, deleted: 0, freshSymbols: 0, historicalSymbols: 0 };
+    for (const file of files) {
+      summary[file.status]++;
+      if (file.status === 'fresh') summary.freshSymbols += file.symbols.length;
+      else if (file.status === 'stale' || file.status === 'unavailable') summary.historicalSymbols += file.symbols.length;
+    }
+    const modules = files.some((file) => file.status !== 'deleted' && file.moduleId === '__observed_unplanned__')
+      ? [...entry.config.modules, { id: '__observed_unplanned__', label: '未规划的实际代码' }]
+      : entry.config.modules;
+    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules,
+      ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
+      summary, files, changes: localChanges.get(entry.id) ?? null, trustedRelations: codeIndex.trustedRelations(entry.id) };
+  });
+  const selectionSchema = z.object({ moduleId: z.string().max(256).nullable(), filePath: z.string().max(4096).nullable(), symbolUid: z.string().max(256).nullable() }).strict();
+  app.get('/api/v1/workspace/active-project', async () => {
+    const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get('@active-project') as { payload_json: string } | undefined;
+    const parsed = row ? z.object({ projectId: z.string().max(256).nullable() }).safeParse(JSON.parse(row.payload_json)) : null;
+    return parsed?.success ? parsed.data : { projectId: null };
+  });
+  app.put('/api/v1/workspace/active-project', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: { message: '跨源写请求被拒绝' } });
+    const parsed = z.object({ projectId: z.string().max(256) }).strict().safeParse(request.body);
+    if (!parsed.success || !registry.get(parsed.data.projectId)) return reply.code(400).send({ error: { message: '项目不存在' } });
+    db.prepare('INSERT INTO workspace_preferences VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET payload_json=excluded.payload_json').run('@active-project', JSON.stringify(parsed.data));
+    return parsed.data;
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/workspace', async (request, reply) => {
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get(request.params.id) as { payload_json: string } | undefined;
+    const parsed = row ? selectionSchema.safeParse(JSON.parse(row.payload_json)) : null;
+    return parsed?.success ? parsed.data : { moduleId: null, filePath: null, symbolUid: null };
+  });
+  app.put<{ Params: { id: string } }>('/api/v1/projects/:id/workspace', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: { message: '跨源写请求被拒绝' } });
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const parsed = selectionSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: { message: '工作台状态无效' } });
+    db.prepare('INSERT INTO workspace_preferences VALUES (?,?) ON CONFLICT(project_id) DO UPDATE SET payload_json=excluded.payload_json').run(request.params.id, JSON.stringify(parsed.data));
+    return parsed.data;
+  });
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/v1/projects/:id/source', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    const filePath = request.query.path;
+    const file = entry && filePath ? codeIndex.get(entry.id, filePath) : null;
+    if (!entry?.rootDir || !file || file.status === 'deleted') return reply.code(404).send({ error: { message: '索引文件不存在' } });
+    try {
+      const rootPath = realpathSync(entry.rootDir);
+      const sourcePath = realpathSync(join(rootPath, file.filePath));
+      const rel = relative(rootPath, sourcePath);
+      if (!rel || rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel))
+        return reply.code(403).send({ error: { message: '文件不在项目目录内' } });
+      if (statSync(sourcePath).size > 1024 * 1024) return reply.code(413).send({ error: { message: '文件超过读取限制' } });
+      const content = readFileSync(sourcePath, 'utf8');
+      const contentHash = createHash('sha256').update(content).digest('hex');
+      return { path: file.filePath, content, contentHash, indexedContentMatches: file.status === 'fresh' && contentHash === file.lastSuccessfulHash, status: file.status };
+    } catch {
+      return reply.code(404).send({ error: { message: '文件不可读取' } });
+    }
   });
 
   registerRoutes(app, {
@@ -270,9 +355,9 @@ export async function createServer(overrides?: {
     watchedEntries(),
     { onProjectChanged: (entry) => {
         // project.yaml/views 变更时热重载配置；失败保留上一份有效配置
-        const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
-        if ('error' in reloaded) {
-          log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+        const reloaded = registry.reloadProjectEntry(entry.id);
+        if (!reloaded) {
+          log(`项目重载失败，保留上一份有效配置: ${entry.id}`);
           return;
         }
         liveEntries.set(reloaded.id, reloaded);
@@ -287,14 +372,14 @@ export async function createServer(overrides?: {
   } else {
     watcher.start();
   }
-  dynamicRefs.rewatch = async () => {
+  dynamicRefs.rewatch = () => rewatchQueue.run('watcher', async () => {
     await watcher.stop();
     watcher = new WorkspaceWatcher(
       watchedEntries(),
       { onProjectChanged: (entry) => {
-          const reloaded = loadProjectEntry(join(entry.rootDir, '.archsync', 'project.yaml'));
-          if ('error' in reloaded) {
-            log(`项目重载失败，保留上一份有效配置: ${reloaded.error}`);
+          const reloaded = registry.reloadProjectEntry(entry.id);
+          if (!reloaded) {
+            log(`项目重载失败，保留上一份有效配置: ${entry.id}`);
             return;
           }
           liveEntries.set(reloaded.id, reloaded);
@@ -304,12 +389,13 @@ export async function createServer(overrides?: {
     );
     if (!monitorPaused) watcher.start();
     log(`文件监听已重建（${liveEntries.size} 个项目）`);
-  };
+  });
 
   // ---- GitHub sync worker (阶段 B): budgeted polling with ETag cache ----
   const syncClient = new GithubApiClient(db, () => env.githubToken);
   const syncCacheReader = {
     readCache: <T>(projectId: string, kind: string): T | null => syncClient.readCache<T>(projectId, kind),
+    cacheUpdatedAt: (projectId: string): string | null => syncClient.cacheUpdatedAt(projectId),
   };
   const syncWorker = new GithubSyncWorker(
     db,
@@ -317,9 +403,9 @@ export async function createServer(overrides?: {
     () => registry.monitoredEntries(),
     {
       onRemoteChanged: (entry) => {
-        registry.markSync(entry.id, null);
         scheduleRebuild(entry.id);
       },
+      onSyncFinished: (entry, errors) => registry.markSync(entry.id, errors.length ? errors.join('; ') : null),
       log,
     },
   );
@@ -351,8 +437,10 @@ export async function createServer(overrides?: {
       clearInterval(sessionSweeper);
       await syncWorker.stop();
       dynamicRefs.rewatch = undefined;
+      await rewatchQueue.drain();
       await watcher.stop();
-      await Promise.allSettled([...inFlight.values()]);
+      await rebuildQueue.drain();
+      releasePythonIndex(codeIndex);
       await hub.stop();
       await app.close();
       db.close();

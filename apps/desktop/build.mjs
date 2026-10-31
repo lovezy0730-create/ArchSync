@@ -44,6 +44,21 @@ await esbuildBuild({
 
 fs.copyFileSync(path.join(desktop,'src','preload.cjs'),path.join(distElectron,'preload.cjs'));
 
+// Keep the parser runtime and grammars outside the bundle so the packaged
+// agent can load exactly the same offline WASM resources as development.
+const scannerRequire = createRequire(path.join(root, 'packages/scanner/package.json'));
+const pythonAssets = path.join(distElectron, 'python-assets');
+fs.mkdirSync(pythonAssets, { recursive: true });
+const pythonFiles = {
+  'tree-sitter.cjs': scannerRequire.resolve('web-tree-sitter'),
+  'tree-sitter.wasm': scannerRequire.resolve('web-tree-sitter/tree-sitter.wasm'),
+  'tree-sitter-python.wasm': scannerRequire.resolve('tree-sitter-wasms/out/tree-sitter-python.wasm'),
+  'LICENSE-web-tree-sitter': path.join(path.dirname(scannerRequire.resolve('web-tree-sitter')), 'LICENSE'),
+  'LICENSE-tree-sitter-wasms': path.join(path.dirname(path.dirname(scannerRequire.resolve('tree-sitter-wasms/out/tree-sitter-python.wasm'))), 'LICENSE'),
+  'LICENSE-tree-sitter-python': path.join(desktop, 'licenses', 'tree-sitter-python-LICENSE'),
+};
+for (const [name, source] of Object.entries(pythonFiles)) fs.copyFileSync(source, path.join(pythonAssets, name));
+
 // 2. web production build
 run('pnpm', ['--filter', '@archsync/web', 'build']);
 

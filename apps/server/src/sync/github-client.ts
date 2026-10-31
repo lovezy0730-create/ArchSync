@@ -12,7 +12,7 @@ export interface GithubApiResult<T> {
   resetAt: string | null;
   retryAfterSeconds: number | null;
   error?: string;
-  errorKind?: 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'server' | 'network';
+  errorKind?: 'bad_request' | 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'server' | 'network' | 'timeout';
 }
 
 /**
@@ -88,6 +88,20 @@ export class GithubApiClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Newest write time across a project's cached GitHub payloads.
+   *
+   * `sync-status` is written at the END of a polling pass, while `pulls-state`
+   * lands in the middle of it. Readers must be able to report a truthful
+   * "data observed at" timestamp during that window instead of failing.
+   */
+  cacheUpdatedAt(projectId: string): string | null {
+    const row = this.db
+      .prepare('SELECT MAX(updated_at) AS updated_at FROM github_cache WHERE project_id = ?')
+      .get(projectId) as { updated_at: string | null } | undefined;
+    return row?.updated_at ?? null;
   }
 
   writeCache(projectId: string, kind: string, payload: unknown): void {
@@ -184,12 +198,13 @@ export class GithubApiClient {
         remaining: null,
         resetAt: null,
         retryAfterSeconds: null,
-        error: aborted ? '请求超时（30s）' : `网络请求失败: ${(err as Error).message}`,
-        errorKind: 'network',
+        error: aborted ? '请求超时（30s）' : '网络请求失败，请检查网络连接',
+        errorKind: aborted ? 'timeout' : 'network',
       };
     }
 
-    const remaining = Number(res.headers.get('x-ratelimit-remaining'));
+    const remainingHeader = res.headers.get('x-ratelimit-remaining');
+    const remaining = remainingHeader === null ? null : Number(remainingHeader);
     const resetEpoch = Number(res.headers.get('x-ratelimit-reset'));
     const resetAt = Number.isFinite(resetEpoch) && resetEpoch > 0 ? new Date(resetEpoch * 1000).toISOString() : null;
     const retryAfterRaw = res.headers.get('retry-after');
@@ -215,6 +230,9 @@ export class GithubApiClient {
 
     if (res.status === 304 && options.conditional !== false) return this.request<T>(projectId, kind, path, { ...options, conditional: false });
 
+    if (res.status === 400) {
+      return fail(res, 'bad_request', 'GitHub 请求参数无效（400）');
+    }
     if (res.status === 401) {
       return fail(res, 'auth', 'Token 无效或已过期（401）');
     }
@@ -400,6 +418,8 @@ export function projectWorkerState(
   issues: Record<string, import('./github-worker.js').IssueSummary>,
   read: <T>(kind: string) => T | null,
   sync: { at: string; error: string | null } | null,
+  /** Timestamp of the payload actually served; must never be null (schema-valid ISO string). */
+  observedAt: string = sync?.at ?? new Date().toISOString(),
 ): CollabData {
   const pullRequests = Object.values(pulls).map(p => {
     const mapping = read<{headSha:string;files:string[]}>(`pr-files:${p.number}`);
@@ -416,6 +436,6 @@ export function projectWorkerState(
     createdAt:i.created_at ?? '', updatedAt:i.updated_at ?? '', closedAt:i.closed_at ?? null,
     completion:i.state === 'closed' ? i.state_reason === 'completed' ? 'completed' : i.state_reason === 'not_planned' ? 'not_completed' : 'none' : 'none',
   }));
-  return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:sync?.at ?? null,
+  return CollabDataSchema.parse({source:'live', demo:false, fetchedAt:observedAt,
     error:sync?.error ?? null, pullRequests, issues:normalizedIssues, team:[], moduleIssues:{}, manualApprovals:{}});
 }

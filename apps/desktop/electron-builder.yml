@@ -20,6 +20,8 @@ extraResources:
   # 独立 Agent（esbuild 单文件 bundle，Electron utilityProcess 运行）
   - from: dist-electron/agent/agent.cjs
     to: agent.cjs
+  - from: dist-electron/python-assets
+    to: python-assets
   # 前端静态资源
   - from: ../../apps/web/dist
     to: web-dist
