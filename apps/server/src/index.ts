@@ -122,18 +122,23 @@ export async function createServer(overrides?: {
     return rebuildQueue.run(entryId, async () => {
       const entry = entryById.get(entryId);
       if (!entry) throw new Error(`项目不存在: ${entryId}`);
+      const rebuildStartedAt = Date.now();
       if (entry.rootDir) {
         codeStates.set(entryId, { state: 'scanning', error: null, scannedAt: null });
         try {
           const moduleFor = (path: string) => entry.config.modules.find((m) => matchPaths(m.paths, [path]).length > 0)?.id ?? '__observed_unplanned__';
           scanAstIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          const astDoneAt = Date.now();
           await scanPythonIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
+          const pythonDoneAt = Date.now();
           codeStates.set(entryId, { state: 'ready', error: null, scannedAt: new Date().toISOString() });
+          if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} ast=${astDoneAt - rebuildStartedAt}ms python=${pythonDoneAt - astDoneAt}ms`);
         } catch (error) {
           codeStates.set(entryId, { state: 'error', error: error instanceof Error ? error.message : '扫描失败', scannedAt: new Date().toISOString() });
         }
       }
       return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+      if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} total=${Date.now() - rebuildStartedAt}ms`);
       localChanges.set(entryId, result.overlay ?? null);
       registry.markScan(
         entryId,

@@ -20,7 +20,9 @@ export async function scanPythonIndex(
     const moduleId = moduleFor?.(u.filePath) ?? u.moduleId;
     return FileUpdateSchema.parse({ ...u, moduleId, symbols: u.symbols.map((s) => ({ ...s, moduleId })) });
   });
-  for (const f of index.files(projectId))
+  // No parsed Python file means there is nothing to commit and nothing that
+  // could have been deleted; skip the full index read (large TS-only repos).
+  for (const f of updates.length === 0 ? [] : index.files(projectId))
     if (
       f.language === "python" &&
       !updates.some((u) => u.filePath === f.filePath)

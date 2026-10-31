@@ -67,6 +67,7 @@ export class CodeIndex {
     renames: Record<string, string> = {},
   ): void {
     const updates = raw.map((u) => FileUpdateSchema.parse(u));
+    if (updates.length === 0) return;
     if (new Set(updates.map((u) => u.filePath)).size !== updates.length)
       throw new Error("duplicate file update");
     for (const u of updates) {

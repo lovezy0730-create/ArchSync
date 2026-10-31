@@ -134,12 +134,14 @@ try {
   await page.getByRole('button', { name: '刷新 GitHub' }).click();
   await page.locator('.registry-status [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
+  const editStartedAt = Date.now();
   await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
   await waitFor(async ({ id, previous }) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     const symbol = index.files.flatMap((file) => file.symbols).find((item) => item.name === 'hello');
     return symbol && symbol.symbolUid === previous && index.files.find((file) => file.filePath === 'src/main.ts').revision > 1;
   }, { id: projectId, previous: uid }, { label: 'watched edit reindexed', timeout: 30000 });
+  console.log(`[e2e] watched edit visible after ${Date.now() - editStartedAt}ms (save -> fresh index)`);
   await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     return index.changes?.some((change) => change.path === 'src/main.ts' && change.kind === 'modified');

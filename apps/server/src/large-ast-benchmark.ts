@@ -9,16 +9,13 @@ import { CodeIndex } from './code-index.js';
 import { LocalDatabase } from './db.js';
 import { scanAstIndex } from './ast-index.js';
 import { summarize } from './index-benchmark.js';
+import { generateTsFixture, writeFixture } from './bench-fixtures.js';
 
-// Deterministic source, not prebuilt SymbolDrafts. Each package has imports,
-// functions, classes, interfaces and cross-package references.
-const dataset = Array.from({ length: 1000 }, (_, i) => {
-  const folder = `pkg${Math.floor(i / 100)}`;
-  const previous = i ? `import { fn${i - 1} } from '../pkg${Math.floor((i - 1) / 100)}/f${i - 1}';\n` : '';
-  const call = i ? `fn${i - 1}(n) + ` : '';
-  return { path: `src/${folder}/f${i}.ts`, source: `${previous}export interface Data${i} { value: number }\nexport class Service${i} { run(n: number): number { return n + ${i}; } }\nexport function fn${i}(n: number): number { return ${call}${i}; }\n` };
-});
-const datasetHash = createHash('sha256').update(JSON.stringify(dataset)).digest('hex');
+// Deterministic source, not prebuilt SymbolDrafts. Shared with the watcher
+// latency benchmark so both reports describe the same fixture.
+const fixture = generateTsFixture();
+const dataset = fixture.files;
+const datasetHash = fixture.hash;
 const output = process.argv[process.argv.indexOf('--out') + 1];
 if (!process.argv.includes('--out') || !output) throw new Error('--out required');
 /** Samples per scenario; the frozen report uses the default, profiling runs shrink it. */
@@ -37,7 +34,7 @@ for (const scenario of ['cold', 'single-file-edit']) {
     const dir = mkdtempSync(join(tmpdir(), 'archsync-rc5-large-'));
     const db = new LocalDatabase(':memory:');
     try {
-      for (const file of dataset) { const dest = join(dir, file.path); mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, file.source); }
+      writeFixture(dir, dataset);
       const index = new CodeIndex(db);
       if (scenario !== 'cold') {
         scanAstIndex(dir, 'benchmark', index);

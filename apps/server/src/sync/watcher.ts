@@ -95,8 +95,8 @@ export class WorkspaceWatcher {
       // Windows fs.watch can silently drop events for nested watch roots;
       // polling is the reliable fallback (ARCHSYNC_WATCH_POLLING=1).
       usePolling,
-      interval: usePolling ? 1200 : undefined,
-      binaryInterval: usePolling ? 3000 : undefined,
+      interval: usePolling ? 800 : undefined,
+      binaryInterval: usePolling ? 2000 : undefined,
     });
     this.watcher.on('ready', () => {
       console.log(`[watcher] 初始化完成（${usePolling ? 'polling' : 'fs.watch'}），正在监听 ${roots.length} 个根`);
