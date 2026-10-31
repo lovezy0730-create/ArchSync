@@ -18,8 +18,12 @@ checks fresh → stale → fresh and verifies that the cached UID survives.
 The index response separates status counts and current versus historical
 symbol counts; projects without a GitHub remote do not attempt live fetches.
 
-Next: complete diagnostics, test project
-isolation through the server, then connect the actual four-level workspace.
-The application still requires desktop packaging, GUI and packaged E2E work.
+The initial code workspace reads the live index and supports module → file →
+declaration navigation, source and evidence, filters and persisted selection.
+This still needs packaged GUI acceptance and interaction/visual coverage.
+
+Next: finish project-isolation and UI validation, integrate the Python WASM
+resources into the desktop package, and run packaged Windows E2E. The app is
+not yet ready for user trial.
 
 Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts`.
