@@ -71,6 +71,23 @@ The left tree, breadcrumbs, search/filter, graph/list toggle, file-dependency vs
 symbol-call sub-view and the right evidence/source pane share the same
 selection. Presentation mode survives view switches and restarts.
 
+## Startup, crash recovery and old data
+
+- The agent listens **before** scanning; `/healthz` reports `phase`,
+  `listenMs`, restored project count and background progress.
+- The Electron main process loads a local startup page immediately, then
+  navigates to the workbench when `/healthz` answers. Failures (missing agent,
+  page load failure, renderer crash, agent exit) show that page with a
+  concrete reason, the log directory and a retry button.
+- Persisted indexes from older discovery strategies are re-mapped by path
+  without re-parsing source files, and the new snapshot is published in the
+  background.
+- `StateStore` migrates interrupted jobs and validates old snapshots; an
+  incompatible snapshot is dropped and rebuilt instead of crashing the UI.
+- Watchers are source-aware (indexed directories only, per-root native
+  watches) and rebuilds are coalesced, so a 39k-file repository no longer
+  starves the server.
+
 ## Real-repository acceptance
 
 CI uses a fixed structural fixture (`MaiBot` / `Research` / `Scripts` with

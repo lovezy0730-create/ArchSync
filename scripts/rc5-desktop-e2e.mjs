@@ -1,5 +1,5 @@
 import { _electron as electron, chromium } from 'playwright';
-import { mkdtemp, mkdir, writeFile, rm, access, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -68,7 +68,13 @@ async function launch() {
     page = await application.firstWindow();
   }
   currentPage = page;
-  await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
+  const launchStartedAt = Date.now();
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 90000 });
+  const appUrlMs = Date.now() - launchStartedAt;
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log(`[e2e] app interactive after ${Date.now() - launchStartedAt}ms (url ${appUrlMs}ms)`);
+  const bodyText = await page.locator('body').innerText();
+  assert.ok(bodyText.includes('ArchSync'), 'main page has no ArchSync shell');
   const health = await page.evaluate(async () => (await fetch('/healthz')).json());
   agentPid = health.pid;
   return page;
@@ -226,6 +232,13 @@ try {
   await page.getByRole('button', { name: '刷新 GitHub' }).click();
   await page.locator('.project-menu-panel [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
+  await page.getByRole('button', { name: '关于 / 诊断' }).click();
+  await page.getByRole('dialog', { name: '关于与诊断' }).waitFor({ timeout: 30000 });
+  const aboutText = await page.locator('.about-card').innerText();
+  assert.ok(/1\.3\.0-rc\.6/.test(aboutText), 'about panel does not show the trial version');
+  assert.ok(/Build SHA/.test(aboutText), 'about panel does not show the build SHA');
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.locator('.project-menu summary').click();
   touch('github-offline-state');
   const editStartedAt = Date.now();
   await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
@@ -247,6 +260,20 @@ try {
   await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
   await access(join(data, 'data', 'registry.sqlite'));
   await stop();
+  // Simulate data written by a previous RC5 run that was interrupted mid-scan:
+  // a job left in `running` and an older snapshot without optional fields.
+  const statePath = join(data, 'data', 'archsync-state.json');
+  const legacyState = JSON.parse(await readFile(statePath, 'utf8'));
+  for (const project of Object.values(legacyState.projects ?? {})) {
+    const jobs = Object.values(project.jobs ?? {});
+    const last = jobs[jobs.length - 1];
+    if (last) { last.state = 'running'; last.finishedAt = null; }
+    if (project.currentSnapshot) {
+      delete project.currentSnapshot.views;
+      delete project.currentSnapshot.configOrigin;
+    }
+  }
+  await writeFile(statePath, JSON.stringify(legacyState));
   page = await launch();
   await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
@@ -280,6 +307,31 @@ try {
   await page.locator('.react-flow__node').first().waitFor({ timeout: 60000 });
   console.log('[e2e] snapshot failure surfaced with retry and recovered');
   await page.getByRole('button', { name: '代码架构' }).click();
+
+  // Agent crash: the window must show the startup page, then recover.
+  touch('agent-crash');
+  const agentHealth = await page.evaluate(async () => (await (await fetch('/healthz')).json()).pid);
+  process.kill(agentHealth, 'SIGKILL');
+  await page.waitForURL('file://**', { timeout: 30000 });
+  await page.getByText('本地服务已退出，正在重启…').waitFor({ timeout: 30000 });
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log('[e2e] agent crash surfaced on the startup page and recovered');
+
+  // Page resource failure: the main process must show the diagnostic page.
+  touch('page-load-failure');
+  await page.route('**/', (route) => route.abort());
+  try {
+    await page.reload().catch(() => undefined);
+    await page.waitForURL('file://**', { timeout: 30000 });
+    await page.getByText('工作台页面加载失败').waitFor({ timeout: 30000 });
+  } finally {
+    await page.unroute('**/').catch(() => undefined);
+  }
+  await page.getByRole('button', { name: '重试启动' }).click();
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log('[e2e] page load failure surfaced and retry recovered');
   await page.locator('.add-project-btn').click();
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(resolve('.'));
   await page.getByRole('button', { name: '添加', exact: true }).click();
@@ -306,6 +358,7 @@ try {
   await page.locator('.project-select').waitFor();
   await page.waitForFunction(() => document.querySelector('.project-select')?.value === 'archsync', null, { timeout: 60000 });
   await page.getByText('analyzeImports', { exact: true }).first().waitFor({ timeout: 60000 });
+  assert.ok((await page.locator('.project-select option').count()) >= 2, 'registered projects were not restored after restart');
   await page.locator('.project-select').selectOption(projectId);
   await waitFor(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId, { label: 'active project switch persisted' });
   await stop();

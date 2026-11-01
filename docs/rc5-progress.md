@@ -103,3 +103,55 @@ structural fixture and the new
 acceptance path for the real repository. The fixture is not presented as
 QQAgent evidence.
 
+## RC5.1 startup / white-screen hotfix
+
+The trial build `149bb77` (Portable `1.3.0-rc.5`) could show a white window for
+minutes on a real Windows machine with four registered repositories. Root
+causes, confirmed from the user's data and logs:
+
+- `createServer` awaited a full rebuild of **every** registered project before
+  `app.listen`. With QQAgent (39,506 workspace files, 87 indexed Python files,
+  9.8 MB index) the HTTP server never became reachable within the 30 s window,
+  so the main process fell back to an **unstyled white** data-URL error page.
+- The Windows watcher polled every registered tree every 800 ms. On a 39k-file
+  repository that starved the event loop so `scanProject` inside a rebuild did
+  not finish for minutes (confirmed by disabling the watcher: rebuilds finished
+  in ~200 ms–1.8 s).
+- `codeIndex.files()` re-parsed the whole multi-megabyte index for the
+  projection, the watcher, the old-module remap and the rebuild.
+- `StateStore` did not serialize mutations and kept `running` jobs from a
+  previous process forever.
+
+Fixes:
+
+- `app.listen` happens before any scan; background rebuilds are deferred 2 s,
+  bounded to 2 concurrent projects, active project first, and never block the
+  window. `/healthz` answers immediately with the startup phase.
+- `StateStore.load` migrates old data: `running` jobs become explicit
+  interrupted errors, missing fields get defaults, incompatible snapshots are
+  dropped (the project rebuilds) and mutations are serialized.
+- The watcher watches **only directories that contain indexed source files**
+  (per-root native `fs.watch`, polling only when explicitly requested), filters
+  runtime/log extensions, and rebuilds are coalesced per project.
+- `CodeIndex` caches parsed files by an in-process version; the system graph
+  renders from the architecture projection before the full index arrives.
+- Electron shows a dark startup page immediately, then navigates to the app;
+  `did-fail-load`, `render-process-gone`, `unresponsive`, agent exits and page
+  timeouts are logged to `<userData>/logs/main.log` with a retry button.
+- React has an Error Boundary plus global error records, snapshot schema
+  validation, graph node/edge sanitization and selection fallback.
+- Trial version is now `1.3.0-rc.6`; About/Diagnostics shows version, build SHA,
+  agent/DB schema, data dir, startup timings and a copyable report.
+
+`docs/benchmarks/rc5-startup-windows.json` (packaged app, 22-CPU Windows host,
+2 projects, 1000 TS + 101 Python files, ~10k symbols): first window P95 449 ms,
+app URL P95 1.31 s, interactive P95 1.36 s, first architecture graph P95 875 ms,
+agent listen P95 73 ms, background scans P95 8.1 s. Targets (3 s window / 5 s
+interactive) are met on this host; the numbers are observational.
+
+Old-data upgrade was validated against a **copy of the user's real RC5 data**
+(4 projects, 46 MB SQLite, 734 KB state): startup page shown, interactive in
+~3.6 s, four projects restored, old module ids remapped immediately, new
+discovered snapshot published ~6.2 s after launch. CI uses sanitized fixtures
+(`test/startup.test.ts`) and never the user's data.
+
