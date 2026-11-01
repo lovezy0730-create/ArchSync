@@ -855,3 +855,4 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .project-menu-actions button { background: var(--panel); color: var(--text); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
 .project-menu-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .project-menu-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.arch-badge-changed { color: var(--warn); border-color: var(--warn); }

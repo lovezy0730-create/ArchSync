@@ -472,7 +472,14 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                   <button onClick={() => setRefreshKey((value) => value + 1)}>重试</button>
                 </div>
               )}
-              {!archError && filteredArch && <ArchitectureGraph response={filteredArch} selectedId={archSelection} onSelect={openNode} />}
+              {!archError && filteredArch && (
+                <ArchitectureGraph
+                  response={filteredArch}
+                  selectedId={archSelection}
+                  onSelect={openNode}
+                  changedPaths={changedPaths}
+                />
+              )}
               {!archError && !filteredArch && !archLoading && <p className="hint">没有可显示的架构数据。</p>}
             </div>
           )}

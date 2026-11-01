@@ -75,10 +75,13 @@ export function ArchitectureGraph({
   response,
   selectedId,
   onSelect,
+  changedPaths,
 }: {
   response: ArchitectureResponse;
   selectedId: string | null;
   onSelect: (node: ArchitectureNode) => void;
+  /** Workspace paths with uncommitted changes, marked on their nodes. */
+  changedPaths?: Set<string>;
 }) {
   const adjacency = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -118,6 +121,7 @@ export function ArchitectureGraph({
                 {node.status !== 'fresh' && <span className={`arch-status arch-status-${node.status}`}>{node.status}</span>}
                 {node.planned && <span className="arch-badge arch-badge-planned">规划</span>}
                 {node.observed && !node.planned && <span className="arch-badge arch-badge-observed">实际</span>}
+                {node.filePath && changedPaths?.has(node.filePath) && <span className="arch-badge arch-badge-changed">未提交</span>}
               </span>
               <strong>{node.label}</strong>
               <span className="arch-node-meta">
@@ -132,7 +136,7 @@ export function ArchitectureGraph({
         style: { width: NODE_WIDTH, padding: 0, border: 0, background: 'transparent' },
       } satisfies Node;
     });
-  }, [response.nodes, selectedId, adjacency, onSelect]);
+  }, [response.nodes, selectedId, adjacency, onSelect, changedPaths]);
 
   const edges = useMemo<Edge[]>(() => {
     const related = selectedId ? adjacency.get(selectedId) : null;
