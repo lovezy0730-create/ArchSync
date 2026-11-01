@@ -234,6 +234,8 @@ try {
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
   await page.getByRole('button', { name: '关于 / 诊断' }).click();
   await page.getByRole('dialog', { name: '关于与诊断' }).waitFor({ timeout: 30000 });
+  // Diagnostics are fetched asynchronously; wait for the grid, not just the dialog.
+  await page.locator('.about-card .about-grid').waitFor({ timeout: 30000 });
   const aboutText = await page.locator('.about-card').innerText();
   assert.ok(/1\.3\.0-rc\.6/.test(aboutText), 'about panel does not show the trial version');
   assert.ok(/Build SHA/.test(aboutText), 'about panel does not show the build SHA');
