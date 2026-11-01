@@ -23,6 +23,20 @@ let browser;
 let portableProcess;
 let currentPage;
 let agentPid;
+let currentStep = 'start';
+let lastProgress = Date.now();
+const touch = (name) => {
+  currentStep = name;
+  lastProgress = Date.now();
+  console.log(`[e2e] step: ${name}`);
+};
+const watchdog = setInterval(() => {
+  if (Date.now() - lastProgress > 240_000) {
+    console.error(`[e2e] watchdog: no progress for ${Math.round((Date.now() - lastProgress) / 1000)}s at "${currentStep}"`);
+    process.exit(1);
+  }
+}, 10_000);
+watchdog.unref?.();
 async function availablePort() {
   return await new Promise((resolvePort, reject) => {
     const socket = createServer();
@@ -87,17 +101,31 @@ async function waitFor(predicate, arg, { timeout = 60000, interval = 250, label 
     await new Promise((resolveWait) => setTimeout(resolveWait, interval));
   }
 }
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms).unref?.()),
+  ]);
+}
+
 async function stop() {
-  if (application) { await application.close(); application = undefined; }
-  else if (browser) {
-    await currentPage.close().catch(() => undefined);
-    await browser.close().catch(() => undefined);
-    browser = undefined; currentPage = undefined;
-    // The portable wrapper owns the Electron child; closing the CDP browser
-    // does not always terminate it, and a lingering process keeps file
-    // handles on the fixture (rename would fail with EBUSY).
-    if (portableProcess && portableProcess.exitCode === null) portableProcess.kill();
+  if (application) {
+    await withTimeout(application.close(), 30000, 'application.close').catch((error) => console.error('[e2e]', error.message));
+    application = undefined;
+  } else if (browser) {
+    // Kill the portable process tree FIRST: the wrapper owns the Electron
+    // child, and a live child can make page.close()/browser.close() wait
+    // forever while holding file handles (EBUSY on cleanup).
+    if (portableProcess && portableProcess.exitCode === null) {
+      try {
+        execFileSync('taskkill', ['/PID', String(portableProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      } catch { /* already gone */ }
+      portableProcess.kill();
+    }
     portableProcess = undefined;
+    await withTimeout(currentPage.close(), 10000, 'page.close').catch((error) => console.error('[e2e]', error.message));
+    await withTimeout(browser.close(), 10000, 'browser.close').catch((error) => console.error('[e2e]', error.message));
+    browser = undefined; currentPage = undefined;
   }
   for (let i = 0; i < 100; i++) {
     try { process.kill(agentPid, 0); } catch {
@@ -124,11 +152,13 @@ async function renameWithRetry(from, to) {
   await rename(from, to);
 }
 try {
+  touch('launch');
   let page = await launch();
   await page.getByRole('button', { name: '打开或克隆仓库' }).click();
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(repo);
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+  touch('register-local-repo');
   const projectId = await waitFor(async (p) => {
     const list = await (await fetch('/api/v1/registry')).json();
     return list.projects.find((project) => project.localPath === p)?.id;
@@ -139,6 +169,7 @@ try {
   }, projectId, { label: 'mixed repository index ready' });
   const before = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), projectId);
   const uid = before.files.flatMap((file) => file.symbols).find((symbol) => symbol.name === 'hello').symbolUid;
+  touch('index-ready');
   await page.getByText(/扫描完成 · 3 个有效文件/).waitFor({ timeout: 30000 });
   await page.locator('.arch-node').first().waitFor({ timeout: 60000 });
   // The system level must show real modules and resolved edges, not folders.
@@ -147,13 +178,16 @@ try {
   assert.ok(/lib（根文件）/.test(systemGraph), 'system graph is missing the lib module');
   assert.ok(/已解析/.test(systemGraph), 'system graph has no resolved dependency edge');
   await page.screenshot({ path: join(evidence, 'rc5-module-graph.png') });
+  touch('system-graph');
 
   // system -> module
   await page.locator('.arch-node[data-node-kind="module"]', { hasText: 'src（根文件）' }).first().click();
   await page.locator('.arch-node[data-file-path="src/main.ts"]').first().waitFor({ timeout: 30000 });
   await page.screenshot({ path: join(evidence, 'rc5-module-detail.png') });
+  touch('module-graph');
   // module -> file
   await page.locator('.arch-node[data-file-path="src/main.ts"]').first().click();
+  touch('file-graph');
   await page.getByRole('button', { name: '符号调用' }).click();
   await page.locator('.arch-node[data-symbol-uid]').first().waitFor({ timeout: 30000 });
   // file -> symbol
@@ -161,6 +195,7 @@ try {
   await page.locator('.code-source').getByText('export function hello', { exact: false }).waitFor();
   await page.getByText('参数：n: number', { exact: false }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: join(evidence, 'rc5-ts-source.png') });
+  touch('symbol-graph-source');
   // back to the module, then Python
   await page.getByRole('button', { name: /src（根文件）/ }).first().click();
   await page.getByRole('button', { name: '列表' }).click();
@@ -176,6 +211,7 @@ try {
   const plannedText = await page.locator('.canvas-wrap').innerText();
   assert.ok(/src（根文件）/.test(plannedText), 'planned view is missing the src module');
   await page.screenshot({ path: join(evidence, 'rc5-planned-view.png') });
+  touch('planned-view');
   for (let i = 0; i < 10; i++) {
     await page.getByRole('button', { name: '代码架构' }).click();
     await page.locator('.code-workbench').waitFor({ timeout: 30000 });
@@ -183,12 +219,14 @@ try {
     await page.locator('.react-flow__node').first().waitFor({ timeout: 30000 });
   }
   console.log('[e2e] planned/actual switching stayed stable across 10 cycles');
+  touch('view-switch-loop');
 
   await page.getByRole('button', { name: '代码架构' }).click();
   await page.locator('.project-menu summary').click();
   await page.getByRole('button', { name: '刷新 GitHub' }).click();
   await page.locator('.project-menu-panel [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
+  touch('github-offline-state');
   const editStartedAt = Date.now();
   await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
   await waitFor(async ({ id, previous }) => {
@@ -197,11 +235,13 @@ try {
     return symbol && symbol.symbolUid === previous && index.files.find((file) => file.filePath === 'src/main.ts').revision > 1;
   }, { id: projectId, previous: uid }, { label: 'watched edit reindexed', timeout: 30000 });
   console.log(`[e2e] watched edit visible after ${Date.now() - editStartedAt}ms (save -> fresh index)`);
+  touch('watched-edit');
   await waitFor(async (id) => {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     return index.changes?.some((change) => change.path === 'src/main.ts' && change.kind === 'modified');
   }, projectId, { label: 'uncommitted change overlay', timeout: 30000 });
   await page.getByRole('button', { name: /src（根文件）/ }).first().click();
+  touch('uncommitted-overlay');
   await page.locator('.code-main .code-list').getByRole('button', { name: /src\/main.ts.*未提交/ }).waitFor({ timeout: 30000 });
   await page.locator('.code-main .code-list').getByRole('button', { name: /src\/service.py/ }).click();
   await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
@@ -214,12 +254,14 @@ try {
   }, projectId, { label: 'index restored after restart' });
   const registry = await page.evaluate(async () => (await fetch('/api/v1/registry')).json());
   assert.ok(registry.projects.some((project) => project.id === projectId));
+  touch('restart-restore');
   await page.getByText('Service.greet', { exact: false }).first().waitFor({ timeout: 30000 });
   for (const size of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(size);
     assert.equal(await page.locator('.topbar').evaluate((el) => el.scrollWidth <= el.clientWidth), true, `top bar overflows at ${size.width}`);
   }
 
+  touch('snapshot-failure-test');
   // A failed snapshot must surface a concrete error with a working retry.
   await page.route('**/api/v1/projects/*/snapshot', (route) =>
     route.fulfill({
@@ -242,6 +284,7 @@ try {
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(resolve('.'));
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+  touch('self-scan-register');
   const self = await waitFor(async () => {
     const list = await (await fetch('/api/v1/registry')).json();
     return list.projects.find((project) => project.id === 'archsync')?.id;
@@ -272,6 +315,7 @@ try {
   assert.equal(await page.locator('.project-select').inputValue(), '');
   await stop();
   await renameWithRetry(`${repo}-missing`, repo);
+  touch('github-live');
   if (process.env.ARCHSYNC_E2E_GITHUB === '1') {
     page = await launch();
     await page.locator('.add-project-btn').click();
@@ -324,8 +368,18 @@ try {
   }
   console.log('PASS: packaged mixed repository, TS/Python navigation, source, watched edit, UID, restart, offline GitHub state and self-scan');
 } finally {
-  if (application) await application.close();
-  if (browser) await browser.close().catch(() => undefined);
+  // Cleanup must never mask the real failure: every close is bounded and a
+  // locked temp directory is reported, not thrown.
+  if (application) await withTimeout(application.close(), 30000, 'application.close').catch((error) => console.error('[e2e]', error.message));
+  if (browser) {
+    if (portableProcess && portableProcess.exitCode === null) {
+      try { execFileSync('taskkill', ['/PID', String(portableProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { /* gone */ }
+      portableProcess.kill();
+    }
+    await withTimeout(browser.close(), 10000, 'browser.close').catch((error) => console.error('[e2e]', error.message));
+  }
   if (portableProcess && portableProcess.exitCode === null) portableProcess.kill();
-  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await rm(temp, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 }).catch((error) => {
+    console.error('[e2e] could not remove temp directory (a process may still hold it):', error.message);
+  });
 }
