@@ -90,16 +90,38 @@ async function waitFor(predicate, arg, { timeout = 60000, interval = 250, label 
 async function stop() {
   if (application) { await application.close(); application = undefined; }
   else if (browser) {
-    await currentPage.close();
+    await currentPage.close().catch(() => undefined);
     await browser.close().catch(() => undefined);
     browser = undefined; currentPage = undefined;
+    // The portable wrapper owns the Electron child; closing the CDP browser
+    // does not always terminate it, and a lingering process keeps file
+    // handles on the fixture (rename would fail with EBUSY).
+    if (portableProcess && portableProcess.exitCode === null) portableProcess.kill();
     portableProcess = undefined;
   }
   for (let i = 0; i < 100; i++) {
-    try { process.kill(agentPid, 0); } catch { return; }
+    try { process.kill(agentPid, 0); } catch {
+      // Give Windows a moment to release directory handles held by the app.
+      await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+      return;
+    }
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
   throw new Error('agent did not exit');
+}
+
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = error && error.code;
+      if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'EACCES') throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+    }
+  }
+  await rename(from, to);
 }
 try {
   let page = await launch();
@@ -244,12 +266,12 @@ try {
   await page.locator('.project-select').selectOption(projectId);
   await waitFor(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId, { label: 'active project switch persisted' });
   await stop();
-  await rename(repo, `${repo}-missing`);
+  await renameWithRetry(repo, `${repo}-missing`);
   page = await launch();
   await page.getByText('上次打开的项目不可用，请重新选择或检查路径。').waitFor({ timeout: 60000 });
   assert.equal(await page.locator('.project-select').inputValue(), '');
   await stop();
-  await rename(`${repo}-missing`, repo);
+  await renameWithRetry(`${repo}-missing`, repo);
   if (process.env.ARCHSYNC_E2E_GITHUB === '1') {
     page = await launch();
     await page.locator('.add-project-btn').click();
