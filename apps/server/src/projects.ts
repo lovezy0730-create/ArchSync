@@ -1,9 +1,14 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { sourcePaths } from '@archsync/scanner/ast';
 import type { ProjectConfigFile, ConfigError, ProjectViewConfig, ViewDiagnostic } from '@archsync/contracts';
 import { parseProjectConfig, parseProjectViews } from '@archsync/config';
+import {
+  discoverArchitecture,
+  emptyPreferences,
+  inferredConfig,
+  type DiscoveryPreferences,
+} from './architecture/discovery.js';
 
 export interface ProjectEntry {
   configOrigin?: 'planned' | 'inferred';
@@ -23,25 +28,32 @@ export interface ProjectEntry {
 }
 
 /** In-memory discovery only. Inferred groups are never written to the repo. */
-export function inferProjectEntry(rootDir: string, id: string, name: string, github: { owner: string; repo: string; defaultBranch: string }): ProjectEntry {
-  const paths = sourcePaths(rootDir, /\.(tsx?|jsx?|mjs|cjs|py)$/);
-  const groups = new Set(paths.map((path) => {
-    const parts = relative(rootDir, path).replace(/\\/g, '/').split('/');
-    if (parts.length === 1) return '.';
-    return (parts[0] === 'packages' || parts[0] === 'apps') && parts.length > 2
-      ? parts.slice(0, 2).join('/') : parts[0]!;
-  }));
-  if (!groups.size) groups.add('.');
-  const modules = [...groups].sort().map((dir) => ({
-    id: `module-${createHash('sha256').update(dir).digest('hex').slice(0, 12)}`,
-    label: `${dir}（推断）`, layer: 'observed', description: '基于源码路径自动推断',
-    owners: [], paths: [dir === '.' ? '*' : `${dir}/**`], issues: [], plannedDependsOn: [],
-    acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false },
-  }));
-  const config: ProjectConfigFile = {
-    schemaVersion: 1, project: { id, name, github, root: '.' },
-    layers: [{ id: 'observed', label: '自动发现（推断）', order: 1 }], modules,
-  };
+export function inferProjectEntry(
+  rootDir: string,
+  id: string,
+  name: string,
+  github: { owner: string; repo: string; defaultBranch: string },
+  preferences: DiscoveryPreferences = emptyPreferences(),
+): ProjectEntry {
+  const discovery = discoverArchitecture(rootDir, preferences);
+  let config: ProjectConfigFile = inferredConfig(id, name, github, discovery);
+  if (config.layers.length === 0 || config.modules.length === 0) {
+    // No analyzable source: keep one honest, empty root module instead of an
+    // invalid config. The UI renders "未检测到源码" rather than fake structure.
+    const layerId = 'observed';
+    config = {
+      schemaVersion: 1,
+      project: { id, name, github, root: '.' },
+      layers: [{ id: layerId, label: '自动发现（推断）', order: 1 }],
+      modules: [{
+        id: 'module-observed-root', label: '未检测到源码', layer: layerId,
+        description: '仓库中没有可解析的 TS/JS/Python 源文件',
+        owners: [], paths: ['*'], issues: [], plannedDependsOn: [],
+        acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false },
+        confidence: 'none', discoveryEvidence: ['未发现可解析源文件'],
+      }],
+    };
+  }
   const configText = JSON.stringify(config);
   return { id, name, rootDir, config, configOrigin: 'inferred', configText,
     configBlobSha: createHash('sha256').update(configText).digest('hex'),

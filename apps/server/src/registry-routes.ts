@@ -3,6 +3,7 @@ import { GithubApiClient } from './sync/github-client.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ProjectRegistry } from './registry.js';
+import { existsSync } from 'node:fs';
 import { loadProjectEntry } from './projects.js';
 import { join } from 'node:path';
 import type { ProjectEntry } from './projects.js';
@@ -189,11 +190,18 @@ export function registerRegistryRoutes(app: FastifyInstance, ctx: RegistryRouteC
       return reply.code(404).send({ error: { code: 'not_found', message: '项目不存在' } });
     }
     if (registered.kind === 'remote-only') return reply.code(409).send({error:{code:'remote_only',message:'远端项目请刷新 GitHub，无本地文件扫描'}});
-    const reloaded = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
-    if ('error' in reloaded) {
-      return reply.code(409).send({ error: { code: 'reload_failed', message: reloaded.error } });
+    const configPath = join(registered.localPath, '.archsync', 'project.yaml');
+    if (existsSync(configPath)) {
+      const reloaded = loadProjectEntry(configPath);
+      if ('error' in reloaded) {
+        return reply.code(409).send({ error: { code: 'reload_failed', message: reloaded.error } });
+      }
+      ctx.registry.updateEntry(request.params.id, reloaded);
+    } else {
+      // No YAML: re-run structure discovery instead of demanding a config file.
+      // A failed refresh must not block rescanning the code itself.
+      ctx.registry.reloadProjectEntry(request.params.id);
     }
-    ctx.registry.updateEntry(request.params.id, reloaded);
     const jobId = ctx.scheduleRebuild(request.params.id);
     return reply.code(202).send({ jobId });
   });

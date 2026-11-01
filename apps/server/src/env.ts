@@ -39,6 +39,8 @@ export interface ServerEnv {
   authCodeMinLength: number;
   presenceTtlSeconds: number;
   watchDebounceMs: number;
+  /** Bounded wait for a first-time architecture snapshot (0 disables waiting). */
+  snapshotWaitMs: number;
   nodeEnv: string;
 }
 
@@ -85,6 +87,7 @@ export function loadEnv(repoRoot: string): ServerEnv {
     authCodeMinLength: 8,
     presenceTtlSeconds: Number(process.env.PRESENCE_TTL_SECONDS ?? 45),
     watchDebounceMs: Number(process.env.WATCH_DEBOUNCE_MS ?? 500),
+    snapshotWaitMs: Number(process.env.SNAPSHOT_WAIT_MS ?? 1200),
     nodeEnv: process.env.NODE_ENV ?? 'development',
   };
 }

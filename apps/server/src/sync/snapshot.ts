@@ -6,6 +6,16 @@ import { loadCollab } from '../github.js';
 import type { ProjectEntry } from '../projects.js';
 import { emptyProjectState, type StateStore } from '../store/index.js';
 
+export interface ObservedModuleDependency {
+  source: string;
+  target: string;
+}
+
+export interface ModuleObservationStats {
+  files: number;
+  symbols: number;
+}
+
 export interface RebuildResult {
   snapshot: Snapshot | null;
   changed: boolean;
@@ -28,6 +38,12 @@ export async function rebuildSnapshot(
     /** Optional: newest cache write time, used when sync-status is not stamped yet. */
     cacheUpdatedAt?: (projectId: string) => string | null;
   },
+  observation?: {
+    /** Module-level edges derived from the real AST/Python index. */
+    dependencies: ObservedModuleDependency[];
+    /** Per-module file/symbol counts from the same index. */
+    stats: Map<string, ModuleObservationStats>;
+  },
 ): Promise<RebuildResult> {
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());
@@ -43,6 +59,13 @@ export async function rebuildSnapshot(
 
   try {
     const scan = entry.rootDir ? await scanProject(entry.config, entry.rootDir) : {ok:false,baselineSha:null,branch:null,baselineFiles:[],workspaceFiles:[],overlay:[],modules:[],errors:['远端只读项目：无本地文件扫描，架构未知'],scannedAt:new Date().toISOString(),importAnalysisRan:false,observedDependencies:[]};
+    if (observation) {
+      // The code index is the authoritative source for real dependencies: it
+      // covers TS/JS imports, Python imports and cross-file calls. Prefer it
+      // over the lighter path-only import analysis.
+      scan.observedDependencies = observation.dependencies;
+      scan.importAnalysisRan = true;
+    }
     const collab = await loadCollab(entry, githubToken, cacheReader);
     const state = store.project(entry.id);
     const candidate = buildSnapshot({
@@ -54,6 +77,8 @@ export async function rebuildSnapshot(
       configBlobSha: entry.configBlobSha,
       scan,
       collab,
+      moduleStats: observation?.stats,
+      configOrigin: entry.configOrigin ?? 'planned',
       version: state.nextVersion,
       remoteHeadSha:cacheReader?.readCache<{sha:string}>(entry.id,'head')?.sha ?? null,
       snapshotId: `snap-${entry.id}-${state.nextVersion}`,

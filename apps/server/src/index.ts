@@ -17,6 +17,9 @@ import { rebuildSnapshot, type RebuildResult } from './sync/snapshot.js';
 import { WorkspaceWatcher } from './sync/watcher.js';
 import { ProjectQueue } from './sync/project-queue.js';
 import { CodeIndex } from './code-index.js';
+import { projectArchitecture } from './architecture/projection.js';
+import { readGitInfo } from './git-info.js';
+import { readDiscoveryPreferences, writeDiscoveryPreferences } from './architecture/preferences.js';
 import { scanAstIndex } from './ast-index.js';
 import { scanPythonIndex, releasePythonIndex } from './python-index.js';
 import { GithubSyncWorker } from './sync/github-worker.js';
@@ -79,6 +82,8 @@ export async function createServer(overrides?: {
   const codeIndex = new CodeIndex(db);
   const codeStates = new Map<string, { state: 'scanning' | 'ready' | 'error'; error: string | null; scannedAt: string | null }>();
   const localChanges = new Map<string, RebuildResult['overlay']>();
+  const codeVersions = new Map<string, number>();
+  const codeCounts = new Map<string, { files: number; symbols: number; stale: number }>();
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -118,11 +123,59 @@ export async function createServer(overrides?: {
   // takes effect in routes immediately, no restart needed.
   const entryById = liveEntries;
 
+  /**
+   * Aggregate the authoritative code index into module-level facts:
+   * cross-module dependencies from resolved imports/calls (TS, JS and Python)
+   * plus per-module file/symbol counts. Used by the snapshot so the planned
+   * view shows real architecture instead of isolated directory cards.
+   */
+  const observeIndex = (projectId: string) => {
+    const files = codeIndex.files(projectId);
+    const byUid = new Map<string, { moduleId: string; filePath: string }>();
+    for (const file of files) {
+      for (const symbol of file.symbols) {
+        byUid.set(symbol.symbolUid, { moduleId: file.moduleId, filePath: file.filePath });
+      }
+    }
+    const pairs = new Map<string, { source: string; target: string }>();
+    const stats = new Map<string, { files: number; symbols: number }>();
+    let symbols = 0;
+    let stale = 0;
+    let version = 0;
+    for (const file of files) {
+      symbols += file.symbols.length;
+      version += file.revision;
+      if (file.status !== 'fresh') stale += 1;
+      if (file.status !== 'fresh') continue;
+      const stat = stats.get(file.moduleId) ?? { files: 0, symbols: 0 };
+      stat.files += 1;
+      stat.symbols += file.symbols.length;
+      stats.set(file.moduleId, stat);
+      for (const relation of file.relations) {
+        if (relation.kind !== 'imports' && relation.kind !== 'calls') continue;
+        if (relation.strength !== 'resolved' || !relation.targetUid) continue;
+        const target = byUid.get(relation.targetUid);
+        if (!target || target.filePath === file.filePath) continue;
+        if (file.moduleId === target.moduleId) continue;
+        if (file.moduleId === '__observed_unplanned__' || target.moduleId === '__observed_unplanned__') continue;
+        pairs.set(`${file.moduleId}->${target.moduleId}`, { source: file.moduleId, target: target.moduleId });
+      }
+    }
+    return { dependencies: [...pairs.values()], stats, totals: { files: files.length, symbols, stale, version } };
+  };
+
   async function runRebuild(entryId: string, jobId: string): Promise<RebuildResult> {
     return rebuildQueue.run(entryId, async () => {
       const entry = entryById.get(entryId);
       if (!entry) throw new Error(`项目不存在: ${entryId}`);
       const rebuildStartedAt = Date.now();
+      let observation:
+        | {
+            dependencies: { source: string; target: string }[];
+            stats: Map<string, { files: number; symbols: number }>;
+            totals: { files: number; symbols: number; stale: number; version: number };
+          }
+        | undefined;
       if (entry.rootDir) {
         codeStates.set(entryId, { state: 'scanning', error: null, scannedAt: null });
         try {
@@ -132,12 +185,15 @@ export async function createServer(overrides?: {
           await scanPythonIndex(entry.rootDir, entryId, codeIndex, {}, moduleFor);
           const pythonDoneAt = Date.now();
           codeStates.set(entryId, { state: 'ready', error: null, scannedAt: new Date().toISOString() });
-          if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} ast=${astDoneAt - rebuildStartedAt}ms python=${pythonDoneAt - astDoneAt}ms`);
+          observation = observeIndex(entryId);
+          codeVersions.set(entryId, observation.totals.version);
+          codeCounts.set(entryId, { files: observation.totals.files, symbols: observation.totals.symbols, stale: observation.totals.stale });
+          if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} ast=${astDoneAt - rebuildStartedAt}ms python=${pythonDoneAt - astDoneAt}ms deps=${observation.dependencies.length}`);
         } catch (error) {
           codeStates.set(entryId, { state: 'error', error: error instanceof Error ? error.message : '扫描失败', scannedAt: new Date().toISOString() });
         }
       }
-      return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader).then((result) => {
+      return rebuildSnapshot(entry, store, env.githubToken, jobId, syncCacheReader, observation).then((result) => {
       if (process.env.ARCHSYNC_REBUILD_TIMING) log(`[rebuild] ${entryId} total=${Date.now() - rebuildStartedAt}ms`);
       localChanges.set(entryId, result.overlay ?? null);
       registry.markScan(
@@ -239,9 +295,71 @@ export async function createServer(overrides?: {
     const modules = files.some((file) => file.status !== 'deleted' && file.moduleId === '__observed_unplanned__')
       ? [...entry.config.modules, { id: '__observed_unplanned__', label: '未规划的实际代码' }]
       : entry.config.modules;
-    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', modules,
+    return { projectId: entry.id, origin: entry.configOrigin ?? 'planned', systems: entry.config.layers, modules,
       ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
-      summary, files, changes: localChanges.get(entry.id) ?? null, trustedRelations: codeIndex.trustedRelations(entry.id) };
+      summary, files, changes: localChanges.get(entry.id) ?? null, trustedRelations: codeIndex.trustedRelations(entry.id),
+      indexVersion: codeVersions.get(entry.id) ?? files.reduce((total, file) => total + file.revision, 0) };
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/code-index/status', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    if (!entry) return reply.code(404).send({ error: { message: '项目不存在' } });
+    const counts = codeCounts.get(entry.id) ?? { files: 0, symbols: 0, stale: 0 };
+    return {
+      projectId: entry.id,
+      ...(codeStates.get(entry.id) ?? { state: entry.rootDir ? 'idle' : 'unavailable', error: null, scannedAt: null }),
+      indexVersion: codeVersions.get(entry.id) ?? 0,
+      ...counts,
+    };
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/git', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    if (!entry) return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
+    return reply.headers({ 'cache-control': 'no-store' }).send(await readGitInfo(entry.rootDir));
+  });
+  app.get<{
+    Params: { id: string };
+    Querystring: { level?: string; moduleId?: string; filePath?: string; systemId?: string };
+  }>('/api/v1/projects/:id/architecture', async (request, reply) => {
+    const entry = entryById.get(request.params.id);
+    if (!entry) return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
+    const parsed = z
+      .object({
+        level: z.enum(['system', 'module', 'file', 'symbol']),
+        moduleId: z.string().max(256).optional(),
+        filePath: z.string().max(4096).optional(),
+        systemId: z.string().max(256).optional(),
+      })
+      .safeParse({
+        level: request.query.level ?? 'system',
+        moduleId: request.query.moduleId,
+        filePath: request.query.filePath,
+        systemId: request.query.systemId,
+      });
+    if (!parsed.success) return reply.code(400).send({ error: { code: 'invalid_level', message: 'level 必须是 system/module/file/symbol' } });
+    const files = codeIndex.files(entry.id);
+    const response = projectArchitecture({
+      entry,
+      files,
+      level: parsed.data.level,
+      scope: {
+        moduleId: parsed.data.moduleId ?? null,
+        filePath: parsed.data.filePath ?? null,
+        systemId: parsed.data.systemId ?? null,
+      },
+      preferences: readDiscoveryPreferences(dataDir, entry.id),
+    });
+    return reply.headers({ 'cache-control': 'no-store' }).send(response);
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/architecture/preferences', async (request, reply) => {
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
+    return readDiscoveryPreferences(dataDir, request.params.id);
+  });
+  app.put<{ Params: { id: string } }>('/api/v1/projects/:id/architecture/preferences', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: { code: 'cross_origin_blocked', message: '跨源写请求被拒绝' } });
+    if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
+    const result = writeDiscoveryPreferences(dataDir, request.params.id, request.body);
+    if (!result.ok) return reply.code(400).send({ error: { code: 'invalid_preferences', message: result.message } });
+    return result.preferences;
   });
   const selectionSchema = z.object({ moduleId: z.string().max(256).nullable(), filePath: z.string().max(4096).nullable(), symbolUid: z.string().max(256).nullable() }).strict();
   app.get('/api/v1/workspace/active-project', async () => {
@@ -299,11 +417,7 @@ export async function createServer(overrides?: {
     loginLimiter,
     secureCookies: env.nodeEnv === 'production',
     scheduleRebuild: (entry) => scheduleRebuild(entry.id),
-    scheduleRebuildAndWait: async (entry) => {
-      const jobId = randomUUID();
-      await runRebuild(entry.id, jobId).catch(() => undefined);
-      return { jobId };
-    },
+    snapshotWaitMs: env.snapshotWaitMs,
   });
 
   // ---- presence websocket ----

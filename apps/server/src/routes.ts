@@ -35,6 +35,11 @@ export interface RouteContext {
   scheduleRebuild: (entry: ProjectEntry) => string;
   /** used when a request needs the rebuild finished before replying */
   scheduleRebuildAndWait?: (entry: ProjectEntry) => Promise<{ jobId: string }>;
+  /**
+   * How long GET /snapshot may wait for a first-time rebuild before returning
+   * 503 snapshot_pending. A full scan must never block an HTTP request.
+   */
+  snapshotWaitMs?: number;
 }
 
 /**
@@ -167,15 +172,60 @@ export function registerRoutes(app: FastifyInstance, ctx: RouteContext): void {
     }
     let snapshot = ctx.store.project(entry.id).currentSnapshot;
     if (!snapshot) {
-      await ctx.scheduleRebuildAndWait?.(entry);
-      snapshot = ctx.store.project(entry.id).currentSnapshot;
-    }
-    if (!snapshot) {
-      return reply.code(503).send({ error: { code: 'snapshot_unavailable', message: '快照暂不可用' } });
+      // First view of a project (or a rebuilt state file): trigger a rebuild
+      // but only wait a short, bounded time. The UI polls the job instead of
+      // holding an HTTP request open for a full repository scan.
+      const jobId = ctx.scheduleRebuild(entry);
+      const waitMs = Math.max(0, Math.min(ctx.snapshotWaitMs ?? 1200, 10_000));
+      const deadline = Date.now() + waitMs;
+      for (;;) {
+        const state = ctx.store.project(entry.id);
+        snapshot = state.currentSnapshot;
+        if (snapshot) break;
+        const job = state.jobs[jobId];
+        if (job?.state === 'error') {
+          return reply.code(503).send({
+            error: {
+              code: 'snapshot_failed',
+              message: `架构快照生成失败：${job.error ?? '未知原因'}`,
+              jobId,
+            },
+          });
+        }
+        if (Date.now() >= deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (!snapshot) {
+        return reply.code(503).send({
+          error: {
+            code: 'snapshot_pending',
+            message: '架构快照正在生成（首次扫描可能较慢），请稍后重试。',
+            jobId,
+          },
+        });
+      }
     }
     const etag = `W/"v${snapshot.version}-${snapshot.contentHash}"`;
     if (request.headers['if-none-match'] === etag) return reply.code(304).send();
     return reply.headers({ ETag: etag }).send(snapshot);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/snapshot/status', async (request, reply) => {
+    const entry = ctx.entries.get(request.params.id);
+    if (!entry) {
+      return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
+    }
+    const state = ctx.store.project(entry.id);
+    const jobs = Object.values(state.jobs).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const latest = jobs[0] ?? null;
+    return {
+      projectId: entry.id,
+      available: state.currentSnapshot !== null,
+      version: state.currentSnapshot?.version ?? null,
+      generatedAt: state.currentSnapshot?.generatedAt ?? null,
+      contentHash: state.currentSnapshot?.contentHash ?? null,
+      job: latest ? { id: latest.id, state: latest.state, error: latest.error } : null,
+    };
   });
 
   app.get<{ Params: { id: string; moduleId: string } }>(
