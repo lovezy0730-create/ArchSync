@@ -40,6 +40,7 @@ export function GraphCanvas() {
 
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [dragPositions, setDragPositions] = useState<Record<string, XYPosition>>({});
+  const [viewMode, setViewMode] = useState<'actual' | 'planned' | 'compare'>('actual');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastFitProject = useRef<string>('');
 
@@ -136,8 +137,12 @@ export function GraphCanvas() {
     return [...groupNodes, ...moduleNodes];
   }, [snapshot, baseLayout, currentView, selection, closure, search, dragPositions, participants, visible]);
 
+  const plannedAvailable = snapshot?.configOrigin !== 'inferred';
   const edges = useMemo<Edge[]>(() => {
     if (!snapshot) return [];
+    const modeEdges = snapshot.edges.filter((edge) =>
+      viewMode === 'actual' ? edge.kind !== 'planned' : viewMode === 'planned' ? edge.kind !== 'observed' : true,
+    );
     const baseStyle = (kind: string, on: boolean): React.CSSProperties => {
       // planned = declared in YAML only; observed = real import, not planned;
       // confirmed = declared AND backed by real import evidence
@@ -151,7 +156,7 @@ export function GraphCanvas() {
           return { stroke: '#3d4451', strokeWidth: 1.4, strokeDasharray: '4 4' };
       }
     };
-    return snapshot.edges.map((edge) => {
+    return modeEdges.map((edge) => {
       const onPath =
         selection !== null && isEdgeOnPath(edge, selection, closure.upstream, closure.downstream);
       const endpointsVisible = visible.get(edge.source) !== false && visible.get(edge.target) !== false;
@@ -165,7 +170,7 @@ export function GraphCanvas() {
         style: baseStyle(edge.kind, onPath),
       };
     });
-  }, [snapshot, selection, closure, visible]);
+  }, [snapshot, selection, closure, visible, viewMode]);
 
   /* ----- fit view on project / view / order change ----- */
   const layoutKey = `${snapshot?.projectId ?? ''}:${currentView?.id ?? ''}:${baseLayout?.groupBoxes.map((group) => `${group.id}:${group.moduleIds.join(',')}`).join('|') ?? ''}`;
@@ -217,6 +222,18 @@ export function GraphCanvas() {
     return { counts, supported: snapshot.dependencyAnalysis !== 'not_supported' };
   }, [snapshot]);
 
+  const emptyReason = useMemo(() => {
+    if (!snapshot || snapshot.modules.length === 0) return null;
+    if (edges.length > 0) return null;
+    if (snapshot.dependencyAnalysis === 'not_supported') {
+      return '该仓库没有可用的依赖分析结果：当前只有路径扫描，未执行导入/调用分析。';
+    }
+    if (snapshot.modules.every((module) => module.matchedWorkspacePaths.length === 0)) {
+      return '没有模块匹配到工作区源码；请检查模块路径或重新扫描。';
+    }
+    return '没有已解析的模块依赖：源码中的调用可能是动态调用、指向外部依赖，或跨模块关系尚未被静态解析。';
+  }, [snapshot, edges.length]);
+
   return (
     <div className="canvas-wrap" ref={wrapperRef} onMouseMove={onMouseMove}>
       <ReactFlow
@@ -245,6 +262,26 @@ export function GraphCanvas() {
       <RemoteCursors />
       {currentView && (
         <div className="view-toolbar" title={currentView.description || currentView.label}>
+          <div className="graph-mode-toggle" role="group" aria-label="架构视图模式">
+            <button className={viewMode === 'actual' ? 'on' : ''} onClick={() => setViewMode('actual')}>实际</button>
+            <button
+              className={viewMode === 'planned' ? 'on' : ''}
+              disabled={!plannedAvailable}
+              title={plannedAvailable ? '仅显示 project.yaml 中的规划关系' : '该仓库没有 .archsync/project.yaml，未提供规划架构'}
+              onClick={() => setViewMode('planned')}
+            >
+              规划
+            </button>
+            <button
+              className={viewMode === 'compare' ? 'on' : ''}
+              disabled={!plannedAvailable}
+              title={plannedAvailable ? '同时显示规划与实际关系' : '该仓库没有 .archsync/project.yaml，无法对比'}
+              onClick={() => setViewMode('compare')}
+            >
+              对比
+            </button>
+          </div>
+          {!plannedAvailable && viewMode !== 'actual' && <span className="view-kind" title="未提供规划架构">未提供规划架构</span>}
           <span className="view-toolbar-label">视图</span>
           <select
             className="view-select"
@@ -272,6 +309,13 @@ export function GraphCanvas() {
           >
             自动整理
           </button>
+        </div>
+      )}
+      {emptyReason && (
+        <div className="graph-empty-reason" role="status">
+          <strong>关系图为空</strong>
+          <span>{emptyReason}</span>
+          <span className="hint">节点仍然可以点击进入下一级；关系为空不代表代码不存在。</span>
         </div>
       )}
       <div className="legend-stack">

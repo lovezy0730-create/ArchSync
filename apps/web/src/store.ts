@@ -53,6 +53,16 @@ interface AppState {
   projects: ProjectSummary[];
   projectId: string | null;
   snapshot: Snapshot | null;
+  /**
+   * Snapshot lifecycle is independent from the code index:
+   * idle → loading → ready | pending (first rebuild running) | stale (cached,
+   * older) | error (with a concrete reason and a retry).
+   */
+  snapshotStatus: 'idle' | 'loading' | 'ready' | 'pending' | 'stale' | 'error';
+  snapshotError: string | null;
+  snapshotJobId: string | null;
+  ensureSnapshot: () => Promise<void>;
+  retrySnapshot: () => Promise<void>;
   moduleDetail: ModuleDetail | null;
   detailLoading: boolean;
   selection: string | null;
@@ -108,6 +118,26 @@ const provider: DataProvider = currentMode() === 'static' ? createStaticProvider
 let activeProjectSave = Promise.resolve();
 
 let presenceClient: PresenceClient | null = null;
+
+/** Last good snapshot per project: an error may show it, clearly marked stale. */
+const snapshotCache = new Map<string, Snapshot>();
+/** Monotonic token so late responses cannot overwrite a newer project/view. */
+let snapshotGeneration = 0;
+
+function snapshotCacheKey(projectId: string): string {
+  return projectId;
+}
+
+function errorCode(err: unknown): string | null {
+  const code = (err as { code?: unknown })?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+function errorJobId(err: unknown): string | null {
+  const payload = (err as { payload?: { error?: { jobId?: unknown } } })?.payload;
+  const jobId = payload?.error?.jobId;
+  return typeof jobId === 'string' ? jobId : null;
+}
 
 function readStoredProject(): string | null {
   try {
@@ -222,6 +252,9 @@ export const useStore = create<AppState>((set, get) => ({
   projects: [],
   projectId: null,
   snapshot: null,
+  snapshotStatus: 'idle',
+  snapshotError: null,
+  snapshotJobId: null,
   moduleDetail: null,
   detailLoading: false,
   selection: null,
@@ -318,6 +351,9 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       projectId,
       snapshot: null,
+      snapshotStatus: 'loading',
+      snapshotError: null,
+      snapshotJobId: null,
       moduleDetail: null,
       selection: null,
       activeViewId: null,
@@ -471,24 +507,58 @@ export const useStore = create<AppState>((set, get) => ({
 
   dismissConflict: () => set({ annotationConflict: null }),
 
+  ensureSnapshot: async () => {
+    const { projectId, snapshotStatus } = get();
+    if (!projectId) return;
+    if (snapshotStatus === 'ready') return;
+    await loadProjectData(projectId, set, { snapshotOnly: true });
+  },
+
+  retrySnapshot: async () => {
+    const projectId = get().projectId;
+    if (!projectId) return;
+    await loadProjectData(projectId, set, { snapshotOnly: true });
+  },
+
   refreshSnapshot: async () => {
     const projectId = get().projectId;
     if (!projectId) return;
+    const generation = ++snapshotGeneration;
     const current = get().snapshot;
-    const snapshot = await provider.loadSnapshot(projectId);
-    if(get().projectId !== projectId) return;
-    if (!current || snapshot.version >= current.version) {
-      const views = snapshotViews(snapshot);
-      const keepView = views.some((view) => view.id === get().activeViewId);
-      set(keepView ? { snapshot } : { snapshot, ...initialViewState(snapshot, projectId) });
-      if (get().selection) {
-        const fresh = snapshot.modules.find((m) => m.id === get().selection);
-        if (fresh) {
-          try {
-            const detail = await provider.loadModule(projectId, fresh.id);
-            if(get().projectId === projectId && get().selection === fresh.id) set({ moduleDetail: detail });
-          } catch { /* keep old detail */ }
+    try {
+      const snapshot = await provider.loadSnapshot(projectId);
+      if (get().projectId !== projectId || generation !== snapshotGeneration) return;
+      if (!current || snapshot.version >= current.version) {
+        snapshotCache.set(snapshotCacheKey(projectId), snapshot);
+        const views = snapshotViews(snapshot);
+        const keepView = views.some((view) => view.id === get().activeViewId);
+        set({
+          snapshot,
+          snapshotStatus: 'ready',
+          snapshotError: null,
+          ...(keepView ? {} : initialViewState(snapshot, projectId)),
+        });
+        if (get().selection) {
+          const fresh = snapshot.modules.find((m) => m.id === get().selection);
+          if (fresh) {
+            try {
+              const detail = await provider.loadModule(projectId, fresh.id);
+              if (get().projectId === projectId && get().selection === fresh.id) set({ moduleDetail: detail });
+            } catch { /* keep old detail */ }
+          }
         }
+      }
+    } catch (err) {
+      if (get().projectId !== projectId || generation !== snapshotGeneration) return;
+      const code = errorCode(err);
+      if (code === 'snapshot_pending') {
+        set({ snapshotStatus: 'pending', snapshotError: (err as Error).message, snapshotJobId: errorJobId(err) });
+        void pollPendingSnapshot(projectId, generation, set);
+      } else {
+        set({
+          snapshotStatus: current ? 'stale' : 'error',
+          snapshotError: `快照刷新失败：${(err as Error).message}`,
+        });
       }
     }
   },
@@ -562,27 +632,94 @@ export const useStore = create<AppState>((set, get) => ({
   },
 }));
 
+async function pollPendingSnapshot(
+  projectId: string,
+  generation: number,
+  set: (partial: Partial<AppState>) => void,
+): Promise<void> {
+  // A first scan may take a while; poll a cheap status endpoint instead of
+  // re-issuing /snapshot (which would enqueue more rebuilds).
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 1500));
+    const state = useStore.getState();
+    if (state.projectId !== projectId || generation !== snapshotGeneration) return;
+    let status: Awaited<ReturnType<NonNullable<DataProvider['snapshotStatus']>>> | null = null;
+    try {
+      status = (await provider.snapshotStatus?.(projectId)) ?? null;
+    } catch {
+      continue; // transient: keep waiting until the bounded attempts run out
+    }
+    if (state.projectId !== projectId || generation !== snapshotGeneration) return;
+    if (status?.job?.state === 'error') {
+      set({ snapshotStatus: 'error', snapshotError: `架构快照生成失败：${status.job.error ?? '未知原因'}` });
+      return;
+    }
+    if (status?.available) {
+      await loadProjectData(projectId, set, { snapshotOnly: true });
+      return;
+    }
+  }
+  if (useStore.getState().projectId === projectId && generation === snapshotGeneration) {
+    set({
+      snapshotStatus: 'error',
+      snapshotError: '架构快照仍在生成，已停止自动重试。请点击“重试”或检查扫描日志。',
+    });
+  }
+}
+
 async function loadProjectData(
   projectId: string,
   set: (partial: Partial<AppState>) => void,
+  options: { snapshotOnly?: boolean } = {},
 ): Promise<void> {
-  try {
-    const [snapshot, teamRes] = await Promise.all([
-      provider.loadSnapshot(projectId),
-      provider.loadTeam(projectId),
-    ]);
-    if(useStore.getState().projectId !== projectId) return;
+  const generation = ++snapshotGeneration;
+  const cached = snapshotCache.get(snapshotCacheKey(projectId)) ?? null;
+  set({ snapshotStatus: cached ? 'stale' : 'loading', snapshotError: null, snapshotJobId: null });
+  const [snapshotResult, teamResult] = await Promise.allSettled([
+    provider.loadSnapshot(projectId),
+    options.snapshotOnly ? Promise.resolve(null) : provider.loadTeam(projectId),
+  ]);
+  if (useStore.getState().projectId !== projectId || generation !== snapshotGeneration) return;
+
+  if (snapshotResult.status === 'fulfilled') {
+    const snapshot = snapshotResult.value;
+    snapshotCache.set(snapshotCacheKey(projectId), snapshot);
     const viewState = initialViewState(snapshot, projectId);
     set({
       snapshot,
-      team: teamRes.team,
-      teamDemo: teamRes.demo,
-      loadError: null,
+      snapshotStatus: 'ready',
+      snapshotError: null,
+      snapshotJobId: null,
       ...viewState,
     });
-  } catch (err) {
-    if(useStore.getState().projectId === projectId) set({ loadError: (err as Error).message });
-    console.error('failed to load project', err);
+  } else {
+    const err = snapshotResult.reason as Error;
+    const code = errorCode(err);
+    const message = err?.message ?? '快照加载失败';
+    if (code === 'snapshot_pending') {
+      set({
+        snapshot: cached,
+        snapshotStatus: 'pending',
+        snapshotError: message,
+        snapshotJobId: errorJobId(err),
+      });
+      void pollPendingSnapshot(projectId, generation, set);
+    } else {
+      set({
+        snapshot: cached,
+        snapshotStatus: cached ? 'stale' : 'error',
+        snapshotError: code === 'snapshot_failed' ? message : `架构快照加载失败：${message}`,
+        snapshotJobId: errorJobId(err),
+      });
+    }
+    console.error('failed to load snapshot', err);
+  }
+
+  if (teamResult.status === 'fulfilled' && teamResult.value) {
+    set({ team: teamResult.value.team, teamDemo: teamResult.value.demo });
+  } else if (teamResult.status === 'rejected') {
+    // Team/collaboration data is optional: never block the architecture graph.
+    set({ team: [], teamDemo: false });
   }
 }
 

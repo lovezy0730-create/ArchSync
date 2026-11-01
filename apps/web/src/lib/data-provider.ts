@@ -1,4 +1,12 @@
-import type { CollabData, ModuleDetail, ProjectSummary, Snapshot } from '@archsync/contracts';
+import type {
+  ArchitectureLevel,
+  ArchitectureResponse,
+  CodeIndexStatus,
+  CollabData,
+  ModuleDetail,
+  ProjectSummary,
+  Snapshot,
+} from '@archsync/contracts';
 
 /**
  * Data access abstraction so the same UI runs against the Fastify server
@@ -68,6 +76,22 @@ export interface DataProvider {
   submitAccessCode?(code: string): Promise<{ ok: true } | { ok: false; message: string }>;
   listProjects(): Promise<{ projects: ProjectSummary[] }>;
   loadSnapshot(projectId: string): Promise<Snapshot>;
+  /** Cheap availability probe used while a first-time snapshot is building. */
+  snapshotStatus?(projectId: string): Promise<{
+    projectId: string;
+    available: boolean;
+    version: number | null;
+    generatedAt: string | null;
+    contentHash: string | null;
+    job: { id: string; state: 'running' | 'done' | 'error'; error: string | null } | null;
+  }>;
+  /** Lightweight code-index version/counts used instead of polling the full index. */
+  codeIndexStatus?(projectId: string): Promise<CodeIndexStatus>;
+  /** Unified architecture projection (system/module/file/symbol). */
+  loadArchitecture?(
+    projectId: string,
+    query: { level: ArchitectureLevel; moduleId?: string; filePath?: string; systemId?: string },
+  ): Promise<ArchitectureResponse>;
   loadModule(projectId: string, moduleId: string): Promise<ModuleDetail>;
   loadTeam(projectId: string): Promise<TeamInfo>;
   saveAnnotation(

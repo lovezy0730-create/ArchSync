@@ -11,6 +11,7 @@ import type { YamlImportResult } from '../store.js';
 import { HistoryPanel } from './HistoryPanel.js';
 import { TimelinePanel } from './TimelinePanel.js';
 import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
+import { api } from '../lib/api.js';
 
 export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; showCode: boolean }) {
   const projects = useStore((s) => s.projects);
@@ -43,6 +44,7 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
   const registered = (registryList as RegistryProjectInfo[]).find(p => p.id === projectId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [gitInfo, setGitInfo] = useState<{ available: boolean; branch: string | null; head: string | null; dirty: number | null; error: string | null } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importMessage, setImportMessage] = useState<YamlImportResult | null>(null);
@@ -53,6 +55,18 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
   const isStatic = mode === 'static';
 
   useEffect(() => { setRemoteError(null); }, [projectId]);
+  useEffect(() => {
+    if (mode !== 'server' || !projectId || registered?.kind === 'remote-only') {
+      setGitInfo(null);
+      return;
+    }
+    let alive = true;
+    void api
+      .gitInfo(projectId)
+      .then((info) => { if (alive) setGitInfo(info); })
+      .catch(() => { if (alive) setGitInfo(null); });
+    return () => { alive = false; };
+  }, [mode, projectId, registered?.kind]);
 
   const online = useMemo(() => [...participants.values()], [participants]);
 
@@ -121,15 +135,39 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
         )}
       </div>
 
-      {mode === 'server' && registered && <div className="registry-status">
-        <span title={registered.lastScanError ?? ''}>{registered.monitoringEnabled ? '监控中' : '已暂停'} · {registered.kind === 'remote-only' ? '远端只读，无本地扫描' : '本地仓库'} · GitHub 上次成功 {registered.lastSyncAt ? timeAgo(registered.lastSyncAt) : '尚未同步'}</span>
-        <span>本地 HEAD {snapshot?.sourceCommitSha === 'unknown' ? '未知' : snapshot?.sourceCommitSha.slice(0,8) ?? '未知'} · 远端 HEAD {snapshot?.remoteHeadSha?.slice(0,8) ?? '未知'}</span>
-        <button disabled={remoteBusy || !registered.monitoringEnabled} onClick={() => {setRemoteBusy(true);setRemoteError(null);void syncGithub(registered.id).then(async r => {if(!r.ok) setRemoteError(r.errors.join('；'));await loadRegistry();}).catch(e => setRemoteError(e.message)).finally(() => setRemoteBusy(false));}}>刷新 GitHub</button>
-        <button disabled={remoteBusy} onClick={() => {void setMonitoring(registered.id,!registered.monitoringEnabled).then(() => loadRegistry()).catch(e => setRemoteError(e.message));}}>{registered.monitoringEnabled ? '暂停' : '恢复'}</button>
-        <button disabled={remoteBusy} onClick={() => {if(window.confirm('从 ArchSync 移除此项目？源代码会保留。')) void remove(registered.id).then(async () => {await loadRegistry();window.location.reload();}).catch(e => setRemoteError(e.message));}}>移除</button>
-        {registered.lastScanError && <span role="alert">源码扫描：{registered.lastScanError}</span>}
-        {(remoteError || registered.lastSyncError) && <span role="alert">GitHub 同步：{remoteError ?? registered.lastSyncError}</span>}
-      </div>}
+      {mode === 'server' && registered && (
+        <details className="project-menu">
+          <summary title="项目状态、Git 与 GitHub 操作">
+            <span className={`status-dot ${registered.monitoringEnabled ? 'on' : 'off'}`} />
+            <span>{registered.monitoringEnabled ? '监控中' : '已暂停'}</span>
+            <span className="hint">{registered.kind === 'remote-only' ? '远端只读' : '本地'}</span>
+            {(gitInfo?.head ?? (snapshot?.sourceCommitSha !== 'unknown' ? snapshot?.sourceCommitSha : null)) && (
+              <span className="hint">HEAD {(gitInfo?.head ?? snapshot!.sourceCommitSha).slice(0, 7)}</span>
+            )}
+            {(registered.lastScanError || remoteError || registered.lastSyncError) && <span className="status-warn">!</span>}
+          </summary>
+          <div className="project-menu-panel">
+            <p className="hint">
+              {registered.monitoringEnabled ? '监控中' : '已暂停'} · {registered.kind === 'remote-only' ? '远端只读，无本地扫描' : '本地仓库'} · GitHub 上次成功{' '}
+              {registered.lastSyncAt ? timeAgo(registered.lastSyncAt) : '尚未同步'}
+            </p>
+            <p className="hint">
+              本地 HEAD{' '}
+              {gitInfo?.available
+                ? `${gitInfo.head?.slice(0, 8) ?? '未知'} · ${gitInfo.branch ?? 'detached'} · ${gitInfo.dirty === null ? '工作区状态未知' : gitInfo.dirty === 0 ? '工作区干净' : `未提交 ${gitInfo.dirty} 项`}`
+                : gitInfo?.error ?? (snapshot?.sourceCommitSha === 'unknown' ? '未知' : snapshot?.sourceCommitSha.slice(0, 8) ?? '未知')}{' '}
+              · 远端 HEAD {snapshot?.remoteHeadSha?.slice(0, 8) ?? '未知'}
+            </p>
+            <div className="project-menu-actions">
+              <button disabled={remoteBusy || !registered.monitoringEnabled} onClick={() => {setRemoteBusy(true);setRemoteError(null);void syncGithub(registered.id).then(async r => {if(!r.ok) setRemoteError(r.errors.join('；'));await loadRegistry();}).catch(e => setRemoteError(e.message)).finally(() => setRemoteBusy(false));}}>刷新 GitHub</button>
+              <button disabled={remoteBusy} onClick={() => {void setMonitoring(registered.id,!registered.monitoringEnabled).then(() => loadRegistry()).catch(e => setRemoteError(e.message));}}>{registered.monitoringEnabled ? '暂停' : '恢复'}</button>
+              <button disabled={remoteBusy} onClick={() => {if(window.confirm('从 ArchSync 移除此项目？源代码会保留。')) void remove(registered.id).then(async () => {await loadRegistry();window.location.reload();}).catch(e => setRemoteError(e.message));}}>移除</button>
+            </div>
+            {registered.lastScanError && <span role="alert">源码扫描：{registered.lastScanError}</span>}
+            {(remoteError || registered.lastSyncError) && <span role="alert">GitHub 同步：{remoteError ?? registered.lastSyncError}</span>}
+          </div>
+        </details>
+      )}
       {snapshot?.githubDemo && <span className="badge badge-demo" title="该项目的 Issue/PR/成员数据来自演示数据 fixture">DEMO 数据</span>}
       <span className={`badge badge-gh badge-${ghState}`} title={remoteError ?? registered?.lastSyncError ?? (snapshot?.githubDemo ? '协作数据为演示 fixture' : 'GitHub 协作数据来源')}>
         ● {gh.label}

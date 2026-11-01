@@ -1,4 +1,7 @@
 import type {
+  ArchitectureLevel,
+  ArchitectureResponse,
+  CodeIndexStatus,
   ModuleDetail,
   ProjectSummary,
   Snapshot,
@@ -16,13 +19,42 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit & { user?: string }): Promise<T> {
+export interface RequestOptions {
+  /** Hard upper bound for one request; prevents an indefinite loading state. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit & { user?: string },
+  options: RequestOptions = {},
+): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (init?.user) {
     // HTTP header values must be ISO-8859-1; display names can be any UTF-8.
     headers['x-archsync-user'] = encodeURIComponent(init.user);
   }
-  const res = await fetch(path, { ...init, headers, credentials: 'same-origin' });
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timer = setTimeout(() => controller.abort(new DOMException('request timeout', 'TimeoutError')), timeoutMs);
+  const onAbort = () => controller.abort(options.signal?.reason);
+  if (options.signal) {
+    if (options.signal.aborted) onAbort();
+    else options.signal.addEventListener('abort', onAbort, { once: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(path, { ...init, headers, credentials: 'same-origin', signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted && !options.signal?.aborted) {
+      throw new ApiError(0, 'timeout', `请求超时（${Math.round(timeoutMs / 1000)} 秒）：${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', onAbort);
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string; message?: string } }
@@ -52,7 +84,39 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
   projects: () => request<{ projects: ProjectSummary[] }>('/api/v1/projects'),
-  snapshot: (projectId: string) => request<Snapshot>(`/api/v1/projects/${projectId}/snapshot`),
+  snapshot: (projectId: string) =>
+    request<Snapshot>(`/api/v1/projects/${projectId}/snapshot`, undefined, { timeoutMs: 20_000 }),
+  snapshotStatus: (projectId: string) =>
+    request<{
+      projectId: string;
+      available: boolean;
+      version: number | null;
+      generatedAt: string | null;
+      contentHash: string | null;
+      job: { id: string; state: 'running' | 'done' | 'error'; error: string | null } | null;
+    }>(`/api/v1/projects/${projectId}/snapshot/status`, undefined, { timeoutMs: 8_000 }),
+  gitInfo: (projectId: string) =>
+    request<{ available: boolean; branch: string | null; head: string | null; dirty: number | null; error: string | null }>(
+      `/api/v1/projects/${projectId}/git`,
+      undefined,
+      { timeoutMs: 8_000 },
+    ),
+  codeIndexStatus: (projectId: string) =>
+    request<CodeIndexStatus>(`/api/v1/projects/${projectId}/code-index/status`, undefined, { timeoutMs: 8_000 }),
+  architecture: (
+    projectId: string,
+    query: { level: ArchitectureLevel; moduleId?: string; filePath?: string; systemId?: string },
+  ) => {
+    const params = new URLSearchParams({ level: query.level });
+    if (query.moduleId) params.set('moduleId', query.moduleId);
+    if (query.filePath) params.set('filePath', query.filePath);
+    if (query.systemId) params.set('systemId', query.systemId);
+    return request<ArchitectureResponse>(
+      `/api/v1/projects/${projectId}/architecture?${params.toString()}`,
+      undefined,
+      { timeoutMs: 20_000 },
+    );
+  },
   module: (projectId: string, moduleId: string) =>
     request<ModuleDetail>(`/api/v1/projects/${projectId}/modules/${moduleId}`),
   team: (projectId: string) =>
