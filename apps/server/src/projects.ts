@@ -3,8 +3,15 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ProjectConfigFile, ConfigError, ProjectViewConfig, ViewDiagnostic } from '@archsync/contracts';
 import { parseProjectConfig, parseProjectViews } from '@archsync/config';
+import {
+  discoverArchitecture,
+  emptyPreferences,
+  inferredConfig,
+  type DiscoveryPreferences,
+} from './architecture/discovery.js';
 
 export interface ProjectEntry {
+  configOrigin?: 'planned' | 'inferred';
   id: string;
   name: string;
   rootDir: string;
@@ -18,6 +25,40 @@ export interface ProjectEntry {
   /** path of collab.demo.json when the project ships demo collaboration data */
   demoCollabPath: string | null;
   demoCollabFetchedAt: string | null;
+}
+
+/** In-memory discovery only. Inferred groups are never written to the repo. */
+export function inferProjectEntry(
+  rootDir: string,
+  id: string,
+  name: string,
+  github: { owner: string; repo: string; defaultBranch: string },
+  preferences: DiscoveryPreferences = emptyPreferences(),
+): ProjectEntry {
+  const discovery = discoverArchitecture(rootDir, preferences);
+  let config: ProjectConfigFile = inferredConfig(id, name, github, discovery);
+  if (config.layers.length === 0 || config.modules.length === 0) {
+    // No analyzable source: keep one honest, empty root module instead of an
+    // invalid config. The UI renders "未检测到源码" rather than fake structure.
+    const layerId = 'observed';
+    config = {
+      schemaVersion: 1,
+      project: { id, name, github, root: '.' },
+      layers: [{ id: layerId, label: '自动发现（推断）', order: 1 }],
+      modules: [{
+        id: 'module-observed-root', label: '未检测到源码', layer: layerId,
+        description: '仓库中没有可解析的 TS/JS/Python 源文件',
+        owners: [], paths: ['*'], issues: [], plannedDependsOn: [],
+        acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false },
+        confidence: 'none', discoveryEvidence: ['未发现可解析源文件'],
+      }],
+    };
+  }
+  const configText = JSON.stringify(config);
+  return { id, name, rootDir, config, configOrigin: 'inferred', configText,
+    configBlobSha: createHash('sha256').update(configText).digest('hex'),
+    configWarnings: [], views: [], defaultViewId: '', viewDiagnostics: [],
+    demoCollabPath: null, demoCollabFetchedAt: null };
 }
 
 export function loadProjectEntry(configPath: string): ProjectEntry | { error: string } {

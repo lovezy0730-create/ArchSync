@@ -1,0 +1,55 @@
+{
+  "scope": "read-only actual sources; temporary SQLite; no YAML/network/execution",
+  "sourceSha": "ee7f199b1184d4386e3039b51d2019a8b1671545",
+  "dirty": false,
+  "parserVersion": "ts-5.7.2-rc5-ast-1",
+  "files": 36,
+  "symbols": 242,
+  "kinds": {
+    "module": 36,
+    "interface": 46,
+    "class": 7,
+    "constructor": 6,
+    "method": 41,
+    "function": 98,
+    "type": 8
+  },
+  "imports": 123,
+  "resolved": 483,
+  "unresolved": 1536,
+  "diagnostics": [],
+  "examples": [
+    {
+      "name": "analyzeImports",
+      "signature": "export function analyzeImports(files: AnalyzableFile[], packageAliases: PackageAliases = new Map()): ImportAnalysis",
+      "filePath": "packages/scanner/src/imports.ts",
+      "startLine": 108,
+      "endLine": 141
+    },
+    {
+      "name": "resolveSpecifier",
+      "signature": "export function resolveSpecifier(\n  fromFile: string,\n  specifier: string,\n  fileSet: Set<string>,\n): string | null",
+      "filePath": "packages/scanner/src/imports.ts",
+      "startLine": 87,
+      "endLine": 101
+    },
+    {
+      "name": "matchSymbols",
+      "signature": "export function matchSymbols(\n  previous: CodeSymbol[],\n  inputs: SymbolDraft[],\n  renames: Record<string, string> = {},\n): CodeSymbol[]",
+      "filePath": "packages/scanner/src/identity.ts",
+      "startLine": 24,
+      "endLine": 119
+    }
+  ],
+  "metrics": {
+    "files": 126,
+    "symbols": 668,
+    "relations": 7553,
+    "diagnostics": 1,
+    "parseMs": 151.85510000000033,
+    "analysisMs": 612.4339,
+    "commitMs": 547.8688,
+    "totalMs": 1160.3027,
+    "cachedFiles": 0
+  }
+}

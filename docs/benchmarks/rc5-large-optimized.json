@@ -1,0 +1,357 @@
+{
+  "scope": "observational real TS AST and SQLite; not a fixed-hardware performance gate or UI benchmark",
+  "datasetVersion": "rc5-ts-1000-v1",
+  "seed": 0,
+  "datasetHash": "098c20aa4d4124b2ed87fea5d479b08c6248fdcffd33c64905e2decfee9fb8fd",
+  "files": 1000,
+  "parserVersion": "ts-5.7.2-rc5-ast-1",
+  "gitSha": "97ed053212247ebfe8afeeb7cabec29fa978abe6",
+  "gitDirty": false,
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) Ultra 9 185H",
+    "logicalCpus": 22,
+    "memoryBytes": 33832394752,
+    "node": "v24.14.0"
+  },
+  "scenarios": [
+    {
+      "name": "cold",
+      "samples": [
+        {
+          "parseMs": 79.81940000001009,
+          "analysisMs": 1659.8036000000002,
+          "indexMs": 591.9458999999997,
+          "totalMs": 2251.7495,
+          "rssBytes": 473358336,
+          "peakRssBytes": 473358336,
+          "cpuMicros": {
+            "user": 2594000,
+            "system": 422000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 53.60290000002078,
+          "analysisMs": 1668.6801999999998,
+          "indexMs": 450.9815000000008,
+          "totalMs": 2119.6617000000006,
+          "rssBytes": 676974592,
+          "peakRssBytes": 676974592,
+          "cpuMicros": {
+            "user": 2172000,
+            "system": 328000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 44.38870000004681,
+          "analysisMs": 1608.0286000000015,
+          "indexMs": 460.15009999999893,
+          "totalMs": 2068.1787000000004,
+          "rssBytes": 773369856,
+          "peakRssBytes": 773369856,
+          "cpuMicros": {
+            "user": 2265000,
+            "system": 328000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 52.35660000001917,
+          "analysisMs": 1750.1284000000014,
+          "indexMs": 568.4472999999998,
+          "totalMs": 2318.5757000000012,
+          "rssBytes": 775598080,
+          "peakRssBytes": 775598080,
+          "cpuMicros": {
+            "user": 2172000,
+            "system": 406000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 47.14149999998699,
+          "analysisMs": 1682.9346000000005,
+          "indexMs": 463.03619999999864,
+          "totalMs": 2145.970799999999,
+          "rssBytes": 774414336,
+          "peakRssBytes": 775598080,
+          "cpuMicros": {
+            "user": 2234000,
+            "system": 391000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 49.4868999999635,
+          "analysisMs": 1737.766499999998,
+          "indexMs": 436.8673000000017,
+          "totalMs": 2174.6337999999996,
+          "rssBytes": 776404992,
+          "peakRssBytes": 776404992,
+          "cpuMicros": {
+            "user": 2313000,
+            "system": 344000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 44.80060000006051,
+          "analysisMs": 1631.8911000000007,
+          "indexMs": 444.9856,
+          "totalMs": 2076.8767000000007,
+          "rssBytes": 776069120,
+          "peakRssBytes": 776404992,
+          "cpuMicros": {
+            "user": 2219000,
+            "system": 297000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 44.108699999975215,
+          "analysisMs": 1655.8775999999998,
+          "indexMs": 448.4451999999983,
+          "totalMs": 2104.322799999998,
+          "rssBytes": 776060928,
+          "peakRssBytes": 776404992,
+          "cpuMicros": {
+            "user": 2171000,
+            "system": 375000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 43.6956999999893,
+          "analysisMs": 1626.5684999999976,
+          "indexMs": 413.7826000000023,
+          "totalMs": 2040.3510999999999,
+          "rssBytes": 775757824,
+          "peakRssBytes": 776404992,
+          "cpuMicros": {
+            "user": 1860000,
+            "system": 343000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 48.80609999989974,
+          "analysisMs": 1719.0040999999983,
+          "indexMs": 500.51580000000104,
+          "totalMs": 2219.5198999999993,
+          "rssBytes": 775864320,
+          "peakRssBytes": 776404992,
+          "cpuMicros": {
+            "user": 2203000,
+            "system": 422000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        }
+      ],
+      "statistics": {
+        "parse": {
+          "p50": 47.14149999998699,
+          "p95": 79.81940000001009,
+          "min": 43.6956999999893,
+          "max": 79.81940000001009,
+          "count": 10
+        },
+        "index": {
+          "p50": 450.9815000000008,
+          "p95": 591.9458999999997,
+          "min": 413.7826000000023,
+          "max": 591.9458999999997,
+          "count": 10
+        },
+        "total": {
+          "p50": 2119.6617000000006,
+          "p95": 2318.5757000000012,
+          "min": 2040.3510999999999,
+          "max": 2318.5757000000012,
+          "count": 10
+        }
+      }
+    },
+    {
+      "name": "single-file-edit",
+      "samples": [
+        {
+          "parseMs": 0.11559999999735737,
+          "analysisMs": 1542.7903000000006,
+          "indexMs": 574.5178999999989,
+          "totalMs": 2117.3081999999995,
+          "rssBytes": 784310272,
+          "peakRssBytes": 786206720,
+          "cpuMicros": {
+            "user": 2406000,
+            "system": 250000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.09990000000107102,
+          "analysisMs": 1530.2698000000019,
+          "indexMs": 573.3338000000003,
+          "totalMs": 2103.603600000002,
+          "rssBytes": 784338944,
+          "peakRssBytes": 786300928,
+          "cpuMicros": {
+            "user": 2344000,
+            "system": 282000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.08660000000236323,
+          "analysisMs": 1545.7112999999954,
+          "indexMs": 581.3386000000028,
+          "totalMs": 2127.049899999998,
+          "rssBytes": 783282176,
+          "peakRssBytes": 786300928,
+          "cpuMicros": {
+            "user": 2063000,
+            "system": 312000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.09110000000509899,
+          "analysisMs": 1505.0184000000008,
+          "indexMs": 569.2478999999948,
+          "totalMs": 2074.2662999999957,
+          "rssBytes": 783175680,
+          "peakRssBytes": 786300928,
+          "cpuMicros": {
+            "user": 2203000,
+            "system": 297000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.12859999999636784,
+          "analysisMs": 1495.391899999995,
+          "indexMs": 598.1810000000041,
+          "totalMs": 2093.572899999999,
+          "rssBytes": 785043456,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2234000,
+            "system": 234000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.11920000000100117,
+          "analysisMs": 1578.925700000007,
+          "indexMs": 593.5056999999942,
+          "totalMs": 2172.4314000000013,
+          "rssBytes": 783822848,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2391000,
+            "system": 359000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.19329999999899883,
+          "analysisMs": 1532.3285999999935,
+          "indexMs": 588.1230000000069,
+          "totalMs": 2120.4516000000003,
+          "rssBytes": 784650240,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2328000,
+            "system": 343000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.09449999999196734,
+          "analysisMs": 1524.5434999999998,
+          "indexMs": 607.5865000000049,
+          "totalMs": 2132.1300000000047,
+          "rssBytes": 784384000,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2531000,
+            "system": 281000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.09269999999378342,
+          "analysisMs": 1477.3494999999966,
+          "indexMs": 580.2792000000045,
+          "totalMs": 2057.628700000001,
+          "rssBytes": 782905344,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2375000,
+            "system": 203000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        },
+        {
+          "parseMs": 0.12960000000020955,
+          "analysisMs": 1503.9590000000026,
+          "indexMs": 588.3427999999985,
+          "totalMs": 2092.301800000001,
+          "rssBytes": 785469440,
+          "peakRssBytes": 788320256,
+          "cpuMicros": {
+            "user": 2187000,
+            "system": 250000
+          },
+          "fsRead": 2000,
+          "fsWrite": 0
+        }
+      ],
+      "statistics": {
+        "parse": {
+          "p50": 0.09990000000107102,
+          "p95": 0.19329999999899883,
+          "min": 0.08660000000236323,
+          "max": 0.19329999999899883,
+          "count": 10
+        },
+        "index": {
+          "p50": 581.3386000000028,
+          "p95": 607.5865000000049,
+          "min": 569.2478999999948,
+          "max": 607.5865000000049,
+          "count": 10
+        },
+        "total": {
+          "p50": 2103.603600000002,
+          "p95": 2172.4314000000013,
+          "min": 2057.628700000001,
+          "max": 2172.4314000000013,
+          "count": 10
+        }
+      }
+    }
+  ]
+}

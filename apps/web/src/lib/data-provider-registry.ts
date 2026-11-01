@@ -12,6 +12,8 @@ export interface RegistryProjectInfo {
   lastScanAt: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  lastScanError?: string | null;
+  lastSyncError?: string | null;
   snapshotVersion: number;
   configModules: number;
   createdAt: string;

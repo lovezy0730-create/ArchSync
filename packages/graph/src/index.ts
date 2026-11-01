@@ -46,6 +46,10 @@ export interface BuildSnapshotInput {
   defaultViewId?: string | null;
   /** structured non-fatal diagnostics while reading .archsync/views.yaml */
   viewDiagnostics?: ViewDiagnostic[];
+  /** Real code-index counts per module, when an AST index is available. */
+  moduleStats?: Map<string, { files: number; symbols: number }>;
+  /** planned = YAML config; inferred = structure discovered from code. */
+  configOrigin?: 'planned' | 'inferred';
 }
 
 /**
@@ -383,6 +387,15 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       observedDependsOn: scan.importAnalysisRan
         ? [...new Set(observedBySource.get(m.id) ?? [])].sort()
         : null,
+      ...(m.parentId ? { parentId: m.parentId } : {}),
+      ...(m.systemId ? { systemId: m.systemId } : {}),
+      ...(m.confidence ? { confidence: m.confidence } : {}),
+      ...(input.moduleStats?.get(m.id)
+        ? {
+            observedFileCount: input.moduleStats.get(m.id)!.files,
+            observedSymbolCount: input.moduleStats.get(m.id)!.symbols,
+          }
+        : {}),
       implementation: impl.state,
       workflow: wf.state,
       owners: m.owners,
@@ -452,6 +465,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
         : ('partial' as const)
       : ('unknown' as const),
     dependencyAnalysis: scan.importAnalysisRan ? ('partial' as const) : ('not_supported' as const),
+    ...(input.configOrigin ? { configOrigin: input.configOrigin } : {}),
     layers: config.layers,
     views: resolvedViews,
     defaultViewId,

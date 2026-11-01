@@ -2,9 +2,10 @@ import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, lstatSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 import type { ProjectConfigFile } from '@archsync/contracts';
 import { parseProjectConfig } from '@archsync/config';
-import { loadProjectEntry, type ProjectEntry } from './projects.js';
+import { inferProjectEntry, loadProjectEntry, type ProjectEntry } from './projects.js';
 import type { LocalDatabase } from './db.js';
 
 const execFileAsync = promisify(execFile);
@@ -23,6 +24,8 @@ export interface RegistryProject {
   lastScanAt: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  lastScanError: string | null;
+  lastSyncError: string | null;
   snapshotVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -80,7 +83,12 @@ export async function inspectGitRepo(rawPath: string): Promise<
   let remoteOriginUrl: string | null = null;
   try {
     branch = (await git(absPath, ['branch', '--show-current'])).trim() || null;
-    headSha = (await git(absPath, ['rev-parse', 'HEAD'])).trim() || null;
+    try {
+      headSha = (await git(absPath, ['rev-parse', '--verify', 'HEAD'])).trim() || null;
+    } catch {
+      // A newly initialized repository legitimately has no HEAD commit yet.
+      headSha = null;
+    }
     try {
       remoteOriginUrl = (await git(absPath, ['remote', 'get-url', 'origin'])).trim() || null;
     } catch {
@@ -152,25 +160,26 @@ export class ProjectRegistry {
 
     if (existsSync(join(absPath,'.archsync')) && lstatSync(join(absPath,'.archsync')).isSymbolicLink()) return {ok:false,error:'.archsync 不能是符号链接'};
     const configPath = join(absPath, '.archsync', 'project.yaml');
-    let configText: string;
+    let entry: ProjectEntry;
     if (existsSync(configPath)) {
-      configText = readFileSync(configPath, 'utf8');
+      const configText = readFileSync(configPath, 'utf8');
+      const parsed = parseProjectConfig(configText);
+      if (!parsed.ok || !parsed.config) {
+        const first = parsed.errors[0];
+        return { ok: false, error: `project.yaml 无效: ${first?.message ?? '未知错误'}` };
+      }
+      const loaded = loadProjectEntry(configPath);
+      if ('error' in loaded) return { ok: false, error: loaded.error };
+      entry = loaded;
     } else {
-      return {
-        ok: false,
-        needsInit: true,
-        initSuggestion: this.quickScan(absPath),
-        error: `${absPath} 没有 .archsync/project.yaml —— 可用 pnpm archsync:init 生成后再添加，或在下方使用初始化建议`,
-      };
+      const id = `local-${createHash('sha256').update(process.platform === 'win32' ? absPath.toLowerCase() : absPath).digest('hex').slice(0, 16)}`;
+      const remote = parseOwnerRepo(facts.remoteOriginUrl);
+      try {
+        entry = inferProjectEntry(absPath, id, basename(absPath), { owner: remote?.owner ?? '', repo: remote?.repo ?? '', defaultBranch: facts.branch ?? 'main' });
+      } catch (error) {
+        return { ok: false, error: `源码目录读取失败: ${(error as Error).message}` };
+      }
     }
-    const parsed = parseProjectConfig(configText);
-    if (!parsed.ok || !parsed.config) {
-      const first = parsed.errors[0];
-      return { ok: false, error: `project.yaml 无效: ${first?.message ?? '未知错误'}` };
-    }
-
-    const entry = loadProjectEntry(join(absPath, '.archsync', 'project.yaml'));
-    if ('error' in entry) return { ok: false, error: entry.error };
 
     const existing = this.get(entry.id);
     if (existing && (existing.kind === 'remote-only' || existsSync(join(existing.localPath,'.git')))) return {ok:false,error:'项目 ID 已被另一仓库使用，请修改候选架构中的 project.id'};
@@ -391,15 +400,15 @@ export class ProjectRegistry {
   markScan(id: string, snapshotVersion: number, error: string | null = null): void {
     this.db
       .prepare(
-        'UPDATE registry_projects SET last_scan_at = ?, snapshot_version = ?, last_error = ?, updated_at = ? WHERE id = ?',
+        'UPDATE registry_projects SET last_scan_at = ?, snapshot_version = ?, last_scan_error = ?, last_error = COALESCE(last_sync_error, ?), updated_at = ? WHERE id = ?',
       )
-      .run(new Date().toISOString(), snapshotVersion, error, new Date().toISOString(), id);
+      .run(new Date().toISOString(), snapshotVersion, error, error, new Date().toISOString(), id);
   }
 
   markSync(id: string, error: string | null = null): void {
     this.db
-      .prepare('UPDATE registry_projects SET last_sync_at = ?, last_error = ?, updated_at = ? WHERE id = ?')
-      .run(new Date().toISOString(), error, new Date().toISOString(), id);
+      .prepare('UPDATE registry_projects SET last_sync_at = CASE WHEN ? IS NULL THEN ? ELSE last_sync_at END, last_sync_error = ?, last_error = COALESCE(?, last_scan_error), updated_at = ? WHERE id = ?')
+      .run(error, new Date().toISOString(), error, error, new Date().toISOString(), id);
   }
 
   /** Reload an entry from disk (e.g. after project.yaml edits). */
@@ -415,8 +424,17 @@ export class ProjectRegistry {
     if (registered.kind === 'remote-only') {
       const entry = remoteEntry(registered); this.liveEntries.set(id, entry); return entry;
     }
-    const entry = loadProjectEntry(join(registered.localPath, '.archsync', 'project.yaml'));
+    const configPath = join(registered.localPath, '.archsync', 'project.yaml');
+    if (!existsSync(configPath) && id.startsWith('local-') && existsSync(registered.localPath)) {
+      try {
+        const entry = inferProjectEntry(registered.localPath, id, registered.name, { owner: registered.owner ?? '', repo: registered.repo ?? '', defaultBranch: registered.defaultBranch ?? 'main' });
+        this.liveEntries.set(id, entry);
+        return entry;
+      } catch { return null; }
+    }
+    const entry = loadProjectEntry(configPath);
     if ('error' in entry) return null;
+    if (entry.id !== id) return null;
     this.liveEntries.set(id, entry);
     return entry;
   }
@@ -475,6 +493,8 @@ function rowToProject(row: Record<string, unknown>): RegistryProject {
     lastScanAt: row.last_scan_at === null ? null : String(row.last_scan_at),
     lastSyncAt: row.last_sync_at === null ? null : String(row.last_sync_at),
     lastError: row.last_error === null ? null : String(row.last_error),
+    lastScanError: row.last_scan_error == null ? null : String(row.last_scan_error),
+    lastSyncError: row.last_sync_error == null ? null : String(row.last_sync_error),
     snapshotVersion: Number(row.snapshot_version),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),

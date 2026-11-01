@@ -130,6 +130,7 @@ export function mapFilesToModules(
 export interface WorkerCallbacks {
   /** fired when remote data actually changed; caller rebuilds the snapshot */
   onRemoteChanged: (entry: ProjectEntry) => void;
+  onSyncFinished?: (entry: ProjectEntry, errors: string[]) => void;
   log: (...a: unknown[]) => void;
 }
 
@@ -246,6 +247,7 @@ export class GithubSyncWorker {
         this.lastTickAt.set(entry.id, Date.now());
         if (!this.client.hasBudget()) break; // shared budget: leave some for others
         const summary = await this.runSerialized(entry, () => this.syncProject(entry));
+        this.callbacks.onSyncFinished?.(entry, summary.errors);
         if (summary.changed) {
           this.idleMultiplier.set(entry.id, 1); // active again
           this.callbacks.onRemoteChanged(entry);

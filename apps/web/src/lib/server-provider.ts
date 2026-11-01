@@ -26,6 +26,9 @@ export function createServerProvider(): DataProvider {
     },
     listProjects: () => api.projects(),
     loadSnapshot: (projectId) => api.snapshot(projectId),
+    snapshotStatus: (projectId) => api.snapshotStatus(projectId),
+    codeIndexStatus: (projectId) => api.codeIndexStatus(projectId),
+    loadArchitecture: (projectId, query) => api.architecture(projectId, query),
     loadModule: (projectId, moduleId) => api.module(projectId, moduleId),
     loadTeam: (projectId): Promise<TeamInfo> => api.team(projectId),
     async saveAnnotation(

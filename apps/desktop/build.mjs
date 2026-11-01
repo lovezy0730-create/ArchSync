@@ -8,7 +8,7 @@
  *
  * Usage: node build.mjs [--run | --package]
  */
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -43,6 +43,37 @@ await esbuildBuild({
 });
 
 fs.copyFileSync(path.join(desktop,'src','preload.cjs'),path.join(distElectron,'preload.cjs'));
+
+// Keep the parser runtime and grammars outside the bundle so the packaged
+// agent can load exactly the same offline WASM resources as development.
+const scannerRequire = createRequire(path.join(root, 'packages/scanner/package.json'));
+const pythonAssets = path.join(distElectron, 'python-assets');
+fs.mkdirSync(pythonAssets, { recursive: true });
+const pythonFiles = {
+  'tree-sitter.cjs': scannerRequire.resolve('web-tree-sitter'),
+  'tree-sitter.wasm': scannerRequire.resolve('web-tree-sitter/tree-sitter.wasm'),
+  'tree-sitter-python.wasm': scannerRequire.resolve('tree-sitter-wasms/out/tree-sitter-python.wasm'),
+  'LICENSE-web-tree-sitter': path.join(path.dirname(scannerRequire.resolve('web-tree-sitter')), 'LICENSE'),
+  'LICENSE-tree-sitter-wasms': path.join(path.dirname(path.dirname(scannerRequire.resolve('tree-sitter-wasms/out/tree-sitter-python.wasm'))), 'LICENSE'),
+  'LICENSE-tree-sitter-python': path.join(desktop, 'licenses', 'tree-sitter-python-LICENSE'),
+};
+for (const [name, source] of Object.entries(pythonFiles)) fs.copyFileSync(source, path.join(pythonAssets, name));
+
+// 2. build identity: version + commit + dirty, shown in About/diagnostics
+const desktopPackage = JSON.parse(fs.readFileSync(path.join(desktop, 'package.json'), 'utf8'));
+let buildSha = 'unknown';
+let buildDirty = null;
+try {
+  buildSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  buildDirty = execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim().length > 0;
+} catch { /* not a git checkout: keep unknown */ }
+fs.writeFileSync(path.join(distElectron, 'build-info.json'), JSON.stringify({
+  version: desktopPackage.version,
+  sha: buildSha,
+  builtAt: new Date().toISOString(),
+  dirty: buildDirty,
+}, null, 2));
+console.log(`[desktop] build ${desktopPackage.version} @ ${buildSha.slice(0, 8)}${buildDirty ? ' (dirty)' : ''}`);
 
 // 2. web production build
 run('pnpm', ['--filter', '@archsync/web', 'build']);

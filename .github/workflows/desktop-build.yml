@@ -2,7 +2,7 @@ name: Windows Desktop Build
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/v1.2-integration]
   workflow_dispatch:
 
 permissions:
@@ -32,10 +32,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Quality gates
+        shell: pwsh
         run: |
+          # PowerShell does not stop on a failed native command: without these
+          # checks a lint/typecheck failure would be hidden by a passing test
+          # run (the step's exit code is the last command's).
           pnpm lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build desktop (bundle + web dist + agent bundle + electron-builder)
         run: node apps/desktop/build.mjs --package
@@ -44,10 +51,33 @@ jobs:
       - name: Smoke test bundled agent
         run: node scripts/agent-smoke.cjs
 
-      - name: Packaged Windows repository onboarding E2E
+      - name: Unpacked Windows GUI E2E
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/desktop-e2e.mjs
+          ARCHSYNC_E2E_GITHUB: '1'
+          ARCHSYNC_E2E_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/rc5-desktop-e2e.mjs
+
+      - name: Portable Windows GUI E2E
+        shell: pwsh
+        run: |
+          $env:ARCHSYNC_E2E_EXE = (Get-ChildItem apps/desktop/release/ArchSync-Portable-*.exe | Select-Object -First 1).FullName
+          $env:ARCHSYNC_E2E_PORTABLE = '1'
+          if (-not $env:ARCHSYNC_E2E_EXE) { throw 'Portable EXE missing' }
+          node scripts/rc5-desktop-e2e.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install and test Setup EXE
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem apps/desktop/release/ArchSync-Setup-*.exe | Select-Object -First 1).FullName
+          if (-not $setup) { throw 'Setup EXE missing' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'archsync-rc5-installed'
+          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$installDir") -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Setup failed: $($process.ExitCode)" }
+          $env:ARCHSYNC_E2E_EXE = Join-Path $installDir 'ArchSync.exe'
+          if (-not (Test-Path -LiteralPath $env:ARCHSYNC_E2E_EXE)) { throw 'Installed executable missing' }
+          node scripts/rc5-desktop-e2e.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Record versions
         run: |
@@ -67,7 +97,7 @@ jobs:
       - name: Upload portable EXE
         uses: actions/upload-artifact@v4
         with:
-          name: archsync-portable-rc4
+          name: archsync-portable-rc5
           path: |
             apps/desktop/release/ArchSync-Portable-*.exe
             apps/desktop/release/SHA256SUMS.txt
@@ -76,7 +106,7 @@ jobs:
       - name: Upload setup EXE
         uses: actions/upload-artifact@v4
         with:
-          name: archsync-setup-rc4
+          name: archsync-setup-rc5
           path: |
             apps/desktop/release/ArchSync-Setup-*.exe
             apps/desktop/release/SHA256SUMS.txt
@@ -88,6 +118,6 @@ jobs:
           name: archsync-windows-evidence
           path: |
             apps/desktop/release/SHA256SUMS.txt
-            docs/screenshots/rc4-packaged-*.png
+            apps/desktop/release/evidence/*.png
           retention-days: 30
           if-no-files-found: error

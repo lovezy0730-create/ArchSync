@@ -22,7 +22,10 @@ export default defineConfig(({ mode }) => {
           // The static bundle must not reference /api endpoints at all
           // (verify:pages enforces it). Alias the registry API to a stub with
           // identical signatures; the real client is server-mode only.
-          alias: [{ find: /registry-api(\.js)?$/, replacement: '/src/lib/registry-api-stub.ts' }],
+          alias: [
+            { find: /registry-api(\.js)?$/, replacement: '/src/lib/registry-api-stub.ts' },
+            { find: /^.*\/code-index-api(\.js)?$/, replacement: '/src/lib/code-index-api-stub.ts' },
+          ],
         }
       : undefined,
     define: {

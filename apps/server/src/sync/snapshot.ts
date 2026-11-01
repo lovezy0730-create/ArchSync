@@ -1,16 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import type { Snapshot, SyncJobStatus } from '@archsync/contracts';
+import type { Snapshot, SyncJobStatus, ScanOverlayChange } from '@archsync/contracts';
 import { buildSnapshot } from '@archsync/graph';
 import { scanProject } from '@archsync/scanner';
 import { loadCollab } from '../github.js';
 import type { ProjectEntry } from '../projects.js';
 import { emptyProjectState, type StateStore } from '../store/index.js';
 
+export interface ObservedModuleDependency {
+  source: string;
+  target: string;
+}
+
+export interface ModuleObservationStats {
+  files: number;
+  symbols: number;
+}
+
 export interface RebuildResult {
   snapshot: Snapshot | null;
   changed: boolean;
   jobId: string;
   error: string | null;
+  overlay?: ScanOverlayChange[] | null;
 }
 
 /**
@@ -22,8 +33,22 @@ export async function rebuildSnapshot(
   store: StateStore,
   githubToken: string | null,
   jobId: string = randomUUID(),
-  cacheReader?: { readCache: <T>(projectId: string, kind: string) => T | null },
+  cacheReader?: {
+    readCache: <T>(projectId: string, kind: string) => T | null;
+    /** Optional: newest cache write time, used when sync-status is not stamped yet. */
+    cacheUpdatedAt?: (projectId: string) => string | null;
+  },
+  observation?: {
+    /** Module-level edges derived from the real AST/Python index. */
+    dependencies: ObservedModuleDependency[];
+    /** Per-module file/symbol counts from the same index. */
+    stats: Map<string, ModuleObservationStats>;
+  },
 ): Promise<RebuildResult> {
+  const timing = process.env.ARCHSYNC_REBUILD_TIMING === '1';
+  const startedAt = Date.now();
+  const mark = (label: string) => { if (timing) console.log(`[snapshot] ${entry.id} ${label} ${Date.now() - startedAt}ms`); };
+  mark('start');
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());
     p.jobs[jobId] = {
@@ -36,9 +61,19 @@ export async function rebuildSnapshot(
     };
   });
 
+  mark('job-recorded');
   try {
     const scan = entry.rootDir ? await scanProject(entry.config, entry.rootDir) : {ok:false,baselineSha:null,branch:null,baselineFiles:[],workspaceFiles:[],overlay:[],modules:[],errors:['远端只读项目：无本地文件扫描，架构未知'],scannedAt:new Date().toISOString(),importAnalysisRan:false,observedDependencies:[]};
+    mark('scan-project');
+    if (observation) {
+      // The code index is the authoritative source for real dependencies: it
+      // covers TS/JS imports, Python imports and cross-file calls. Prefer it
+      // over the lighter path-only import analysis.
+      scan.observedDependencies = observation.dependencies;
+      scan.importAnalysisRan = true;
+    }
     const collab = await loadCollab(entry, githubToken, cacheReader);
+    mark('load-collab');
     const state = store.project(entry.id);
     const candidate = buildSnapshot({
       config: entry.config,
@@ -49,12 +84,15 @@ export async function rebuildSnapshot(
       configBlobSha: entry.configBlobSha,
       scan,
       collab,
+      moduleStats: observation?.stats,
+      configOrigin: entry.configOrigin ?? 'planned',
       version: state.nextVersion,
       remoteHeadSha:cacheReader?.readCache<{sha:string}>(entry.id,'head')?.sha ?? null,
       snapshotId: `snap-${entry.id}-${state.nextVersion}`,
       now: new Date().toISOString(),
     });
 
+    mark('build-snapshot');
     let changed = false;
     await store.mutate((data) => {
       const p = data.projects[entry.id]!;
@@ -67,7 +105,9 @@ export async function rebuildSnapshot(
       p.jobs[jobId]!.state = 'done';
       p.jobs[jobId]!.finishedAt = new Date().toISOString();
     });
-    return { snapshot: store.project(entry.id).currentSnapshot, changed, jobId, error: null };
+    mark('stored');
+    return { snapshot: store.project(entry.id).currentSnapshot, changed, jobId, error: null,
+      overlay: !entry.rootDir || scan.errors.some((error) => error.startsWith('git status 失败:')) ? null : scan.overlay };
   } catch (err) {
     const message = (err as Error).message;
     await store.mutate((data) => {

@@ -5,6 +5,36 @@ afterEach(() => vi.unstubAllGlobals());
 const path = '/repos/o/r/issues?per_page=30';
 const page = (items: unknown[], next?: string) => new Response(JSON.stringify(items), { headers: { etag: '"one"', ...(next ? { link: `<${next}>; rel="next"` } : {}) } });
 describe('complete request cache and credential boundary', () => {
+  it.each([
+    [400, 'bad_request'], [401, 'auth'], [403, 'forbidden'], [429, 'rate_limited'],
+  ] as const)('classifies HTTP %i without claiming a successful sync', async (status, kind) => {
+    const db = new LocalDatabase(':memory:');
+    try {
+      const client = new GithubApiClient(db, () => null);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status })));
+      const result = await client.request('p', 'repo', '/repos/o/r');
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(status);
+      expect(result.errorKind).toBe(kind);
+    } finally { db.close(); }
+  });
+  it('distinguishes an actual 403 rate limit from a permission denial', async () => {
+    const db = new LocalDatabase(':memory:');
+    try {
+      const client = new GithubApiClient(db, () => null);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 403, headers: { 'x-ratelimit-remaining': '0' } })));
+      expect((await client.request('p', 'repo', '/repos/o/r')).errorKind).toBe('rate_limited');
+    } finally { db.close(); }
+  });
+  it.each([['AbortError', 'timeout'], ['TypeError', 'network']] as const)('classifies %s separately', async (name, kind) => {
+    const db = new LocalDatabase(':memory:');
+    try {
+      const client = new GithubApiClient(db, () => null);
+      const error = new Error('fixture'); error.name = name;
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
+      expect((await client.request('p', 'repo', '/repos/o/r')).errorKind).toBe(kind);
+    } finally { db.close(); }
+  });
   it('merges >30 issues, caches complete pages and preserves cache on page failure', async () => {
     const db = new LocalDatabase(':memory:'); const client = new GithubApiClient(db, () => 'secret');
     const first = Array.from({length:30}, (_, i) => ({number:i+1}));

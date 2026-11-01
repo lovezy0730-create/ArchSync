@@ -40,8 +40,27 @@ export function GraphCanvas() {
 
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [dragPositions, setDragPositions] = useState<Record<string, XYPosition>>({});
+  const [viewMode, setViewMode] = useState<'actual' | 'planned' | 'compare'>('actual');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastFitProject = useRef<string>('');
+
+  /* ----- snapshot data must be renderable even if it is old/corrupt ----- */
+  const modules = useMemo(() => {
+    if (!snapshot) return [];
+    const seen = new Set<string>();
+    const result = [];
+    for (const module of snapshot.modules) {
+      if (!module || typeof module.id !== 'string' || module.id.length === 0 || seen.has(module.id)) continue;
+      seen.add(module.id);
+      result.push(module);
+    }
+    return result;
+  }, [snapshot]);
+  const moduleIds = useMemo(() => new Set(modules.map((module) => module.id)), [modules]);
+  const safeEdges = useMemo(
+    () => (snapshot ? snapshot.edges.filter((edge) => moduleIds.has(edge.source) && moduleIds.has(edge.target) && edge.source !== edge.target) : []),
+    [snapshot, moduleIds],
+  );
 
   /* ----- project view + deterministic layout ----- */
   const views = useMemo(() => (snapshot ? snapshotViews(snapshot) : []), [snapshot]);
@@ -55,18 +74,18 @@ export function GraphCanvas() {
 
   const baseLayout = useMemo(() => {
     if (!snapshot || !currentView) return null;
-    const layout = layoutProjectView(currentView, snapshot.modules, viewOverride);
+    const layout = layoutProjectView(currentView, modules, viewOverride);
     const layerById = new Map(snapshot.layers.map((layer) => [layer.id, layer]));
     return { ...layout, layerById };
-  }, [snapshot, currentView, viewOverride]);
+  }, [snapshot, modules, currentView, viewOverride]);
 
   /* ----- highlight closure for current selection ----- */
   const closure = useMemo(
     () =>
-      snapshot && selection
-        ? dependencyClosure(snapshot.modules, selection)
+      modules.length > 0 && selection
+        ? dependencyClosure(modules, selection)
         : { upstream: new Set<string>(), downstream: new Set<string>() },
-    [snapshot, selection],
+    [modules, selection],
   );
 
   /* ----- visibility from search + filters ----- */
@@ -76,7 +95,7 @@ export function GraphCanvas() {
     for (const group of baseLayout?.groups ?? []) {
       for (const moduleId of group.moduleIds) groupByModule.set(moduleId, group.id);
     }
-    for (const m of snapshot?.modules ?? []) {
+    for (const m of modules) {
       const wfOk = filters.workflow.size === 0 || filters.workflow.has(m.workflow);
       const implOk = filters.implementation.size === 0 || filters.implementation.has(m.implementation);
       const groupId = groupByModule.get(m.id);
@@ -84,7 +103,7 @@ export function GraphCanvas() {
       map.set(m.id, wfOk && implOk && groupOk);
     }
     return map;
-  }, [snapshot, filters, baseLayout]);
+  }, [snapshot, modules, filters, baseLayout]);
 
   const nodes = useMemo<CanvasNode[]>(() => {
     if (!snapshot || !baseLayout || !currentView) return [];
@@ -107,14 +126,15 @@ export function GraphCanvas() {
       hidden: group.moduleIds.length > 0 && group.moduleIds.every((id) => visible.get(id) === false),
     }));
 
-    const moduleNodes: ModuleFlowNode[] = snapshot.modules.map((module) => {
+    const moduleNodes: ModuleFlowNode[] = modules.map((module) => {
       const related =
         selection !== null &&
         (module.id === selection || closure.upstream.has(module.id) || closure.downstream.has(module.id));
       const dimmed =
         (selection !== null && !related) || (search.trim().length > 0 && !matchesSearch(module, search));
       const override = dragPositions[module.id];
-      const pos = override ?? baseLayout.positions.get(module.id) ?? { x: 0, y: 0 };
+      const raw = override ?? baseLayout.positions.get(module.id) ?? { x: 0, y: 0 };
+      const pos = Number.isFinite(raw.x) && Number.isFinite(raw.y) ? raw : { x: 0, y: 0 };
       return {
         id: module.id,
         type: 'module',
@@ -134,10 +154,14 @@ export function GraphCanvas() {
       };
     });
     return [...groupNodes, ...moduleNodes];
-  }, [snapshot, baseLayout, currentView, selection, closure, search, dragPositions, participants, visible]);
+  }, [snapshot, modules, baseLayout, currentView, selection, closure, search, dragPositions, participants, visible]);
 
+  const plannedAvailable = snapshot?.configOrigin !== 'inferred';
   const edges = useMemo<Edge[]>(() => {
     if (!snapshot) return [];
+    const modeEdges = safeEdges.filter((edge) =>
+      viewMode === 'actual' ? edge.kind !== 'planned' : viewMode === 'planned' ? edge.kind !== 'observed' : true,
+    );
     const baseStyle = (kind: string, on: boolean): React.CSSProperties => {
       // planned = declared in YAML only; observed = real import, not planned;
       // confirmed = declared AND backed by real import evidence
@@ -151,7 +175,7 @@ export function GraphCanvas() {
           return { stroke: '#3d4451', strokeWidth: 1.4, strokeDasharray: '4 4' };
       }
     };
-    return snapshot.edges.map((edge) => {
+    return modeEdges.map((edge) => {
       const onPath =
         selection !== null && isEdgeOnPath(edge, selection, closure.upstream, closure.downstream);
       const endpointsVisible = visible.get(edge.source) !== false && visible.get(edge.target) !== false;
@@ -165,7 +189,7 @@ export function GraphCanvas() {
         style: baseStyle(edge.kind, onPath),
       };
     });
-  }, [snapshot, selection, closure, visible]);
+  }, [snapshot, safeEdges, selection, closure, visible, viewMode]);
 
   /* ----- fit view on project / view / order change ----- */
   const layoutKey = `${snapshot?.projectId ?? ''}:${currentView?.id ?? ''}:${baseLayout?.groupBoxes.map((group) => `${group.id}:${group.moduleIds.join(',')}`).join('|') ?? ''}`;
@@ -205,6 +229,10 @@ export function GraphCanvas() {
     [screenToFlowPosition],
   );
 
+  useEffect(() => {
+    if (selection && snapshot && !moduleIds.has(selection)) void select(null);
+  }, [selection, snapshot, moduleIds, select]);
+
   const groupLegend = useMemo(
     () => baseLayout?.groups.map((group) => ({ id: group.id, label: group.label, color: group.color })) ?? [],
     [baseLayout],
@@ -213,9 +241,22 @@ export function GraphCanvas() {
   const dependencySummary = useMemo(() => {
     if (!snapshot) return null;
     const counts = { planned: 0, confirmed: 0, observed: 0 };
-    for (const e of snapshot.edges) counts[e.kind as keyof typeof counts] += 1;
+    for (const e of safeEdges) counts[e.kind as keyof typeof counts] += 1;
     return { counts, supported: snapshot.dependencyAnalysis !== 'not_supported' };
-  }, [snapshot]);
+  }, [snapshot, safeEdges]);
+
+  const emptyReason = useMemo(() => {
+    if (!snapshot) return null;
+    if (modules.length === 0) return '该快照没有模块：源码可能尚未匹配到模块路径，或项目索引尚未完成。';
+    if (edges.length > 0) return null;
+    if (snapshot.dependencyAnalysis === 'not_supported') {
+      return '该仓库没有可用的依赖分析结果：当前只有路径扫描，未执行导入/调用分析。';
+    }
+    if (modules.every((module) => module.matchedWorkspacePaths.length === 0)) {
+      return '没有模块匹配到工作区源码；请检查模块路径或重新扫描。';
+    }
+    return '没有已解析的模块依赖：源码中的调用可能是动态调用、指向外部依赖，或跨模块关系尚未被静态解析。';
+  }, [snapshot, modules, edges.length]);
 
   return (
     <div className="canvas-wrap" ref={wrapperRef} onMouseMove={onMouseMove}>
@@ -245,6 +286,26 @@ export function GraphCanvas() {
       <RemoteCursors />
       {currentView && (
         <div className="view-toolbar" title={currentView.description || currentView.label}>
+          <div className="graph-mode-toggle" role="group" aria-label="架构视图模式">
+            <button className={viewMode === 'actual' ? 'on' : ''} onClick={() => setViewMode('actual')}>实际</button>
+            <button
+              className={viewMode === 'planned' ? 'on' : ''}
+              disabled={!plannedAvailable}
+              title={plannedAvailable ? '仅显示 project.yaml 中的规划关系' : '该仓库没有 .archsync/project.yaml，未提供规划架构'}
+              onClick={() => setViewMode('planned')}
+            >
+              规划
+            </button>
+            <button
+              className={viewMode === 'compare' ? 'on' : ''}
+              disabled={!plannedAvailable}
+              title={plannedAvailable ? '同时显示规划与实际关系' : '该仓库没有 .archsync/project.yaml，无法对比'}
+              onClick={() => setViewMode('compare')}
+            >
+              对比
+            </button>
+          </div>
+          {!plannedAvailable && viewMode !== 'actual' && <span className="view-kind" title="未提供规划架构">未提供规划架构</span>}
           <span className="view-toolbar-label">视图</span>
           <select
             className="view-select"
@@ -272,6 +333,13 @@ export function GraphCanvas() {
           >
             自动整理
           </button>
+        </div>
+      )}
+      {emptyReason && (
+        <div className="graph-empty-reason" role="status">
+          <strong>关系图为空</strong>
+          <span>{emptyReason}</span>
+          <span className="hint">节点仍然可以点击进入下一级；关系为空不代表代码不存在。</span>
         </div>
       )}
       <div className="legend-stack">

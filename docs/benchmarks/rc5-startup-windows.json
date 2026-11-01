@@ -1,0 +1,286 @@
+{
+  "scope": "observational Windows packaged-app startup benchmark; not a fixed-hardware gate",
+  "machine": {
+    "platform": "win32",
+    "cpus": 22,
+    "cpu": "Intel(R) Core(TM) Ultra 9 185H",
+    "memoryBytes": 33832394752,
+    "node": "v24.14.0"
+  },
+  "fixture": {
+    "files": 1101,
+    "tsFiles": 1000,
+    "pyFiles": 101,
+    "symbols": "~10k",
+    "projects": 2,
+    "edges": "each TS file imports the previous file"
+  },
+  "runs": [
+    {
+      "kind": "fresh",
+      "firstWindowMs": 449,
+      "pageMs": 449,
+      "appUrlMs": 1313,
+      "interactiveMs": 1359,
+      "sawStartupPage": true,
+      "agentListenMs": 27,
+      "indexReadyMs": 5,
+      "snapshotModules": 31,
+      "firstGraphMs": 4,
+      "metrics": {
+        "main": 107548672,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 105036
+          },
+          {
+            "type": "GPU",
+            "rss": 265012
+          },
+          {
+            "type": "Utility",
+            "rss": 52064
+          },
+          {
+            "type": "Utility",
+            "rss": 802784
+          },
+          {
+            "type": "Tab",
+            "rss": 195896
+          }
+        ]
+      }
+    },
+    {
+      "kind": "warm",
+      "run": 1,
+      "firstWindowMs": 430,
+      "pageMs": 430,
+      "appUrlMs": 1304,
+      "interactiveMs": 1359,
+      "sawStartupPage": true,
+      "agentListenMs": 68,
+      "backgroundDoneMs": 7708,
+      "firstGraphMs": 225,
+      "metrics": {
+        "main": 104136704,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 101708
+          },
+          {
+            "type": "GPU",
+            "rss": 251624
+          },
+          {
+            "type": "Utility",
+            "rss": 51760
+          },
+          {
+            "type": "Utility",
+            "rss": 1048228
+          },
+          {
+            "type": "Tab",
+            "rss": 190652
+          }
+        ]
+      }
+    },
+    {
+      "kind": "warm",
+      "run": 2,
+      "firstWindowMs": 437,
+      "pageMs": 437,
+      "appUrlMs": 1287,
+      "interactiveMs": 1329,
+      "sawStartupPage": true,
+      "agentListenMs": 70,
+      "backgroundDoneMs": 7579,
+      "firstGraphMs": 875,
+      "metrics": {
+        "main": 106926080,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 104432
+          },
+          {
+            "type": "GPU",
+            "rss": 251364
+          },
+          {
+            "type": "Utility",
+            "rss": 51848
+          },
+          {
+            "type": "Utility",
+            "rss": 1040412
+          },
+          {
+            "type": "Tab",
+            "rss": 191860
+          }
+        ]
+      }
+    },
+    {
+      "kind": "warm",
+      "run": 3,
+      "firstWindowMs": 420,
+      "pageMs": 420,
+      "appUrlMs": 1254,
+      "interactiveMs": 1317,
+      "sawStartupPage": true,
+      "agentListenMs": 73,
+      "backgroundDoneMs": 7565,
+      "firstGraphMs": 863,
+      "metrics": {
+        "main": 104267776,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 101836
+          },
+          {
+            "type": "GPU",
+            "rss": 228816
+          },
+          {
+            "type": "Utility",
+            "rss": 51604
+          },
+          {
+            "type": "Utility",
+            "rss": 740544
+          },
+          {
+            "type": "Tab",
+            "rss": 190052
+          }
+        ]
+      }
+    },
+    {
+      "kind": "warm",
+      "run": 4,
+      "firstWindowMs": 429,
+      "pageMs": 429,
+      "appUrlMs": 1292,
+      "interactiveMs": 1321,
+      "sawStartupPage": true,
+      "agentListenMs": 68,
+      "backgroundDoneMs": 8077,
+      "firstGraphMs": 37,
+      "metrics": {
+        "main": 104181760,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 101752
+          },
+          {
+            "type": "GPU",
+            "rss": 229324
+          },
+          {
+            "type": "Utility",
+            "rss": 52040
+          },
+          {
+            "type": "Utility",
+            "rss": 1039652
+          },
+          {
+            "type": "Tab",
+            "rss": 189236
+          }
+        ]
+      }
+    },
+    {
+      "kind": "warm",
+      "run": 5,
+      "firstWindowMs": 429,
+      "pageMs": 429,
+      "appUrlMs": 1262,
+      "interactiveMs": 1326,
+      "sawStartupPage": true,
+      "agentListenMs": 69,
+      "backgroundDoneMs": 7470,
+      "firstGraphMs": 843,
+      "metrics": {
+        "main": 104230912,
+        "processes": [
+          {
+            "type": "Browser",
+            "rss": 101800
+          },
+          {
+            "type": "GPU",
+            "rss": 239884
+          },
+          {
+            "type": "Utility",
+            "rss": 51892
+          },
+          {
+            "type": "Utility",
+            "rss": 1041032
+          },
+          {
+            "type": "Tab",
+            "rss": 211912
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "firstWindowMs": {
+      "p50": 429,
+      "p95": 449,
+      "min": 420,
+      "max": 449,
+      "n": 6
+    },
+    "appUrlMs": {
+      "p50": 1287,
+      "p95": 1313,
+      "min": 1254,
+      "max": 1313,
+      "n": 6
+    },
+    "interactiveMs": {
+      "p50": 1326,
+      "p95": 1359,
+      "min": 1317,
+      "max": 1359,
+      "n": 6
+    },
+    "agentListenMs": {
+      "p50": 68,
+      "p95": 73,
+      "min": 27,
+      "max": 73,
+      "n": 6
+    },
+    "firstGraphMs": {
+      "p50": 225,
+      "p95": 875,
+      "min": 4,
+      "max": 875,
+      "n": 6
+    },
+    "backgroundDoneMs": {
+      "p50": 7579,
+      "p95": 8077,
+      "min": 7470,
+      "max": 8077,
+      "n": 5
+    }
+  }
+}

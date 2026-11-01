@@ -1,0 +1,1040 @@
+{
+  "parserVersion": "ts-5.7.2-rc5-ast-1",
+  "datasetVersion": "ts-real-ast-1",
+  "seed": 0,
+  "datasetHash": "6ff4d485e96aa1ff04974290747144ec2f917cd0adfcd74f6b7903c6ba692a11",
+  "files": 32,
+  "environment": {
+    "node": "v24.14.0",
+    "cpu": "Intel(R) Core(TM) Ultra 9 185H",
+    "cores": 22,
+    "memoryBytes": 33832394752,
+    "os": "10.0.26200"
+  },
+  "gitSha": "ee7f199b1184d4386e3039b51d2019a8b1671545",
+  "scope": "actual TS compiler parsing and SQLite writes; observational; not 1000-file/10000-symbol UI compliance",
+  "scenarios": [
+    {
+      "name": "cold",
+      "samples": [
+        {
+          "parseMs": 7.763599999999769,
+          "indexMs": 22.091499999999996,
+          "totalMs": 72.73080000000004,
+          "analysisMs": 50.63930000000005,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 47000
+          },
+          "rssBytes": 188866560
+        },
+        {
+          "parseMs": 2.1542999999998074,
+          "indexMs": 12.045099999999934,
+          "totalMs": 35.76869999999997,
+          "analysisMs": 23.723600000000033,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 31000
+          },
+          "rssBytes": 201220096
+        },
+        {
+          "parseMs": 1.5376999999999725,
+          "indexMs": 11.795999999999935,
+          "totalMs": 34.71799999999996,
+          "analysisMs": 22.922000000000025,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 31000
+          },
+          "rssBytes": 204935168
+        },
+        {
+          "parseMs": 1.7763999999995121,
+          "indexMs": 9.213199999999915,
+          "totalMs": 30.739299999999957,
+          "analysisMs": 21.526100000000042,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 207437824
+        },
+        {
+          "parseMs": 1.8121999999999616,
+          "indexMs": 10.624900000000025,
+          "totalMs": 31.127500000000055,
+          "analysisMs": 20.50260000000003,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 47000,
+            "system": 0
+          },
+          "rssBytes": 213217280
+        },
+        {
+          "parseMs": 0.9605000000003656,
+          "indexMs": 8.801899999999932,
+          "totalMs": 28.011400000000094,
+          "analysisMs": 19.209500000000162,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 46000,
+            "system": 31000
+          },
+          "rssBytes": 214872064
+        },
+        {
+          "parseMs": 2.407999999999447,
+          "indexMs": 10.067700000000059,
+          "totalMs": 37.459100000000035,
+          "analysisMs": 27.391399999999976,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 0,
+            "system": 47000
+          },
+          "rssBytes": 230637568
+        },
+        {
+          "parseMs": 1.6368000000009033,
+          "indexMs": 8.91859999999997,
+          "totalMs": 34.021400000000085,
+          "analysisMs": 25.102800000000116,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 62000,
+            "system": 31000
+          },
+          "rssBytes": 203489280
+        },
+        {
+          "parseMs": 0.7728000000001884,
+          "indexMs": 7.739300000000185,
+          "totalMs": 24.959400000000187,
+          "analysisMs": 17.220100000000002,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 31000
+          },
+          "rssBytes": 204500992
+        },
+        {
+          "parseMs": 0.6407000000001517,
+          "indexMs": 9.63519999999994,
+          "totalMs": 27.92840000000001,
+          "analysisMs": 18.29320000000007,
+          "cachedFiles": 0,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 203751424
+        }
+      ],
+      "parse": {
+        "p50": 1.6368000000009033,
+        "p95": 7.763599999999769,
+        "min": 0.6407000000001517,
+        "max": 7.763599999999769,
+        "count": 10
+      },
+      "index": {
+        "p50": 9.63519999999994,
+        "p95": 22.091499999999996,
+        "min": 7.739300000000185,
+        "max": 22.091499999999996,
+        "count": 10
+      },
+      "total": {
+        "p50": 31.127500000000055,
+        "p95": 72.73080000000004,
+        "min": 24.959400000000187,
+        "max": 72.73080000000004,
+        "count": 10
+      }
+    },
+    {
+      "name": "cached",
+      "samples": [
+        {
+          "parseMs": 0,
+          "indexMs": 18.10089999999991,
+          "totalMs": 34.806499999999915,
+          "analysisMs": 16.705600000000004,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 16000
+          },
+          "rssBytes": 221884416
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.302799999999934,
+          "totalMs": 29.79859999999985,
+          "analysisMs": 16.495799999999917,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 16000
+          },
+          "rssBytes": 226271232
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 22.313199999999824,
+          "totalMs": 40.74259999999981,
+          "analysisMs": 18.429399999999987,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 47000,
+            "system": 0
+          },
+          "rssBytes": 263835648
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 18.666600000000017,
+          "totalMs": 35.60609999999997,
+          "analysisMs": 16.939499999999953,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 0,
+            "system": 47000
+          },
+          "rssBytes": 290652160
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.621599999999944,
+          "totalMs": 30.532400000000052,
+          "analysisMs": 16.91080000000011,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 308576256
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 18.315700000000106,
+          "totalMs": 34.88999999999987,
+          "analysisMs": 16.574299999999766,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 0,
+            "system": 16000
+          },
+          "rssBytes": 317079552
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.27980000000025,
+          "totalMs": 29.71120000000019,
+          "analysisMs": 16.43139999999994,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 0,
+            "system": 32000
+          },
+          "rssBytes": 319856640
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.46499999999969,
+          "totalMs": 29.989199999999983,
+          "analysisMs": 16.52420000000029,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 329113600
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 17.368099999999686,
+          "totalMs": 34.061499999999796,
+          "analysisMs": 16.69340000000011,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 338624512
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 20.366099999999733,
+          "totalMs": 36.991999999999734,
+          "analysisMs": 16.6259,
+          "cachedFiles": 32,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 348188672
+        }
+      ],
+      "parse": {
+        "p50": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0,
+        "count": 10
+      },
+      "index": {
+        "p50": 17.368099999999686,
+        "p95": 22.313199999999824,
+        "min": 13.27980000000025,
+        "max": 22.313199999999824,
+        "count": 10
+      },
+      "total": {
+        "p50": 34.061499999999796,
+        "p95": 40.74259999999981,
+        "min": 29.71120000000019,
+        "max": 40.74259999999981,
+        "count": 10
+      }
+    },
+    {
+      "name": "edit",
+      "samples": [
+        {
+          "parseMs": 0.07150000000001455,
+          "indexMs": 13.450900000000274,
+          "totalMs": 28.852600000000166,
+          "analysisMs": 15.401699999999892,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 16000
+          },
+          "rssBytes": 350388224
+        },
+        {
+          "parseMs": 0.07929999999987558,
+          "indexMs": 12.744200000000092,
+          "totalMs": 36.939400000000205,
+          "analysisMs": 24.195200000000114,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 16000
+          },
+          "rssBytes": 359665664
+        },
+        {
+          "parseMs": 0.07110000000011496,
+          "indexMs": 19.266599999999926,
+          "totalMs": 36.334699999999884,
+          "analysisMs": 17.06809999999996,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 47000
+          },
+          "rssBytes": 368689152
+        },
+        {
+          "parseMs": 0.06919999999990978,
+          "indexMs": 13.21289999999999,
+          "totalMs": 29.88909999999987,
+          "analysisMs": 16.67619999999988,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 372568064
+        },
+        {
+          "parseMs": 0.07470000000012078,
+          "indexMs": 15.398999999999887,
+          "totalMs": 33.529999999999745,
+          "analysisMs": 18.130999999999858,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 32000,
+            "system": 0
+          },
+          "rssBytes": 381087744
+        },
+        {
+          "parseMs": 0.05949999999984357,
+          "indexMs": 20.59100000000035,
+          "totalMs": 37.72400000000016,
+          "analysisMs": 17.13299999999981,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 31000
+          },
+          "rssBytes": 389746688
+        },
+        {
+          "parseMs": 0.06970000000001164,
+          "indexMs": 12.514799999999923,
+          "totalMs": 29.2837999999997,
+          "analysisMs": 16.768999999999778,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 392761344
+        },
+        {
+          "parseMs": 0.07099999999991269,
+          "indexMs": 14.477900000000318,
+          "totalMs": 30.989000000000033,
+          "analysisMs": 16.511099999999715,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 401362944
+        },
+        {
+          "parseMs": 0.07339999999976499,
+          "indexMs": 18.605000000000018,
+          "totalMs": 40.847099999999955,
+          "analysisMs": 22.242099999999937,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 47000
+          },
+          "rssBytes": 410464256
+        },
+        {
+          "parseMs": 0.11529999999993379,
+          "indexMs": 12.733500000000276,
+          "totalMs": 30.103399999999965,
+          "analysisMs": 17.36989999999969,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 412946432
+        }
+      ],
+      "parse": {
+        "p50": 0.07110000000011496,
+        "p95": 0.11529999999993379,
+        "min": 0.05949999999984357,
+        "max": 0.11529999999993379,
+        "count": 10
+      },
+      "index": {
+        "p50": 13.450900000000274,
+        "p95": 20.59100000000035,
+        "min": 12.514799999999923,
+        "max": 20.59100000000035,
+        "count": 10
+      },
+      "total": {
+        "p50": 30.989000000000033,
+        "p95": 40.847099999999955,
+        "min": 28.852600000000166,
+        "max": 40.847099999999955,
+        "count": 10
+      }
+    },
+    {
+      "name": "delete",
+      "samples": [
+        {
+          "parseMs": 0,
+          "indexMs": 12.983600000000024,
+          "totalMs": 28.58010000000013,
+          "analysisMs": 15.596500000000106,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 421937152
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 20.108900000000176,
+          "totalMs": 35.60159999999996,
+          "analysisMs": 15.492699999999786,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 32000
+          },
+          "rssBytes": 420036608
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 16.318700000000263,
+          "totalMs": 32.121200000000044,
+          "analysisMs": 15.802499999999782,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 422211584
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.424400000000333,
+          "totalMs": 29.6862000000001,
+          "analysisMs": 16.261799999999766,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 0
+          },
+          "rssBytes": 422412288
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 18.1833000000006,
+          "totalMs": 37.059400000000096,
+          "analysisMs": 18.876099999999497,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 47000
+          },
+          "rssBytes": 421208064
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 13.213800000000447,
+          "totalMs": 31.662200000000666,
+          "analysisMs": 18.44840000000022,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 0
+          },
+          "rssBytes": 423178240
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 19.158400000000256,
+          "totalMs": 36.01969999999983,
+          "analysisMs": 16.861299999999574,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 422191104
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 17.925499999999374,
+          "totalMs": 35.49229999999989,
+          "analysisMs": 17.566800000000512,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 31000
+          },
+          "rssBytes": 421474304
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 12.174399999999878,
+          "totalMs": 29.89679999999953,
+          "analysisMs": 17.722399999999652,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 423211008
+        },
+        {
+          "parseMs": 0,
+          "indexMs": 12.430299999999988,
+          "totalMs": 28.707300000000032,
+          "analysisMs": 16.277000000000044,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 16000
+          },
+          "rssBytes": 422866944
+        }
+      ],
+      "parse": {
+        "p50": 0,
+        "p95": 0,
+        "min": 0,
+        "max": 0,
+        "count": 10
+      },
+      "index": {
+        "p50": 13.424400000000333,
+        "p95": 20.108900000000176,
+        "min": 12.174399999999878,
+        "max": 20.108900000000176,
+        "count": 10
+      },
+      "total": {
+        "p50": 31.662200000000666,
+        "p95": 37.059400000000096,
+        "min": 28.58010000000013,
+        "max": 37.059400000000096,
+        "count": 10
+      }
+    },
+    {
+      "name": "restore",
+      "samples": [
+        {
+          "parseMs": 0.07310000000052241,
+          "indexMs": 11.609699999999975,
+          "totalMs": 28.941900000000714,
+          "analysisMs": 17.33220000000074,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 16000
+          },
+          "rssBytes": 422703104
+        },
+        {
+          "parseMs": 0.07070000000021537,
+          "indexMs": 13.442999999999302,
+          "totalMs": 29.011199999999917,
+          "analysisMs": 15.568200000000616,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 423972864
+        },
+        {
+          "parseMs": 0.08020000000033178,
+          "indexMs": 18.666800000000876,
+          "totalMs": 35.504800000000614,
+          "analysisMs": 16.837999999999738,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 32000,
+            "system": 16000
+          },
+          "rssBytes": 421810176
+        },
+        {
+          "parseMs": 0.08259999999972933,
+          "indexMs": 17.883700000000317,
+          "totalMs": 33.955800000000636,
+          "analysisMs": 16.07210000000032,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 420835328
+        },
+        {
+          "parseMs": 0.07209999999940919,
+          "indexMs": 18.094699999999648,
+          "totalMs": 34.155799999999545,
+          "analysisMs": 16.061099999999897,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 421408768
+        },
+        {
+          "parseMs": 0.0761000000002241,
+          "indexMs": 12.885599999999613,
+          "totalMs": 29.78150000000005,
+          "analysisMs": 16.895900000000438,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 423780352
+        },
+        {
+          "parseMs": 0.07679999999982101,
+          "indexMs": 11.446899999999914,
+          "totalMs": 32.84779999999955,
+          "analysisMs": 21.400899999999638,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 423821312
+        },
+        {
+          "parseMs": 0.07639999999992142,
+          "indexMs": 12.269800000000032,
+          "totalMs": 28.261199999999917,
+          "analysisMs": 15.991399999999885,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 428150784
+        },
+        {
+          "parseMs": 0.07480000000032305,
+          "indexMs": 13.050400000000081,
+          "totalMs": 30.594300000000658,
+          "analysisMs": 17.543900000000576,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 16000
+          },
+          "rssBytes": 439021568
+        },
+        {
+          "parseMs": 0.0739000000003216,
+          "indexMs": 25.41690000000017,
+          "totalMs": 41.71980000000076,
+          "analysisMs": 16.30290000000059,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 457498624
+        }
+      ],
+      "parse": {
+        "p50": 0.07480000000032305,
+        "p95": 0.08259999999972933,
+        "min": 0.07070000000021537,
+        "max": 0.08259999999972933,
+        "count": 10
+      },
+      "index": {
+        "p50": 13.050400000000081,
+        "p95": 25.41690000000017,
+        "min": 11.446899999999914,
+        "max": 25.41690000000017,
+        "count": 10
+      },
+      "total": {
+        "p50": 30.594300000000658,
+        "p95": 41.71980000000076,
+        "min": 28.261199999999917,
+        "max": 41.71980000000076,
+        "count": 10
+      }
+    },
+    {
+      "name": "rename",
+      "samples": [
+        {
+          "parseMs": 0.07489999999961583,
+          "indexMs": 15.971599999999853,
+          "totalMs": 34.1246000000001,
+          "analysisMs": 18.153000000000247,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 459415552
+        },
+        {
+          "parseMs": 0.11390000000028522,
+          "indexMs": 18.300100000000384,
+          "totalMs": 34.54020000000037,
+          "analysisMs": 16.240099999999984,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 16000
+          },
+          "rssBytes": 457814016
+        },
+        {
+          "parseMs": 0.06959999999980937,
+          "indexMs": 13.487900000000081,
+          "totalMs": 29.992600000000493,
+          "analysisMs": 16.504700000000412,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 460128256
+        },
+        {
+          "parseMs": 0.07319999999981519,
+          "indexMs": 14.414999999999964,
+          "totalMs": 31.76599999999962,
+          "analysisMs": 17.350999999999658,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 32000
+          },
+          "rssBytes": 459411456
+        },
+        {
+          "parseMs": 0.10170000000016444,
+          "indexMs": 16.864199999999983,
+          "totalMs": 33.86229999999978,
+          "analysisMs": 16.998099999999795,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 461336576
+        },
+        {
+          "parseMs": 0.08159999999952561,
+          "indexMs": 18.157600000000457,
+          "totalMs": 35.07370000000083,
+          "analysisMs": 16.91610000000037,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 47000,
+            "system": 16000
+          },
+          "rssBytes": 458915840
+        },
+        {
+          "parseMs": 0.07290000000011787,
+          "indexMs": 12.599900000000162,
+          "totalMs": 31.663500000000568,
+          "analysisMs": 19.063600000000406,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 459816960
+        },
+        {
+          "parseMs": 0.07479999999941356,
+          "indexMs": 12.80580000000009,
+          "totalMs": 33.93130000000019,
+          "analysisMs": 21.125500000000102,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 16000
+          },
+          "rssBytes": 461795328
+        },
+        {
+          "parseMs": 0.0727999999999156,
+          "indexMs": 17.74290000000019,
+          "totalMs": 34.18469999999979,
+          "analysisMs": 16.441799999999603,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 461959168
+        },
+        {
+          "parseMs": 0.07439999999951397,
+          "indexMs": 11.73200000000088,
+          "totalMs": 34.188100000000304,
+          "analysisMs": 22.456099999999424,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 461975552
+        }
+      ],
+      "parse": {
+        "p50": 0.07439999999951397,
+        "p95": 0.11390000000028522,
+        "min": 0.06959999999980937,
+        "max": 0.11390000000028522,
+        "count": 10
+      },
+      "index": {
+        "p50": 14.414999999999964,
+        "p95": 18.300100000000384,
+        "min": 11.73200000000088,
+        "max": 18.300100000000384,
+        "count": 10
+      },
+      "total": {
+        "p50": 33.93130000000019,
+        "p95": 35.07370000000083,
+        "min": 29.992600000000493,
+        "max": 35.07370000000083,
+        "count": 10
+      }
+    },
+    {
+      "name": "move",
+      "samples": [
+        {
+          "parseMs": 0.07859999999982392,
+          "indexMs": 12.288000000000466,
+          "totalMs": 30.88000000000011,
+          "analysisMs": 18.591999999999643,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytes": 459427840
+        },
+        {
+          "parseMs": 0.07030000000031578,
+          "indexMs": 18.947400000000016,
+          "totalMs": 36.659599999999955,
+          "analysisMs": 17.71219999999994,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 458178560
+        },
+        {
+          "parseMs": 0.07269999999971333,
+          "indexMs": 13.560199999999895,
+          "totalMs": 33.00500000000011,
+          "analysisMs": 19.444800000000214,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytes": 460578816
+        },
+        {
+          "parseMs": 0.066899999999805,
+          "indexMs": 13.9329000000007,
+          "totalMs": 29.545000000000073,
+          "analysisMs": 15.612099999999373,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytes": 461266944
+        },
+        {
+          "parseMs": 0.07240000000001601,
+          "indexMs": 18.163499999999658,
+          "totalMs": 37.28520000000026,
+          "analysisMs": 19.1217000000006,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 459317248
+        },
+        {
+          "parseMs": 0.0706000000000131,
+          "indexMs": 13.265300000000025,
+          "totalMs": 29.988499999999476,
+          "analysisMs": 16.72319999999945,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytes": 461078528
+        },
+        {
+          "parseMs": 0.0658000000003085,
+          "indexMs": 13.936200000000099,
+          "totalMs": 29.89130000000023,
+          "analysisMs": 15.95510000000013,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 16000,
+            "system": 15000
+          },
+          "rssBytes": 461504512
+        },
+        {
+          "parseMs": 0.06799999999930151,
+          "indexMs": 16.89509999999973,
+          "totalMs": 33.44880000000012,
+          "analysisMs": 16.55370000000039,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 31000,
+            "system": 0
+          },
+          "rssBytes": 461967360
+        },
+        {
+          "parseMs": 0.0625,
+          "indexMs": 17.23370000000068,
+          "totalMs": 32.70190000000002,
+          "analysisMs": 15.468199999999342,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 15000,
+            "system": 0
+          },
+          "rssBytes": 462065664
+        },
+        {
+          "parseMs": 0.06850000000122236,
+          "indexMs": 12.958499999998821,
+          "totalMs": 29.261599999999817,
+          "analysisMs": 16.303100000000995,
+          "cachedFiles": 31,
+          "cpuMicros": {
+            "user": 0,
+            "system": 31000
+          },
+          "rssBytes": 462077952
+        }
+      ],
+      "parse": {
+        "p50": 0.06850000000122236,
+        "p95": 0.07859999999982392,
+        "min": 0.0625,
+        "max": 0.07859999999982392,
+        "count": 10
+      },
+      "index": {
+        "p50": 13.9329000000007,
+        "p95": 18.947400000000016,
+        "min": 12.288000000000466,
+        "max": 18.947400000000016,
+        "count": 10
+      },
+      "total": {
+        "p50": 30.88000000000011,
+        "p95": 37.28520000000026,
+        "min": 29.261599999999817,
+        "max": 37.28520000000026,
+        "count": 10
+      }
+    }
+  ]
+}

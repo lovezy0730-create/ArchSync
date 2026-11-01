@@ -1,0 +1,443 @@
+import { _electron as electron, chromium } from 'playwright';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, rename } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { execFileSync, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import assert from 'node:assert/strict';
+
+const temp = await mkdtemp(join(tmpdir(), 'archsync-rc5-e2e-'));
+const repo = join(temp, 'mixed-repo');
+const data = join(temp, 'user-data');
+const evidence = resolve('apps/desktop/release/evidence');
+await mkdir(join(repo, 'src'), { recursive: true });
+await mkdir(join(repo, 'lib'), { recursive: true });
+await mkdir(evidence, { recursive: true });
+await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 1; }\n");
+await writeFile(join(repo, 'lib', 'tool.ts'), 'export function helper(n: number): number { return n; }\n');
+await writeFile(join(repo, 'src', 'service.py'), 'class Service:\n    def greet(self):\n        return "hello"\n');
+for (const args of [['init', '-q'], ['add', '-A'], ['-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture']]) execFileSync('git', args, { cwd: repo, windowsHide: true });
+const executablePath = process.env.ARCHSYNC_E2E_EXE ?? resolve('apps/desktop/release/win-unpacked/ArchSync.exe');
+let application;
+let browser;
+let portableProcess;
+let currentPage;
+let agentPid;
+let currentStep = 'start';
+let lastProgress = Date.now();
+const touch = (name) => {
+  currentStep = name;
+  lastProgress = Date.now();
+  console.log(`[e2e] step: ${name}`);
+};
+const watchdog = setInterval(() => {
+  if (Date.now() - lastProgress > 240_000) {
+    console.error(`[e2e] watchdog: no progress for ${Math.round((Date.now() - lastProgress) / 1000)}s at "${currentStep}"`);
+    process.exit(1);
+  }
+}, 10_000);
+watchdog.unref?.();
+async function availablePort() {
+  return await new Promise((resolvePort, reject) => {
+    const socket = createServer();
+    socket.once('error', reject);
+    socket.listen(0, '127.0.0.1', () => {
+      const port = socket.address().port;
+      socket.close(() => resolvePort(port));
+    });
+  });
+}
+async function launch() {
+  const env = { ...process.env, ARCHSYNC_DESKTOP_DATA_DIR: data, ARCHSYNC_CLOSE_TO_TRAY: '0', PORT: '0', AUTH_CODE: '', DEV_AUTH_MODE: 'mock', GITHUB_TOKEN: process.env.ARCHSYNC_E2E_GITHUB_TOKEN ?? '' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  let page;
+  if (process.env.ARCHSYNC_E2E_PORTABLE === '1') {
+    const port = await availablePort();
+    env.ARCHSYNC_E2E_DEBUG_PORT = String(port);
+    portableProcess = spawn(executablePath, [], { env, windowsHide: true, stdio: 'ignore' });
+    const deadline = Date.now() + 120000;
+    while (!browser && Date.now() < deadline) {
+      try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2000 }); }
+      catch { await new Promise((resolveWait) => setTimeout(resolveWait, 500)); }
+    }
+    if (!browser) throw new Error('portable application did not expose its test browser');
+    const context = browser.contexts()[0];
+    page = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 60000 });
+  } else {
+    application = await electron.launch({ executablePath, env, timeout: 60000 });
+    page = await application.firstWindow();
+  }
+  currentPage = page;
+  const launchStartedAt = Date.now();
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 90000 });
+  const appUrlMs = Date.now() - launchStartedAt;
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log(`[e2e] app interactive after ${Date.now() - launchStartedAt}ms (url ${appUrlMs}ms)`);
+  const bodyText = await page.locator('body').innerText();
+  assert.ok(bodyText.includes('ArchSync'), 'main page has no ArchSync shell');
+  const health = await page.evaluate(async () => (await fetch('/healthz')).json());
+  agentPid = health.pid;
+  return page;
+}
+/**
+ * Poll an async predicate against the current page until it is truthy.
+ *
+ * `page.waitForFunction` does NOT await async functions: the returned Promise
+ * is a truthy object, so every async gate would silently pass on its first
+ * tick. `page.evaluate` does await promises, so polling through it is the only
+ * honest way to wait for server state.
+ */
+async function waitFor(predicate, arg, { timeout = 60000, interval = 250, label = 'condition' } = {}) {
+  const deadline = Date.now() + timeout;
+  let lastValue;
+  let lastError = null;
+  for (;;) {
+    try {
+      lastValue = await currentPage.evaluate(predicate, arg);
+      if (lastValue) return lastValue;
+    } catch (err) {
+      lastError = err;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `${label} not reached within ${timeout}ms (last=${JSON.stringify(lastValue)}` +
+          `${lastError ? `, lastError=${lastError.message}` : ''})`,
+      );
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, interval));
+  }
+}
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms).unref?.()),
+  ]);
+}
+
+async function stop() {
+  if (application) {
+    await withTimeout(application.close(), 30000, 'application.close').catch((error) => console.error('[e2e]', error.message));
+    application = undefined;
+  } else if (browser) {
+    // Kill the portable process tree FIRST: the wrapper owns the Electron
+    // child, and a live child can make page.close()/browser.close() wait
+    // forever while holding file handles (EBUSY on cleanup).
+    if (portableProcess && portableProcess.exitCode === null) {
+      try {
+        execFileSync('taskkill', ['/PID', String(portableProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      } catch { /* already gone */ }
+      portableProcess.kill();
+    }
+    portableProcess = undefined;
+    await withTimeout(currentPage.close(), 10000, 'page.close').catch((error) => console.error('[e2e]', error.message));
+    await withTimeout(browser.close(), 10000, 'browser.close').catch((error) => console.error('[e2e]', error.message));
+    browser = undefined; currentPage = undefined;
+  }
+  for (let i = 0; i < 100; i++) {
+    try { process.kill(agentPid, 0); } catch {
+      // Give Windows a moment to release directory handles held by the app.
+      await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+      return;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error('agent did not exit');
+}
+
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = error && error.code;
+      if (code !== 'EBUSY' && code !== 'EPERM' && code !== 'EACCES') throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+    }
+  }
+  await rename(from, to);
+}
+try {
+  touch('launch');
+  let page = await launch();
+  await page.getByRole('button', { name: '打开或克隆仓库' }).click();
+  await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(repo);
+  await page.getByRole('button', { name: '添加', exact: true }).click();
+  await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+  touch('register-local-repo');
+  const projectId = await waitFor(async (p) => {
+    const list = await (await fetch('/api/v1/registry')).json();
+    return list.projects.find((project) => project.localPath === p)?.id;
+  }, repo, { label: 'local project registration' });
+  await waitFor(async (id) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    return index.state === 'ready' && index.summary.fresh === 3;
+  }, projectId, { label: 'mixed repository index ready' });
+  const before = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), projectId);
+  const uid = before.files.flatMap((file) => file.symbols).find((symbol) => symbol.name === 'hello').symbolUid;
+  touch('index-ready');
+  await page.getByText(/扫描完成 · 3 个有效文件/).waitFor({ timeout: 30000 });
+  await page.locator('.arch-node').first().waitFor({ timeout: 60000 });
+  // The system level must show real modules and resolved edges, not folders.
+  const systemGraph = await page.locator('.arch-graph').innerText();
+  assert.ok(/src（根文件）/.test(systemGraph), 'system graph is missing the src module');
+  assert.ok(/lib（根文件）/.test(systemGraph), 'system graph is missing the lib module');
+  assert.ok(/已解析/.test(systemGraph), 'system graph has no resolved dependency edge');
+  await page.screenshot({ path: join(evidence, 'rc5-module-graph.png') });
+  touch('system-graph');
+
+  // system -> module
+  await page.locator('.arch-node[data-node-kind="module"]', { hasText: 'src（根文件）' }).first().click();
+  await page.locator('.arch-node[data-file-path="src/main.ts"]').first().waitFor({ timeout: 30000 });
+  await page.screenshot({ path: join(evidence, 'rc5-module-detail.png') });
+  touch('module-graph');
+  // module -> file
+  await page.locator('.arch-node[data-file-path="src/main.ts"]').first().click();
+  touch('file-graph');
+  await page.getByRole('button', { name: '符号调用' }).click();
+  await page.locator('.arch-node[data-symbol-uid]').first().waitFor({ timeout: 30000 });
+  // file -> symbol
+  await page.locator('.arch-node', { hasText: 'hello' }).first().click();
+  await page.locator('.code-source').getByText('export function hello', { exact: false }).waitFor();
+  await page.getByText('参数：n: number', { exact: false }).waitFor({ timeout: 15000 });
+  await page.screenshot({ path: join(evidence, 'rc5-ts-source.png') });
+  touch('symbol-graph-source');
+  // back to the module, then Python
+  await page.getByRole('button', { name: /src（根文件）/ }).first().click();
+  await page.getByRole('button', { name: '列表' }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/service.py/ }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
+  await page.locator('.code-source').getByText('def greet', { exact: false }).waitFor();
+  await page.screenshot({ path: join(evidence, 'rc5-python-source.png') });
+
+  // Planned view must not hang and must show discovered modules.
+  await page.getByRole('button', { name: '规划视图' }).click();
+  await page.locator('.react-flow__node').first().waitFor({ timeout: 60000 });
+  assert.equal(await page.getByText('正在加载快照…').count(), 0, 'planned view stuck on loading');
+  const plannedText = await page.locator('.canvas-wrap').innerText();
+  assert.ok(/src（根文件）/.test(plannedText), 'planned view is missing the src module');
+  await page.screenshot({ path: join(evidence, 'rc5-planned-view.png') });
+  touch('planned-view');
+  for (let i = 0; i < 10; i++) {
+    await page.getByRole('button', { name: '代码架构' }).click();
+    await page.locator('.code-workbench').waitFor({ timeout: 30000 });
+    await page.getByRole('button', { name: '规划视图' }).click();
+    await page.locator('.react-flow__node').first().waitFor({ timeout: 30000 });
+  }
+  console.log('[e2e] planned/actual switching stayed stable across 10 cycles');
+  touch('view-switch-loop');
+
+  await page.getByRole('button', { name: '代码架构' }).click();
+  await page.locator('.project-menu summary').click();
+  await page.getByRole('button', { name: '刷新 GitHub' }).click();
+  await page.locator('.project-menu-panel [role=alert]').waitFor();
+  assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
+  await page.getByRole('button', { name: '关于 / 诊断' }).click();
+  await page.getByRole('dialog', { name: '关于与诊断' }).waitFor({ timeout: 30000 });
+  // Diagnostics are fetched asynchronously; wait for the grid, not just the dialog.
+  await page.locator('.about-card .about-grid').waitFor({ timeout: 30000 });
+  const aboutText = await page.locator('.about-card').innerText();
+  assert.ok(/1\.3\.0-rc\.6/.test(aboutText), 'about panel does not show the trial version');
+  assert.ok(/Build SHA/.test(aboutText), 'about panel does not show the build SHA');
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.locator('.project-menu summary').click();
+  touch('github-offline-state');
+  const editStartedAt = Date.now();
+  await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
+  await waitFor(async ({ id, previous }) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    const symbol = index.files.flatMap((file) => file.symbols).find((item) => item.name === 'hello');
+    return symbol && symbol.symbolUid === previous && index.files.find((file) => file.filePath === 'src/main.ts').revision > 1;
+  }, { id: projectId, previous: uid }, { label: 'watched edit reindexed', timeout: 30000 });
+  console.log(`[e2e] watched edit visible after ${Date.now() - editStartedAt}ms (save -> fresh index)`);
+  touch('watched-edit');
+  await waitFor(async (id) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    return index.changes?.some((change) => change.path === 'src/main.ts' && change.kind === 'modified');
+  }, projectId, { label: 'uncommitted change overlay', timeout: 30000 });
+  await page.getByRole('button', { name: /src（根文件）/ }).first().click();
+  touch('uncommitted-overlay');
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/main.ts.*未提交/ }).waitFor({ timeout: 30000 });
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/service.py/ }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
+  await access(join(data, 'data', 'registry.sqlite'));
+  await stop();
+  // Simulate data written by a previous RC5 run that was interrupted mid-scan:
+  // a job left in `running` and an older snapshot without optional fields.
+  const statePath = join(data, 'data', 'archsync-state.json');
+  const legacyState = JSON.parse(await readFile(statePath, 'utf8'));
+  for (const project of Object.values(legacyState.projects ?? {})) {
+    const jobs = Object.values(project.jobs ?? {});
+    const last = jobs[jobs.length - 1];
+    if (last) { last.state = 'running'; last.finishedAt = null; }
+    if (project.currentSnapshot) {
+      delete project.currentSnapshot.views;
+      delete project.currentSnapshot.configOrigin;
+    }
+  }
+  await writeFile(statePath, JSON.stringify(legacyState));
+  page = await launch();
+  await waitFor(async (id) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    return index.files?.some((file) => file.filePath === 'src/main.ts' && file.status === 'fresh');
+  }, projectId, { label: 'index restored after restart' });
+  const registry = await page.evaluate(async () => (await fetch('/api/v1/registry')).json());
+  assert.ok(registry.projects.some((project) => project.id === projectId));
+  touch('restart-restore');
+  await page.getByText('Service.greet', { exact: false }).first().waitFor({ timeout: 30000 });
+  for (const size of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(size);
+    assert.equal(await page.locator('.topbar').evaluate((el) => el.scrollWidth <= el.clientWidth), true, `top bar overflows at ${size.width}`);
+  }
+
+  touch('snapshot-failure-test');
+  // A failed snapshot must surface a concrete error with a working retry.
+  await page.route('**/api/v1/projects/*/snapshot', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'snapshot_failed', message: '模拟快照失败（E2E）' } }),
+    }),
+  );
+  await page.reload();
+  await page.waitForURL('http://127.0.0.1:*/');
+  await page.getByRole('button', { name: '规划视图' }).click();
+  await page.getByText('架构快照加载失败').waitFor({ timeout: 30000 });
+  await page.getByText(/模拟快照失败/).waitFor({ timeout: 15000 });
+  await page.unroute('**/api/v1/projects/*/snapshot');
+  await page.getByRole('button', { name: '重试' }).click();
+  await page.locator('.react-flow__node').first().waitFor({ timeout: 60000 });
+  console.log('[e2e] snapshot failure surfaced with retry and recovered');
+  await page.getByRole('button', { name: '代码架构' }).click();
+
+  // Agent crash: the window must show the startup page, then recover.
+  touch('agent-crash');
+  const agentHealth = await page.evaluate(async () => (await (await fetch('/healthz')).json()).pid);
+  process.kill(agentHealth, 'SIGKILL');
+  await page.waitForURL('file://**', { timeout: 30000 });
+  await page.getByText('本地服务已退出，正在重启…').waitFor({ timeout: 30000 });
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log('[e2e] agent crash surfaced on the startup page and recovered');
+
+  // Page resource failure: the main process must show the diagnostic page.
+  touch('page-load-failure');
+  await page.route('**/', (route) => route.abort());
+  try {
+    await page.reload().catch(() => undefined);
+    await page.waitForURL('file://**', { timeout: 30000 });
+    await page.getByText('工作台页面加载失败').waitFor({ timeout: 30000 });
+  } finally {
+    await page.unroute('**/').catch(() => undefined);
+  }
+  await page.getByRole('button', { name: '重试启动' }).click();
+  await page.waitForURL('http://127.0.0.1:*/', { timeout: 60000 });
+  await page.waitForFunction(() => window.__archsyncReady === true, null, { timeout: 60000 });
+  console.log('[e2e] page load failure surfaced and retry recovered');
+  await page.locator('.add-project-btn').click();
+  await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(resolve('.'));
+  await page.getByRole('button', { name: '添加', exact: true }).click();
+  await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+  touch('self-scan-register');
+  const self = await waitFor(async () => {
+    const list = await (await fetch('/api/v1/registry')).json();
+    return list.projects.find((project) => project.id === 'archsync')?.id;
+  }, undefined, { label: 'self repository registration' });
+  const scannerModule = await waitFor(async (id) => {
+    const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
+    const file = index.files?.find((item) => item.filePath === 'packages/scanner/src/imports.ts');
+    return index.state === 'ready' && file?.symbols.some((item) => item.name === 'analyzeImports') ? file.moduleId : null;
+  }, self, { label: 'real scanner self-index ready', timeout: 180000 });
+  // Use the always-visible architecture tree; the graph node may be in a
+  // different level/mode after a restart or a page reload.
+  await page.getByRole('button', { name: '关系图' }).click().catch(() => undefined);
+  await page.locator(`.code-tree [data-module-id="${scannerModule}"]`).click();
+  await page.locator('.arch-node[data-file-path="packages/scanner/src/imports.ts"]').first().click();
+  await page.getByRole('button', { name: '符号调用' }).click();
+  await page.locator('.arch-node[data-symbol-uid]', { hasText: 'analyzeImports' }).first().click();
+  await page.locator('.code-source').getByText('function analyzeImports', { exact: false }).waitFor();
+  await page.screenshot({ path: join(evidence, 'rc5-archsync-source.png') });
+  await waitFor(async () => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === 'archsync', undefined, { label: 'active project persisted as archsync' });
+  await stop();
+  page = await launch();
+  await page.locator('.project-select').waitFor();
+  await page.waitForFunction(() => document.querySelector('.project-select')?.value === 'archsync', null, { timeout: 60000 });
+  await page.getByText('analyzeImports', { exact: true }).first().waitFor({ timeout: 60000 });
+  assert.ok((await page.locator('.project-select option').count()) >= 2, 'registered projects were not restored after restart');
+  await page.locator('.project-select').selectOption(projectId);
+  await waitFor(async (id) => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === id, projectId, { label: 'active project switch persisted' });
+  await stop();
+  await renameWithRetry(repo, `${repo}-missing`);
+  page = await launch();
+  await page.getByText('上次打开的项目不可用，请重新选择或检查路径。').waitFor({ timeout: 60000 });
+  assert.equal(await page.locator('.project-select').inputValue(), '');
+  await stop();
+  await renameWithRetry(`${repo}-missing`, repo);
+  touch('github-live');
+  if (process.env.ARCHSYNC_E2E_GITHUB === '1') {
+    page = await launch();
+    await page.locator('.add-project-btn').click();
+    await page.getByRole('button', { name: 'GitHub 仓库', exact: true }).click();
+    await page.getByPlaceholder('https://github.com/owner/repo 或 owner/repo').fill('lovezy0730-create/ArchSync');
+    await page.getByRole('button', { name: '添加远端监控' }).click();
+    await page.getByRole('dialog', { name: '添加项目' }).waitFor({ state: 'hidden', timeout: 60000 });
+    const remoteId = 'remote-lovezy0730-create-archsync';
+    const live = await waitFor(async (id) => {
+      const response = await fetch(`/api/v1/registry/${id}/github`);
+      if (!response.ok) return false;
+      const status = await response.json();
+      if (status.collab.source !== 'live' || !status.collab.pullRequests.some((pr) => pr.number === 11)) return false;
+      return { pullCount: status.collab.pullRequests.length, issueCount: status.collab.issues.length };
+    }, remoteId, { label: 'live GitHub PR #11 in registry state', timeout: 120000 });
+    const remoteIndex = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), remoteId);
+    assert.equal(remoteIndex.files.length, 0, 'remote-only project must not invent local symbols');
+    await page.locator('.project-select').selectOption(remoteId);
+    await page.waitForFunction((id) => document.querySelector('.project-select')?.value === id, remoteId);
+    await page.locator('button[title="项目动态（GitHub 事件 / 本地变化时间线）"]').click();
+    await page.getByRole('dialog', { name: '项目动态' }).getByLabel('GitHub 当前状态').waitFor({ timeout: 30000 });
+    try {
+      // The panel must render exactly the live facts the API reported, not a
+      // stale "unavailable" placeholder captured while the first sync ran.
+      await page.getByText(`PR（${live.pullCount}）`).first().waitFor({ timeout: 45000 });
+      await page.locator('a[href$="/pull/11"]').first().waitFor({ timeout: 15000 });
+    } catch (err) {
+      const dump = await page.evaluate(async (id) => {
+        const response = await fetch(`/api/v1/registry/${id}/github`);
+        const body = await response.json().catch(() => null);
+        return {
+          http: response.status,
+          source: body?.collab?.source ?? null,
+          fetchedAt: body?.collab?.fetchedAt ?? null,
+          error: body?.collab?.error ?? null,
+          apiPullNumbers: Array.isArray(body?.collab?.pullRequests) ? body.collab.pullRequests.map((pr) => pr.number) : null,
+          dialogText: document.querySelector('.history-overlay')?.innerText?.slice(0, 1200) ?? null,
+          anchors: [...document.querySelectorAll('.history-overlay a')].map((a) => a.getAttribute('href')),
+        };
+      }, remoteId);
+      await page.screenshot({ path: join(evidence, 'rc5-github-dialog-failure.png') });
+      console.error('[e2e] GitHub dialog diagnostics:', JSON.stringify(dump, null, 2));
+      throw new Error(`activity dialog did not render live PR #11: ${err.message}`);
+    }
+    await page.getByText(/Issue（/).first().waitFor();
+    await page.getByText(/远端 HEAD.*CI/).first().waitFor();
+    await page.screenshot({ path: join(evidence, 'rc5-github-live.png') });
+    await stop();
+    console.log('PASS: public GitHub GUI registration and live PR/Issue/CI view');
+  }
+  console.log('PASS: packaged mixed repository, TS/Python navigation, source, watched edit, UID, restart, offline GitHub state and self-scan');
+} finally {
+  // Cleanup must never mask the real failure: every close is bounded and a
+  // locked temp directory is reported, not thrown.
+  if (application) await withTimeout(application.close(), 30000, 'application.close').catch((error) => console.error('[e2e]', error.message));
+  if (browser) {
+    if (portableProcess && portableProcess.exitCode === null) {
+      try { execFileSync('taskkill', ['/PID', String(portableProcess.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { /* gone */ }
+      portableProcess.kill();
+    }
+    await withTimeout(browser.close(), 10000, 'browser.close').catch((error) => console.error('[e2e]', error.message));
+  }
+  if (portableProcess && portableProcess.exitCode === null) portableProcess.kill();
+  await rm(temp, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 }).catch((error) => {
+    console.error('[e2e] could not remove temp directory (a process may still hold it):', error.message);
+  });
+}

@@ -1,0 +1,40 @@
+{
+  "scope": "observational end-to-end watcher latency on the packaged server path; the watcher triggers a warm full rescan, not a per-file incremental scan. Not a fixed-hardware gate.",
+  "datasetVersion": "rc5-ts-1000-v1",
+  "datasetHash": "098c20aa4d4124b2ed87fea5d479b08c6248fdcffd33c64905e2decfee9fb8fd",
+  "files": 1000,
+  "iterations": 10,
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) Ultra 9 185H",
+    "logicalCpus": 22,
+    "memoryBytes": 33832394752,
+    "node": "v24.14.0"
+  },
+  "gitSha": "97ed053212247ebfe8afeeb7cabec29fa978abe6",
+  "gitDirty": false,
+  "coldAddToReadyMs": 1254,
+  "watch": {
+    "samplesMs": [
+      3914.696099999999,
+      3853.9127000000008,
+      3882.971599999997,
+      3882.8761000000013,
+      4455.7785,
+      3932.8700000000026,
+      4115.3007,
+      3977.0065999999933,
+      3851.799100000004,
+      3814.0641000000032
+    ],
+    "statistics": {
+      "p50": 3882.971599999997,
+      "p95": 4455.7785,
+      "min": 3814.0641000000032,
+      "max": 4455.7785,
+      "count": 10
+    }
+  }
+}

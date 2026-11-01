@@ -32,6 +32,9 @@ export const LayerConfigSchema = z.object({
   order: z.number().int().min(1),
 });
 
+export const ModuleConfidenceSchema = z.enum(['high', 'medium', 'low', 'none']);
+export type ModuleConfidence = z.infer<typeof ModuleConfidenceSchema>;
+
 export const ModuleConfigSchema = z.object({
   id: z.string().regex(MODULE_ID_PATTERN),
   label: z.string().min(1),
@@ -46,6 +49,14 @@ export const ModuleConfigSchema = z.object({
     requiredChecks: [],
     manualApproval: false,
   })),
+  /** Parent module for discovered sub-module trees (absent for planned/YAML modules). */
+  parentId: z.string().regex(MODULE_ID_PATTERN).nullable().optional(),
+  /** System (top-level group) a discovered module belongs to. */
+  systemId: z.string().regex(MODULE_ID_PATTERN).nullable().optional(),
+  /** How the module boundary was established. */
+  confidence: ModuleConfidenceSchema.optional(),
+  /** Human-readable discovery evidence (package.json, __init__.py, directory density). */
+  discoveryEvidence: z.array(z.string()).optional(),
 });
 
 export const ProjectConfigFileSchema = z.object({
@@ -328,6 +339,13 @@ export const ModuleStateSchema = z.object({
     }),
   ),
   observedDependsOn: z.nullable(z.array(z.string())).default(null),
+  /** Discovered hierarchy (absent for planned/YAML modules). */
+  parentId: z.string().nullable().optional(),
+  systemId: z.string().nullable().optional(),
+  confidence: ModuleConfidenceSchema.optional(),
+  /** Counts from the real code index, so the canvas can show evidence density. */
+  observedFileCount: z.number().int().nonnegative().optional(),
+  observedSymbolCount: z.number().int().nonnegative().optional(),
   implementation: ImplementationStateSchema,
   workflow: WorkflowStateSchema,
   owners: z.array(z.string()),
@@ -372,6 +390,8 @@ export const SnapshotSchema = z.object({
   freshness: z.enum(['fresh', 'stale']),
   scanCompleteness: z.enum(['complete', 'partial', 'unknown']),
   dependencyAnalysis: z.enum(['not_supported', 'partial', 'complete']),
+  /** planned = modules come from .archsync/project.yaml; inferred = code discovery. */
+  configOrigin: z.enum(['planned', 'inferred']).optional(),
   layers: z.array(LayerConfigSchema),
   /** Project-specific presentation views. Optional for older snapshots. */
   views: z.array(ProjectViewConfigSchema).optional(),
@@ -384,6 +404,8 @@ export const SnapshotSchema = z.object({
   contentHash: z.string(),
 });
 export type Snapshot = z.infer<typeof SnapshotSchema>;
+
+export * from './architecture.js';
 
 /* ------------------------------------------------------------------ */
 /* API payload types                                                  */
@@ -456,3 +478,5 @@ export type WsServerMessage =
   | { type: 'presence.left'; projectId: string; sessionId: string }
   | { type: 'snapshot.published'; projectId: string; snapshotId: string; version: number }
   | { type: 'server.error'; code: string; message: string };
+
+export * from './code-index.js';
