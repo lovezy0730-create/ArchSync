@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ArchSync 正在启动</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: #0d1117; color: #e6edf3;
+      font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card { width: min(720px, 92vw); padding: 28px 32px; background: #141b24; border: 1px solid #262d38; border-radius: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .mark { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, #586a86, #388bfd); display: grid; place-items: center; font-weight: 700; }
+    h1 { font-size: 20px; margin: 0; }
+    .phase { font-size: 15px; margin: 6px 0 14px; color: #e6edf3; }
+    .detail { font-size: 12.5px; color: #8b98a9; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+    .bar { height: 4px; background: #18212c; border-radius: 3px; overflow: hidden; margin: 16px 0; }
+    .bar > i { display: block; height: 100%; width: 35%; background: #388bfd; border-radius: 3px; animation: slide 1.4s ease-in-out infinite; }
+    @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+    .error .bar { display: none; }
+    .error .phase { color: #f85149; }
+    .actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+    button { background: #18212c; color: #e6edf3; border: 1px solid #303845; border-radius: 7px; padding: 8px 14px; cursor: pointer; font-size: 13px; }
+    button:hover { border-color: #58a6ff; color: #58a6ff; }
+    .meta { margin-top: 16px; font-size: 11px; color: #627083; }
+    .pill { display: inline-block; padding: 1px 7px; border: 1px solid #303845; border-radius: 999px; margin-right: 6px; font-size: 10.5px; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="brand"><span class="mark">A</span><h1>ArchSync</h1></div>
+    <div class="phase" id="phase">正在启动本地服务…</div>
+    <div class="bar"><i></i></div>
+    <div class="detail" id="detail">正在打开本地数据库与索引，这一步不会扫描仓库源码。</div>
+    <div class="actions">
+      <button id="retry" style="display:none">重试启动</button>
+      <button id="logs">打开日志目录</button>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+  <script>
+    const api = window.archsyncDesktop || {};
+    const phaseEl = document.getElementById('phase');
+    const detailEl = document.getElementById('detail');
+    const metaEl = document.getElementById('meta');
+    const retryEl = document.getElementById('retry');
+    const cardEl = document.getElementById('card');
+    let startedAt = Date.now();
+
+    function render(status) {
+      if (!status || typeof status !== 'object') return;
+      if (typeof status.startedAt === 'number') startedAt = status.startedAt;
+      const elapsed = Math.max(0, Math.round((status.elapsedMs ?? (Date.now() - startedAt)) / 1000));
+      cardEl.classList.toggle('error', status.phase === 'error');
+      phaseEl.textContent = status.message || (status.phase === 'error' ? '启动失败' : '正在启动本地服务…');
+      detailEl.textContent = status.detail || '';
+      retryEl.style.display = status.phase === 'error' ? 'inline-block' : 'none';
+      const pills = [];
+      if (status.build) pills.push('<span class="pill">' + status.build.version + '</span>');
+      if (status.build && status.build.sha) pills.push('<span class="pill">' + String(status.build.sha).slice(0, 8) + '</span>');
+      pills.push('<span class="pill">' + elapsed + 's</span>');
+      if (status.agentAlive === false) pills.push('<span class="pill">本地服务未运行</span>');
+      metaEl.innerHTML = pills.join('');
+    }
+
+    retryEl.onclick = () => { retryEl.disabled = true; api.retryStartup?.(); };
+    document.getElementById('logs').onclick = () => api.openLogs?.();
+    api.onStartupStatus?.(render);
+    api.getStartupInfo?.().then(render).catch(() => {});
+    // The main process also pushes status; this keeps elapsed time moving.
+    setInterval(() => { if (!cardEl.classList.contains('error')) metaEl.querySelectorAll('.pill').forEach(() => {}); }, 1000);
+  </script>
+</body>
+</html>

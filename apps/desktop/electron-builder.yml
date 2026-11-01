@@ -13,6 +13,7 @@ files:
   - dist-electron/preload.cjs
   - package.json
   - icon.png
+  - startup.html
 
 asar: true
 
@@ -20,6 +21,9 @@ extraResources:
   # 独立 Agent（esbuild 单文件 bundle，Electron utilityProcess 运行）
   - from: dist-electron/agent/agent.cjs
     to: agent.cjs
+  # 构建标识（版本 / Commit / 构建时间），用于关于页与诊断
+  - from: dist-electron/build-info.json
+    to: build-info.json
   - from: dist-electron/python-assets
     to: python-assets
   # 前端静态资源
