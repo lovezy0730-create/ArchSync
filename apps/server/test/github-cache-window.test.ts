@@ -103,4 +103,6 @@ it('registry GitHub route serves 200 with cached PRs while sync-status is absent
     vi.unstubAllGlobals();
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
-}, 30_000);
+  // Windows CI runners are ~3x slower than local; the add-local sync + route
+  // + close used to exceed the old 30s budget without indicating a defect.
+}, 90_000);

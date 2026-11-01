@@ -103,6 +103,9 @@ export async function createServer(overrides?: {
   const codeVersions = new Map<string, number>();
   const codeCounts = new Map<string, { files: number; symbols: number; stale: number }>();
   // Startup is observable: /healthz must answer before any repository scan.
+  let closing = false;
+  let backgroundScanTimer: ReturnType<typeof setTimeout> | null = null;
+  let watcherStartTimer: ReturnType<typeof setTimeout> | null = null;
   const startupStartedAt = Date.now();
   const startup = {
     startedAt: new Date(startupStartedAt).toISOString(),
@@ -645,7 +648,13 @@ export async function createServer(overrides?: {
   // Start watching after the server is reachable: source-aware watch targets
   // come from the restored index, and a large repository's initial walk must
   // not delay the window or the first background rebuild.
-  if (!monitorPaused) setTimeout(() => watcher.start(), 3500).unref?.();
+  if (!monitorPaused) {
+    watcherStartTimer = setTimeout(() => {
+      watcherStartTimer = null;
+      if (!closing) watcher.start();
+    }, 3500);
+    watcherStartTimer.unref?.();
+  }
   log(`鉴权模式: ${env.authMode}${env.authMode === 'code' ? '（访问码）' : env.authMode === 'mock' ? '（演示，仅限本机）' : '（无鉴权，仅限本机）'}`);
 
   // Prefer the project the user last opened, then everything else.
@@ -671,7 +680,7 @@ export async function createServer(overrides?: {
     const concurrency = Math.max(1, Math.min(Number(process.env.ARCHSYNC_STARTUP_CONCURRENCY ?? 2), 4));
     let cursor = 0;
     const worker = async () => {
-      while (cursor < orderedRebuildIds.length) {
+      while (!closing && cursor < orderedRebuildIds.length) {
         const id = orderedRebuildIds[cursor++]!;
         startup.background.running += 1;
         const started = Date.now();
@@ -706,13 +715,16 @@ export async function createServer(overrides?: {
   };
   // Let the window connect to /healthz first: a large synchronous AST scan
   // would otherwise block the event loop and make startup look slow.
-  setTimeout(() => {
+  backgroundScanTimer = setTimeout(() => {
+    backgroundScanTimer = null;
+    if (closing) return;
     void runBackgroundScans().catch((error) => {
       startup.phase = 'error';
       startup.lastError = (error as Error).message;
       log('[startup] 后台扫描异常', (error as Error).message);
     });
-  }, Number(process.env.ARCHSYNC_STARTUP_DELAY_MS ?? 2000)).unref?.();
+  }, Number(process.env.ARCHSYNC_STARTUP_DELAY_MS ?? 2000));
+  backgroundScanTimer.unref?.();
   if (env.githubToken === null) {
     log('未配置 GITHUB_TOKEN：含演示数据的项目将使用 demo fixtures（界面会标记「演示数据」）');
   }
@@ -723,6 +735,9 @@ export async function createServer(overrides?: {
   return {
     url,
     close: async () => {
+      closing = true;
+      if (backgroundScanTimer) { clearTimeout(backgroundScanTimer); backgroundScanTimer = null; }
+      if (watcherStartTimer) { clearTimeout(watcherStartTimer); watcherStartTimer = null; }
       clearInterval(sessionSweeper);
       await syncWorker.stop();
       dynamicRefs.rewatch = undefined;
