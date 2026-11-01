@@ -437,6 +437,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                     <div key={module.id} className="code-tree-module">
                       <button
                         className={module.id === moduleId ? 'selected' : ''}
+                        data-module-id={module.id}
                         onClick={() => navigate(module.id, null, null)}
                         title={module.discoveryEvidence?.join('、')}
                       >

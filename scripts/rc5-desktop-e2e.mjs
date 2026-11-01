@@ -348,7 +348,10 @@ try {
     const file = index.files?.find((item) => item.filePath === 'packages/scanner/src/imports.ts');
     return index.state === 'ready' && file?.symbols.some((item) => item.name === 'analyzeImports') ? file.moduleId : null;
   }, self, { label: 'real scanner self-index ready', timeout: 180000 });
-  await page.locator(`[data-module-id="${scannerModule}"]`).first().click();
+  // Use the always-visible architecture tree; the graph node may be in a
+  // different level/mode after a restart or a page reload.
+  await page.getByRole('button', { name: '关系图' }).click().catch(() => undefined);
+  await page.locator(`.code-tree [data-module-id="${scannerModule}"]`).click();
   await page.locator('.arch-node[data-file-path="packages/scanner/src/imports.ts"]').first().click();
   await page.getByRole('button', { name: '符号调用' }).click();
   await page.locator('.arch-node[data-symbol-uid]', { hasText: 'analyzeImports' }).first().click();
