@@ -40,6 +40,7 @@ function writePreference(key: string, value: string): void {
 
 export function CodeWorkbench({ projectId }: { projectId: string }) {
   const [index, setIndex] = useState<CodeIndexResponse | null>(null);
+  const [indexState, setIndexState] = useState<'idle' | 'scanning' | 'ready' | 'error' | 'unavailable'>('idle');
   const [indexError, setIndexError] = useState('');
   const [arch, setArch] = useState<ArchitectureResponse | null>(null);
   const [archError, setArchError] = useState('');
@@ -135,7 +136,12 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
         // transferred when its version actually changed.
         const status = await loadCodeIndexStatus(projectId);
         if (!alive || generation !== indexGeneration.current) return;
-        if (indexVersionRef.current === null || status.indexVersion !== indexVersionRef.current) {
+        setIndexState(status.state);
+        // During a rebuild the AST batch lands before the Python batch; do not
+        // replace a complete tree with a half-scanned one. Apply the full
+        // index only when the rebuild reports ready (or failed).
+        if ((status.state === 'ready' || status.state === 'error') &&
+            (indexVersionRef.current === null || status.indexVersion !== indexVersionRef.current)) {
           const next = await loadCodeIndex(projectId);
           if (!alive || generation !== indexGeneration.current) return;
           indexVersionRef.current = next.indexVersion ?? status.indexVersion;
@@ -340,9 +346,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
     }
   };
 
-  const stateLabel = index
-    ? ({ idle: '待扫描', scanning: '扫描中', ready: '扫描完成', error: '扫描失败', unavailable: '不可用' })[index.state]
-    : '正在加载索引…';
+  const stateLabel = ({ idle: '待扫描', scanning: '扫描中', ready: '扫描完成', error: '扫描失败', unavailable: '不可用' })[indexState];
   const archSelection = archSelectionFor(level, moduleId, filePath, symbolUid);
 
   return (
@@ -358,7 +362,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
         <span>
           {index
             ? `${stateLabel} · ${index.summary.fresh} 个有效文件 · ${index.summary.freshSymbols} 个符号 · ${index.summary.stale} 个过期文件`
-            : stateLabel}
+            : stateLabel === '扫描中' ? '扫描中…' : '正在加载索引…'}
         </span>
       </div>
       {(indexError || index?.error) && <p className="code-alert" role="alert">{indexError || index?.error}</p>}
