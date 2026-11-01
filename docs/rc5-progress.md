@@ -79,3 +79,27 @@ passed on `20261030.294`, so treat that as a runner-image flake and compare
 the image version before chasing an installer regression.
 
 Relevant command: `pnpm --filter @archsync/server exec vitest run test/live-code-index.test.ts test/registry.test.ts test/github-cache-window.test.ts`.
+
+The RC5.1 trial regression is fixed. Repositories without YAML no longer become
+three top-level folder cards: `architecture/discovery.ts` finds workspace
+packages, Python packages and directory clusters, makes top-level directories
+systems, and assigns every file to one leaf module. The snapshot's module
+dependencies now come from resolved AST/Python imports and calls, and
+`GET /architecture` serves system/module/file/symbol graphs whose edge kinds
+distinguish planned, observed, resolved, inferred, unresolved and stale. See
+`docs/rc5-architecture.md`.
+
+The planned view no longer hangs: `/snapshot` waits a bounded time, then returns
+`snapshot_pending`/`snapshot_failed` with a job id and reason; the client has
+request timeouts, a snapshot state machine (loading/pending/stale/error/ready),
+stale caching and a real retry. Team and GitHub failures cannot block the local
+graph. `/resync` works without `.archsync/project.yaml`, Git HEAD is read
+independently via `/git`, and the workbench polls `/code-index/status` instead
+of transferring the full index every 2.5 s.
+
+CI cannot read a user's local QQAgent checkout; the Windows E2E uses a fixed
+structural fixture and the new
+`scripts/rc5-architecture-acceptance.mjs --repo <path>` is the read-only local
+acceptance path for the real repository. The fixture is not presented as
+QQAgent evidence.
+
