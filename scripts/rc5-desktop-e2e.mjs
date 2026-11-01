@@ -118,21 +118,54 @@ try {
   const before = await page.evaluate(async (id) => (await (await fetch(`/api/v1/projects/${id}/code-index`)).json()), projectId);
   const uid = before.files.flatMap((file) => file.symbols).find((symbol) => symbol.name === 'hello').symbolUid;
   await page.getByText(/扫描完成 · 3 个有效文件/).waitFor({ timeout: 30000 });
-  await page.locator('.react-flow__edge').first().waitFor();
+  await page.locator('.arch-node').first().waitFor({ timeout: 60000 });
+  // The system level must show real modules and resolved edges, not folders.
+  const systemGraph = await page.locator('.arch-graph').innerText();
+  assert.ok(/src（根文件）/.test(systemGraph), 'system graph is missing the src module');
+  assert.ok(/lib（根文件）/.test(systemGraph), 'system graph is missing the lib module');
+  assert.ok(/已解析/.test(systemGraph), 'system graph has no resolved dependency edge');
   await page.screenshot({ path: join(evidence, 'rc5-module-graph.png') });
-  await page.getByRole('button', { name: /src（推断）/ }).click();
-  await page.getByRole('button', { name: /src\/main.ts/ }).click();
-  await page.getByRole('button', { name: /hello.*function/ }).click();
+
+  // system -> module
+  await page.locator('.arch-node[data-node-kind="module"]', { hasText: 'src（根文件）' }).first().click();
+  await page.locator('.arch-node[data-file-path="src/main.ts"]').first().waitFor({ timeout: 30000 });
+  await page.screenshot({ path: join(evidence, 'rc5-module-detail.png') });
+  // module -> file
+  await page.locator('.arch-node[data-file-path="src/main.ts"]').first().click();
+  await page.getByRole('button', { name: '符号调用' }).click();
+  await page.locator('.arch-node[data-symbol-uid]').first().waitFor({ timeout: 30000 });
+  // file -> symbol
+  await page.locator('.arch-node', { hasText: 'hello' }).first().click();
   await page.locator('.code-source').getByText('export function hello', { exact: false }).waitFor();
   await page.getByText('参数：n: number', { exact: false }).waitFor({ timeout: 15000 });
   await page.screenshot({ path: join(evidence, 'rc5-ts-source.png') });
-  await page.getByRole('button', { name: /src（推断）/ }).first().click();
-  await page.getByRole('button', { name: /src\/service.py/ }).click();
-  await page.getByRole('button', { name: /Service.greet/ }).click();
+  // back to the module, then Python
+  await page.getByRole('button', { name: /src（根文件）/ }).first().click();
+  await page.getByRole('button', { name: '列表' }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/service.py/ }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
   await page.locator('.code-source').getByText('def greet', { exact: false }).waitFor();
   await page.screenshot({ path: join(evidence, 'rc5-python-source.png') });
+
+  // Planned view must not hang and must show discovered modules.
+  await page.getByRole('button', { name: '规划视图' }).click();
+  await page.locator('.react-flow__node').first().waitFor({ timeout: 60000 });
+  assert.equal(await page.getByText('正在加载快照…').count(), 0, 'planned view stuck on loading');
+  const plannedText = await page.locator('.canvas-wrap').innerText();
+  assert.ok(/src（根文件）/.test(plannedText), 'planned view is missing the src module');
+  await page.screenshot({ path: join(evidence, 'rc5-planned-view.png') });
+  for (let i = 0; i < 10; i++) {
+    await page.getByRole('button', { name: '代码架构' }).click();
+    await page.locator('.code-workbench').waitFor({ timeout: 30000 });
+    await page.getByRole('button', { name: '规划视图' }).click();
+    await page.locator('.react-flow__node').first().waitFor({ timeout: 30000 });
+  }
+  console.log('[e2e] planned/actual switching stayed stable across 10 cycles');
+
+  await page.getByRole('button', { name: '代码架构' }).click();
+  await page.locator('.project-menu summary').click();
   await page.getByRole('button', { name: '刷新 GitHub' }).click();
-  await page.locator('.registry-status [role=alert]').waitFor();
+  await page.locator('.project-menu-panel [role=alert]').waitFor();
   assert.match(await page.locator('.badge-gh').getAttribute('class'), /badge-unavailable/);
   const editStartedAt = Date.now();
   await writeFile(join(repo, 'src', 'main.ts'), "import { helper } from '../lib/tool';\nexport function hello(n: number): number { return helper(n) + 2; }\n");
@@ -146,10 +179,10 @@ try {
     const index = await (await fetch(`/api/v1/projects/${id}/code-index`)).json();
     return index.changes?.some((change) => change.path === 'src/main.ts' && change.kind === 'modified');
   }, projectId, { label: 'uncommitted change overlay', timeout: 30000 });
-  await page.getByRole('button', { name: /src（推断）/ }).first().click();
-  await page.getByRole('button', { name: /src\/main.ts.*未提交/ }).waitFor({ timeout: 30000 });
-  await page.getByRole('button', { name: /src\/service.py/ }).click();
-  await page.getByRole('button', { name: /Service.greet/ }).click();
+  await page.getByRole('button', { name: /src（根文件）/ }).first().click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/main.ts.*未提交/ }).waitFor({ timeout: 30000 });
+  await page.locator('.code-main .code-list').getByRole('button', { name: /src\/service.py/ }).click();
+  await page.locator('.code-main .code-list').getByRole('button', { name: /Service.greet/ }).click();
   await access(join(data, 'data', 'registry.sqlite'));
   await stop();
   page = await launch();
@@ -164,6 +197,25 @@ try {
     await page.setViewportSize(size);
     assert.equal(await page.locator('.topbar').evaluate((el) => el.scrollWidth <= el.clientWidth), true, `top bar overflows at ${size.width}`);
   }
+
+  // A failed snapshot must surface a concrete error with a working retry.
+  await page.route('**/api/v1/projects/*/snapshot', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'snapshot_failed', message: '模拟快照失败（E2E）' } }),
+    }),
+  );
+  await page.reload();
+  await page.waitForURL('http://127.0.0.1:*/');
+  await page.getByRole('button', { name: '规划视图' }).click();
+  await page.getByText('架构快照加载失败').waitFor({ timeout: 30000 });
+  await page.getByText(/模拟快照失败/).waitFor({ timeout: 15000 });
+  await page.unroute('**/api/v1/projects/*/snapshot');
+  await page.getByRole('button', { name: '重试' }).click();
+  await page.locator('.react-flow__node').first().waitFor({ timeout: 60000 });
+  console.log('[e2e] snapshot failure surfaced with retry and recovered');
+  await page.getByRole('button', { name: '代码架构' }).click();
   await page.locator('.add-project-btn').click();
   await page.getByRole('dialog', { name: '添加项目' }).locator('input').first().fill(resolve('.'));
   await page.getByRole('button', { name: '添加', exact: true }).click();
@@ -177,9 +229,10 @@ try {
     const file = index.files?.find((item) => item.filePath === 'packages/scanner/src/imports.ts');
     return index.state === 'ready' && file?.symbols.some((item) => item.name === 'analyzeImports') ? file.moduleId : null;
   }, self, { label: 'real scanner self-index ready', timeout: 180000 });
-  await page.locator(`[data-module-id="${scannerModule}"]`).click();
-  await page.getByRole('button', { name: /packages\/scanner\/src\/imports.ts/ }).click();
-  await page.getByRole('button', { name: /analyzeImports.*function/ }).click();
+  await page.locator(`[data-module-id="${scannerModule}"]`).first().click();
+  await page.locator('.arch-node[data-file-path="packages/scanner/src/imports.ts"]').first().click();
+  await page.getByRole('button', { name: '符号调用' }).click();
+  await page.locator('.arch-node[data-symbol-uid]', { hasText: 'analyzeImports' }).first().click();
   await page.locator('.code-source').getByText('function analyzeImports', { exact: false }).waitFor();
   await page.screenshot({ path: join(evidence, 'rc5-archsync-source.png') });
   await waitFor(async () => (await (await fetch('/api/v1/workspace/active-project')).json()).projectId === 'archsync', undefined, { label: 'active project persisted as archsync' });
