@@ -7,10 +7,10 @@ function makeSnapshotFor(projectId: string) {
   const config: ProjectConfigFile = {
     schemaVersion: 1,
     project: { id: projectId, name: 'P', github: { owner: '', repo: '', defaultBranch: 'main' }, root: '.' },
-    layers: [{ id: 'l', label: 'L', order: 1 }],
+    layers: [{ id: 'layer-1', label: 'L', order: 1 }],
     modules: [
       {
-        id: 'm', label: 'M', layer: 'l', description: '', owners: [], paths: ['src/**'], issues: [],
+        id: 'module-1', label: 'M', layer: 'layer-1', description: '', owners: [], paths: ['src/**'], issues: [],
         plannedDependsOn: [], acceptance: { requiredIssues: [], requiredChecks: [], manualApproval: false },
       },
     ],
@@ -22,7 +22,7 @@ function makeSnapshotFor(projectId: string) {
     baselineFiles: ['src/a.ts'],
     workspaceFiles: ['src/a.ts'],
     overlay: [],
-    modules: [{ moduleId: 'm', matchedBaselinePaths: ['src/a.ts'], matchedWorkspacePaths: ['src/a.ts'], overlayChanges: [], overlappedWith: [] }],
+    modules: [{ moduleId: 'module-1', matchedBaselinePaths: ['src/a.ts'], matchedWorkspacePaths: ['src/a.ts'], overlayChanges: [], overlappedWith: [] }],
     errors: [],
     scannedAt: new Date().toISOString(),
     importAnalysisRan: true,

@@ -8,6 +8,7 @@ import { DetailsDrawer } from './components/DetailsDrawer.js';
 import { LoginDialog } from './components/LoginDialog.js';
 import { CodeWorkbench } from './components/CodeWorkbench.js';
 import { AddProjectDialog } from './components/AddProjectDialog.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 
 export function App() {
   const boot = useStore((s) => s.boot);
@@ -36,6 +37,11 @@ export function App() {
   useEffect(() => {
     if (booted && window.archsyncDesktop && !identity && authMode !== 'code') setIdentity({ name: '本地用户' });
   }, [booted, identity, authMode, setIdentity]);
+  useEffect(() => {
+    // E2E / diagnostics marker: the app shell actually mounted.
+    (window as unknown as { __archsyncReady?: boolean }).__archsyncReady = true;
+    (window as unknown as { __archsyncBooted?: boolean }).__archsyncBooted = booted;
+  }, [booted]);
 
   // Switching to the architecture view must actively guarantee its data.
   // The old behaviour only swapped components and could sit on a placeholder
@@ -60,9 +66,17 @@ export function App() {
               {showCode ? '规划视图' : '代码架构'}
             </button>
           )}
-          {codeMode && projectId ? <CodeWorkbench projectId={projectId} /> : !codeMode && <ReactFlowProvider>
-            <GraphCanvas />
-          </ReactFlowProvider>}
+          {codeMode && projectId ? (
+            <ErrorBoundary scope="代码工作台">
+              <CodeWorkbench projectId={projectId} />
+            </ErrorBoundary>
+          ) : !codeMode ? (
+            <ErrorBoundary scope="架构图">
+              <ReactFlowProvider>
+                <GraphCanvas />
+              </ReactFlowProvider>
+            </ErrorBoundary>
+          ) : null}
           {codeMode && booted && !projectId && (
             <div className="welcome-panel">
               <h2>欢迎使用 ArchSync</h2>

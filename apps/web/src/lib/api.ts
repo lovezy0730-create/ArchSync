@@ -70,6 +70,30 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+export interface DiagnosticsInfo {
+  app: { name: string; version: string; sha: string; builtAt: string | null; dirty: boolean | null };
+  agent: { version: string; node: string; pid: number; uptimeMs: number; phase: string };
+  database: { path: string; schemaVersion: number | null };
+  dataDir: string;
+  logDir: string | null;
+  startup: {
+    startedAt: string;
+    phase: string;
+    listenMs: number | null;
+    restoredProjects: number;
+    background: { total: number; completed: number; failed: number; running: number };
+    lastError: string | null;
+    uptimeMs: number;
+  };
+  projects: Array<{
+    id: string; name: string; rootDir: string; kind: string | null;
+    snapshotVersion: number | null;
+    codeIndex: { files: number; symbols: number; stale: number } | null;
+    codeState: { state: string; error: string | null; scannedAt: string | null } | null;
+  }>;
+  environment: Record<string, unknown>;
+}
+
 export interface MeInfo {
   mode: 'mock' | 'code' | 'off';
   authenticated: boolean;
@@ -78,6 +102,7 @@ export interface MeInfo {
 
 export const api = {
   me: () => request<MeInfo>('/api/v1/me'),
+  diagnostics: () => request<DiagnosticsInfo>('/api/v1/diagnostics', undefined, { timeoutMs: 8_000 }),
   login: (code: string) =>
     request<{ ok: boolean }>('/api/v1/auth/login', {
       method: 'POST',

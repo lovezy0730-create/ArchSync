@@ -856,3 +856,23 @@ textarea:focus { outline: none; border-color: var(--accent); }
 .project-menu-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .project-menu-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .arch-badge-changed { color: var(--warn); border-color: var(--warn); }
+
+/* ---------- fatal error / about diagnostics ---------- */
+.fatal-error { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 40; padding: 24px; }
+.fatal-error-card { width: min(820px, 94vw); max-height: 86vh; overflow: auto; background: var(--panel); border: 1px solid var(--border2); border-radius: var(--radius); padding: 22px; display: flex; flex-direction: column; gap: 10px; }
+.fatal-error-card strong { font-size: 16px; color: var(--text); }
+.fatal-error-card p { margin: 0; color: var(--text-dim); }
+.fatal-error-card pre { margin: 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-size: 11.5px; color: var(--text-dim); }
+.fatal-error-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.fatal-error-actions button { background: var(--panel2); color: var(--text); border: 1px solid var(--border2); border-radius: 7px; padding: 7px 12px; cursor: pointer; }
+.fatal-error-actions button:hover { border-color: var(--accent); color: var(--accent); }
+.about-card { width: min(760px, 94vw); }
+.about-grid { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; margin: 8px 0; font-size: 12.5px; }
+.about-grid dt { color: var(--text-dim); }
+.about-grid dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.about-path { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+.about-projects { display: flex; flex-direction: column; gap: 4px; max-height: 24vh; overflow: auto; border-top: 1px solid var(--border); padding-top: 8px; }
+.about-projects p { margin: 0; font-size: 12px; }
+.about-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.about-actions button { background: var(--panel2); color: var(--text); border: 1px solid var(--border2); border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+.about-actions button:hover { border-color: var(--accent); color: var(--accent); }

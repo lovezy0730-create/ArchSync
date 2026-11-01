@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import type {
-  ModuleDetail,
-  PresenceParticipant,
-  ProjectSummary,
-  Snapshot,
-  WorkflowState,
-  ImplementationState,
-  ConfigError,
+import {
+  SnapshotSchema,
+  type ModuleDetail,
+  type PresenceParticipant,
+  type ProjectSummary,
+  type Snapshot,
+  type WorkflowState,
+  type ImplementationState,
+  type ConfigError,
 } from '@archsync/contracts';
 
 import { loadIdentity, saveIdentity, type Identity } from './lib/identity.js';
@@ -526,8 +527,16 @@ export const useStore = create<AppState>((set, get) => ({
     const generation = ++snapshotGeneration;
     const current = get().snapshot;
     try {
-      const snapshot = await provider.loadSnapshot(projectId);
+      const parsedSnapshot = SnapshotSchema.safeParse(await provider.loadSnapshot(projectId));
       if (get().projectId !== projectId || generation !== snapshotGeneration) return;
+      if (!parsedSnapshot.success) {
+        set({
+          snapshotStatus: current ? 'stale' : 'error',
+          snapshotError: `快照格式与当前版本不兼容：${parsedSnapshot.error.issues[0]?.message ?? 'schema mismatch'}`,
+        });
+        return;
+      }
+      const snapshot = parsedSnapshot.data;
       if (!current || snapshot.version >= current.version) {
         snapshotCache.set(snapshotCacheKey(projectId), snapshot);
         const views = snapshotViews(snapshot);
@@ -682,7 +691,16 @@ async function loadProjectData(
   if (useStore.getState().projectId !== projectId || generation !== snapshotGeneration) return;
 
   if (snapshotResult.status === 'fulfilled') {
-    const snapshot = snapshotResult.value;
+    const parsedSnapshot = SnapshotSchema.safeParse(snapshotResult.value);
+    if (!parsedSnapshot.success) {
+      set({
+        snapshot: cached,
+        snapshotStatus: cached ? 'stale' : 'error',
+        snapshotError: `快照格式与当前版本不兼容：${parsedSnapshot.error.issues[0]?.message ?? 'schema mismatch'}。请重试或重新扫描。`,
+      });
+      return;
+    }
+    const snapshot = parsedSnapshot.data;
     snapshotCache.set(snapshotCacheKey(projectId), snapshot);
     const viewState = initialViewState(snapshot, projectId);
     set({

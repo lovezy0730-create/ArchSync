@@ -16,6 +16,7 @@ import {
   type SourceResponse,
 } from '../lib/code-index-api.js';
 import { ArchitectureGraph } from './ArchitectureGraph.js';
+import { ErrorBoundary } from './ErrorBoundary.js';
 
 type Level = 'system' | 'module' | 'file' | 'symbol';
 
@@ -185,7 +186,8 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
 
   /* ----------------------------- architecture ----------------------------- */
   useEffect(() => {
-    if (!index) return;
+    // The system graph does not need the full (potentially multi-megabyte)
+    // code index; render it first and let the index arrive in the background.
     let alive = true;
     const generation = ++archGeneration.current;
     setArchLoading(true);
@@ -201,6 +203,9 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
     void loadArchitecture(projectId, query)
       .then((next) => {
         if (!alive || generation !== archGeneration.current) return;
+        if (!next || !Array.isArray(next.nodes) || !Array.isArray(next.edges)) {
+          throw new Error('架构投影数据无效（nodes/edges 缺失）');
+        }
         // Never let an older projection overwrite a newer index state.
         setArch((current) => (current && next.indexVersion < current.indexVersion ? current : next));
       })
@@ -305,7 +310,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
   const moduleFiles = files.filter((file) => file.moduleId === moduleId && fileMatches(file));
 
   const filteredArch = useMemo(() => {
-    if (!arch) return null;
+    if (!arch || !Array.isArray(arch.nodes) || !Array.isArray(arch.edges)) return null;
     const keep = (node: ArchitectureNode): boolean => {
       if (terms) {
         const haystack = `${node.label} ${node.filePath ?? ''}`.toLowerCase();
@@ -362,7 +367,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
         <span>
           {index
             ? `${stateLabel} · ${index.summary.fresh} 个有效文件 · ${index.summary.freshSymbols} 个符号 · ${index.summary.stale} 个过期文件`
-            : stateLabel === '扫描中' ? '扫描中…' : '正在加载索引…'}
+            : stateLabel === '扫描中' ? '扫描中…（架构图可先查看）' : '正在加载索引…（架构图可先查看）'}
         </span>
       </div>
       {(indexError || index?.error) && <p className="code-alert" role="alert">{indexError || index?.error}</p>}
@@ -473,12 +478,14 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                 </div>
               )}
               {!archError && filteredArch && (
-                <ArchitectureGraph
-                  response={filteredArch}
-                  selectedId={archSelection}
-                  onSelect={openNode}
-                  changedPaths={changedPaths}
-                />
+                <ErrorBoundary scope="架构关系图">
+                  <ArchitectureGraph
+                    response={filteredArch}
+                    selectedId={archSelection}
+                    onSelect={openNode}
+                    changedPaths={changedPaths}
+                  />
+                </ErrorBoundary>
               )}
               {!archError && !filteredArch && !archLoading && <p className="hint">没有可显示的架构数据。</p>}
             </div>
@@ -503,7 +510,7 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                   </div>
                 ))}
               {level === 'module' &&
-                moduleFiles.map((file) => (
+                moduleFiles.slice(0, 300).map((file) => (
                   <button key={file.filePath} onClick={() => navigate(moduleId, file.filePath, null)}>
                     <strong>{file.filePath}</strong>
                     <span>
@@ -514,13 +521,15 @@ export function CodeWorkbench({ projectId }: { projectId: string }) {
                 ))}
               {level === 'module' && moduleFiles.length === 0 && <p>没有符合条件的文件。</p>}
               {(level === 'file' || level === 'symbol') &&
-                symbols.map((symbol) => (
+                symbols.slice(0, 500).map((symbol) => (
                   <button key={symbol.symbolUid} className={symbol.symbolUid === symbolUid ? 'selected' : ''} onClick={() => navigate(moduleId, filePath, symbol.symbolUid)}>
                     <strong>{symbol.qualifiedName}</strong>
                     <span>{symbol.kind} · 第 {symbol.startLine} 行</span>
                   </button>
                 ))}
               {(level === 'file' || level === 'symbol') && symbols.length === 0 && <p>没有符合条件的声明。</p>}
+              {(level === 'file' || level === 'symbol') && symbols.length > 500 && <p className="hint">仅显示前 500 个声明；请使用搜索缩小范围。</p>}
+              {level === 'module' && moduleFiles.length > 300 && <p className="hint">仅显示前 300 个文件；请使用搜索缩小范围。</p>}
             </div>
           )}
         </div>

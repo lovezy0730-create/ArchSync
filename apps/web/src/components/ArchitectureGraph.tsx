@@ -71,6 +71,8 @@ function layout(nodes: ArchitectureNode[]): Map<string, { x: number; y: number }
   return positions;
 }
 
+const MAX_RENDERED_NODES = 600;
+
 export function ArchitectureGraph({
   response,
   selectedId,
@@ -83,21 +85,43 @@ export function ArchitectureGraph({
   /** Workspace paths with uncommitted changes, marked on their nodes. */
   changedPaths?: Set<string>;
 }) {
+  // Never feed ReactFlow duplicate ids, dangling endpoints or thousands of
+  // nodes: a malformed projection must degrade, not freeze the renderer.
+  const safe = useMemo(() => {
+    const seen = new Set<string>();
+    const nodes: ArchitectureNode[] = [];
+    for (const node of response.nodes) {
+      if (!node || typeof node.id !== 'string' || node.id.length === 0 || seen.has(node.id)) continue;
+      seen.add(node.id);
+      nodes.push(node);
+      if (nodes.length >= MAX_RENDERED_NODES) break;
+    }
+    const ids = new Set(nodes.map((node) => node.id));
+    const edgeIds = new Set<string>();
+    const edges = response.edges.filter((edge) => {
+      if (!edge || !ids.has(edge.source) || !ids.has(edge.target) || edge.source === edge.target) return false;
+      if (edgeIds.has(edge.id)) return false;
+      edgeIds.add(edge.id);
+      return true;
+    });
+    return { nodes, edges, truncated: response.nodes.length > nodes.length };
+  }, [response.nodes, response.edges]);
+
   const adjacency = useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const edge of response.edges) {
+    for (const edge of safe.edges) {
       if (!map.has(edge.source)) map.set(edge.source, new Set());
       if (!map.has(edge.target)) map.set(edge.target, new Set());
       map.get(edge.source)!.add(edge.target);
       map.get(edge.target)!.add(edge.source);
     }
     return map;
-  }, [response.edges]);
+  }, [safe.edges]);
 
   const nodes = useMemo<Node[]>(() => {
-    const positions = layout(response.nodes);
+    const positions = layout(safe.nodes);
     const related = selectedId ? adjacency.get(selectedId) ?? new Set<string>() : null;
-    return response.nodes.map((node) => {
+    return safe.nodes.map((node) => {
       const dimmed = selectedId !== null && node.id !== selectedId && !related?.has(node.id);
       return {
         id: node.id,
@@ -136,11 +160,11 @@ export function ArchitectureGraph({
         style: { width: NODE_WIDTH, padding: 0, border: 0, background: 'transparent' },
       } satisfies Node;
     });
-  }, [response.nodes, selectedId, adjacency, onSelect, changedPaths]);
+  }, [safe.nodes, selectedId, adjacency, onSelect, changedPaths]);
 
   const edges = useMemo<Edge[]>(() => {
     const related = selectedId ? adjacency.get(selectedId) : null;
-    return response.edges.map((edge) => {
+    return safe.edges.map((edge) => {
       const style = EDGE_STYLE[edge.kind];
       const highlighted = selectedId === null || (related?.has(edge.source) && related?.has(edge.target)) || edge.source === selectedId || edge.target === selectedId;
       return {
@@ -155,10 +179,10 @@ export function ArchitectureGraph({
         animated: edge.kind === 'unresolved',
       } satisfies Edge;
     });
-  }, [response.edges, selectedId, adjacency]);
+  }, [safe.edges, selectedId, adjacency]);
 
-  const kinds = [...new Set(response.edges.map((edge) => edge.kind))];
-  const empty = response.nodes.length === 0;
+  const kinds = [...new Set(safe.edges.map((edge) => edge.kind))];
+  const empty = safe.nodes.length === 0;
 
   return (
     <div className="arch-graph">
@@ -167,6 +191,7 @@ export function ArchitectureGraph({
           <span key={kind} className={`arch-legend-item arch-legend-${kind}`}>{EDGE_STYLE[kind].label}</span>
         ))}
         {response.stale && <span className="arch-legend-item arch-legend-stale">包含过期索引</span>}
+        {safe.truncated && <span className="arch-legend-item arch-legend-stale">仅渲染前 {MAX_RENDERED_NODES} 个节点</span>}
       </div>
       {empty ? (
         <div className="arch-empty">

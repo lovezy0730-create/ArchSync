@@ -10,6 +10,7 @@ import type { ImplementationState, WorkflowState } from '@archsync/contracts';
 import type { YamlImportResult } from '../store.js';
 import { HistoryPanel } from './HistoryPanel.js';
 import { TimelinePanel } from './TimelinePanel.js';
+import { AboutDialog } from './AboutDialog.js';
 import type { RegistryProjectInfo } from '../lib/data-provider-registry.js';
 import { api } from '../lib/api.js';
 
@@ -44,6 +45,7 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
   const registered = (registryList as RegistryProjectInfo[]).find(p => p.id === projectId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [gitInfo, setGitInfo] = useState<{ available: boolean; branch: string | null; head: string | null; dirty: number | null; error: string | null } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +164,7 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
               <button disabled={remoteBusy || !registered.monitoringEnabled} onClick={() => {setRemoteBusy(true);setRemoteError(null);void syncGithub(registered.id).then(async r => {if(!r.ok) setRemoteError(r.errors.join('；'));await loadRegistry();}).catch(e => setRemoteError(e.message)).finally(() => setRemoteBusy(false));}}>刷新 GitHub</button>
               <button disabled={remoteBusy} onClick={() => {void setMonitoring(registered.id,!registered.monitoringEnabled).then(() => loadRegistry()).catch(e => setRemoteError(e.message));}}>{registered.monitoringEnabled ? '暂停' : '恢复'}</button>
               <button disabled={remoteBusy} onClick={() => {if(window.confirm('从 ArchSync 移除此项目？源代码会保留。')) void remove(registered.id).then(async () => {await loadRegistry();window.location.reload();}).catch(e => setRemoteError(e.message));}}>移除</button>
+              <button onClick={() => setAboutOpen(true)}>关于 / 诊断</button>
             </div>
             {registered.lastScanError && <span role="alert">源码扫描：{registered.lastScanError}</span>}
             {(remoteError || registered.lastSyncError) && <span role="alert">GitHub 同步：{remoteError ?? registered.lastSyncError}</span>}
@@ -297,6 +300,7 @@ export function TopBar({ onAddProject, showCode }: { onAddProject: () => void; s
       {timelineOpen && projectId && (
         <TimelinePanel projectId={projectId} onClose={() => setTimelineOpen(false)} />
       )}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
     </header>
   );
 }
