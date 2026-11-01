@@ -45,6 +45,10 @@ export async function rebuildSnapshot(
     stats: Map<string, ModuleObservationStats>;
   },
 ): Promise<RebuildResult> {
+  const timing = process.env.ARCHSYNC_REBUILD_TIMING === '1';
+  const startedAt = Date.now();
+  const mark = (label: string) => { if (timing) console.log(`[snapshot] ${entry.id} ${label} ${Date.now() - startedAt}ms`); };
+  mark('start');
   await store.mutate((data) => {
     const p = data.projects[entry.id] ?? (data.projects[entry.id] = emptyProjectState());
     p.jobs[jobId] = {
@@ -57,8 +61,10 @@ export async function rebuildSnapshot(
     };
   });
 
+  mark('job-recorded');
   try {
     const scan = entry.rootDir ? await scanProject(entry.config, entry.rootDir) : {ok:false,baselineSha:null,branch:null,baselineFiles:[],workspaceFiles:[],overlay:[],modules:[],errors:['远端只读项目：无本地文件扫描，架构未知'],scannedAt:new Date().toISOString(),importAnalysisRan:false,observedDependencies:[]};
+    mark('scan-project');
     if (observation) {
       // The code index is the authoritative source for real dependencies: it
       // covers TS/JS imports, Python imports and cross-file calls. Prefer it
@@ -67,6 +73,7 @@ export async function rebuildSnapshot(
       scan.importAnalysisRan = true;
     }
     const collab = await loadCollab(entry, githubToken, cacheReader);
+    mark('load-collab');
     const state = store.project(entry.id);
     const candidate = buildSnapshot({
       config: entry.config,
@@ -85,6 +92,7 @@ export async function rebuildSnapshot(
       now: new Date().toISOString(),
     });
 
+    mark('build-snapshot');
     let changed = false;
     await store.mutate((data) => {
       const p = data.projects[entry.id]!;
@@ -97,6 +105,7 @@ export async function rebuildSnapshot(
       p.jobs[jobId]!.state = 'done';
       p.jobs[jobId]!.finishedAt = new Date().toISOString();
     });
+    mark('stored');
     return { snapshot: store.project(entry.id).currentSnapshot, changed, jobId, error: null,
       overlay: !entry.rootDir || scan.errors.some((error) => error.startsWith('git status 失败:')) ? null : scan.overlay };
   } catch (err) {

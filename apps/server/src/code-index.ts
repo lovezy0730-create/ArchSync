@@ -36,8 +36,21 @@ function comparableFacts(file: SourceFile): string {
 }
 /** Storage only: callers provide parser outcomes, never execute repository code. */
 export class CodeIndex {
+  /**
+   * Parsed-file cache keyed by an in-process version. A large index is parsed
+   * by the scanner, the projection, the watcher and the API; re-validating the
+   * same multi-megabyte payload for each caller blocks the event loop.
+   */
+  private readonly versions = new Map<string, number>();
+  private readonly fileCache = new Map<string, { version: number; files: SourceFile[] }>();
   constructor(private readonly db: LocalDatabase) {}
+  private bumpVersion(projectId: string): void {
+    this.versions.set(projectId, (this.versions.get(projectId) ?? 0) + 1);
+    this.fileCache.delete(projectId);
+  }
   get(projectId: string, filePath: string): SourceFile | null {
+    const cached = this.files(projectId).find((file) => file.filePath === filePath);
+    if (cached) return cached;
     const row = this.db
       .prepare(
         "SELECT payload_json FROM code_index_files WHERE project_id=? AND file_path=?",
@@ -46,11 +59,16 @@ export class CodeIndex {
     return row ? SourceFileSchema.parse(JSON.parse(row.payload_json)) : null;
   }
   files(projectId: string): SourceFile[] {
-    return (
+    const version = this.versions.get(projectId) ?? 0;
+    const cached = this.fileCache.get(projectId);
+    if (cached && cached.version === version) return cached.files;
+    const files = (
       this.db
         .prepare("SELECT payload_json FROM code_index_files WHERE project_id=?")
         .all(projectId) as Row[]
     ).map((r) => SourceFileSchema.parse(JSON.parse(r.payload_json)));
+    this.fileCache.set(projectId, { version, files });
+    return files;
   }
   history(projectId: string, filePath: string): SourceFile[] {
     return (
@@ -61,6 +79,42 @@ export class CodeIndex {
         .all(projectId, filePath) as Row[]
     ).map((r) => SourceFileSchema.parse(JSON.parse(r.payload_json)));
   }
+  /**
+   * Old-data upgrade: the persisted index may carry module ids from a previous
+   * discovery strategy. Re-map them to the current config by path without
+   * re-parsing source files; the next rebuild will rewrite them canonically.
+   */
+  reassignModules(projectId: string, moduleFor: (filePath: string) => string): number {
+    const files = this.files(projectId);
+    const updates: { path: string; payload: string }[] = [];
+    for (const file of files) {
+      const moduleId = moduleFor(file.filePath);
+      if (file.moduleId === moduleId && file.symbols.every((symbol) => symbol.moduleId === moduleId)) continue;
+      updates.push({
+        path: file.filePath,
+        payload: JSON.stringify({
+          ...file,
+          moduleId,
+          symbols: file.symbols.map((symbol) => ({ ...symbol, moduleId })),
+        }),
+      });
+    }
+    if (updates.length === 0) return 0;
+    const statement = this.db.prepare(
+      "UPDATE code_index_files SET payload_json=? WHERE project_id=? AND file_path=?",
+    );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const update of updates) statement.run(update.payload, projectId, update.path);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    this.bumpVersion(projectId);
+    return updates.length;
+  }
+
   applyBatch(
     projectId: string,
     raw: FileUpdate[],
@@ -286,17 +340,14 @@ export class CodeIndex {
         );
       }
       this.db.exec("COMMIT");
+      this.bumpVersion(projectId);
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
   }
   trustedRelations(projectId: string) {
-    const files = (
-      this.db
-        .prepare("SELECT payload_json FROM code_index_files WHERE project_id=?")
-        .all(projectId) as Row[]
-    ).map((r) => SourceFileSchema.parse(JSON.parse(r.payload_json)));
+    const files = this.files(projectId);
     const valid = new Set(
       files
         .filter((f) => f.status === "fresh")

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
+import { arch, cpus, platform, release, totalmem } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { matchPaths } from '@archsync/scanner';
@@ -32,6 +33,23 @@ import { LoginRateLimiter } from './auth-rate-limit.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
+
+interface BuildInfo { version: string; sha: string; builtAt: string | null; dirty: boolean | null }
+function readBuildInfo(): BuildInfo {
+  const raw = process.env.ARCHSYNC_BUILD_INFO;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<BuildInfo>;
+      return {
+        version: typeof parsed.version === 'string' ? parsed.version : 'unknown',
+        sha: typeof parsed.sha === 'string' ? parsed.sha : 'unknown',
+        builtAt: typeof parsed.builtAt === 'string' ? parsed.builtAt : null,
+        dirty: typeof parsed.dirty === 'boolean' ? parsed.dirty : null,
+      };
+    } catch { /* fall through */ }
+  }
+  return { version: process.env.ARCHSYNC_APP_VERSION ?? 'unknown', sha: process.env.ARCHSYNC_BUILD_SHA ?? 'unknown', builtAt: null, dirty: null };
+}
 
 export interface ServerHandle {
   url: string;
@@ -84,6 +102,16 @@ export async function createServer(overrides?: {
   const localChanges = new Map<string, RebuildResult['overlay']>();
   const codeVersions = new Map<string, number>();
   const codeCounts = new Map<string, { files: number; symbols: number; stale: number }>();
+  // Startup is observable: /healthz must answer before any repository scan.
+  const startupStartedAt = Date.now();
+  const startup = {
+    startedAt: new Date(startupStartedAt).toISOString(),
+    phase: 'starting' as 'starting' | 'restoring' | 'listening' | 'background-scan' | 'ready' | 'error',
+    listenMs: null as number | null,
+    restoredProjects: 0,
+    background: { total: 0, completed: 0, failed: 0, running: 0 },
+    lastError: null as string | null,
+  };
 
   // Registry seeds built-in projects idempotently, then any previously
   // registered external repos are reloaded from disk and merged into the
@@ -107,6 +135,7 @@ export async function createServer(overrides?: {
     }
   }
   if (externalCount > 0) log(`已恢复 ${externalCount} 个外部注册项目`);
+  startup.restoredProjects = liveEntries.size;
   const entries = [...liveEntries.values()]; // builtin entries remain the bootstrap set
 
   const app = Fastify({ logger: false, bodyLimit: 4 * 1024 * 1024 });
@@ -210,9 +239,18 @@ export async function createServer(overrides?: {
     });
   }
 
+  /** Coalesce watcher bursts: at most one queued rebuild per project. */
+  const pendingRebuilds = new Map<string, string>();
   function scheduleRebuild(entryId: string): string {
+    const pending = pendingRebuilds.get(entryId);
+    if (pending) return pending;
     const jobId = randomUUID();
-    void runRebuild(entryId, jobId).catch((err) => log('重建失败', entryId, err));
+    pendingRebuilds.set(entryId, jobId);
+    void runRebuild(entryId, jobId)
+      .catch((err) => log('重建失败', entryId, err))
+      .finally(() => {
+        if (pendingRebuilds.get(entryId) === jobId) pendingRebuilds.delete(entryId);
+      });
     return jobId;
   }
 
@@ -228,7 +266,14 @@ export async function createServer(overrides?: {
   });
   await app.register(websocket);
 
-  app.get('/healthz', async () => ({ ok: true, instanceId:process.env.ARCHSYNC_INSTANCE_ID ?? null, pid:process.pid, time: new Date().toISOString() }));
+  app.get('/healthz', async () => ({
+    ok: true,
+    instanceId: process.env.ARCHSYNC_INSTANCE_ID ?? null,
+    pid: process.pid,
+    time: new Date().toISOString(),
+    phase: startup.phase,
+    startup: { ...startup, uptimeMs: Date.now() - startupStartedAt },
+  }));
 
   // ---- unified auth gate (code mode) -------------------------------------
   // Every /api/v1/* request — reads included — requires a valid session.
@@ -350,6 +395,43 @@ export async function createServer(overrides?: {
     });
     return reply.headers({ 'cache-control': 'no-store' }).send(response);
   });
+  app.get('/api/v1/diagnostics', async () => {
+    const build = readBuildInfo();
+    let schemaVersion: number | null = null;
+    try {
+      const row = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number | null } | undefined;
+      schemaVersion = row?.version ?? null;
+    } catch { /* older DB without migrations table */ }
+    const projects = [...entryById.values()].map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      rootDir: entry.rootDir,
+      kind: registry.get(entry.id)?.kind ?? null,
+      snapshotVersion: store.project(entry.id).currentSnapshot?.version ?? null,
+      codeIndex: codeCounts.get(entry.id) ?? null,
+      codeState: codeStates.get(entry.id) ?? null,
+    }));
+    return {
+      app: { name: 'ArchSync', ...build },
+      agent: {
+        version: build.version,
+        node: process.version,
+        pid: process.pid,
+        uptimeMs: Date.now() - startupStartedAt,
+        phase: startup.phase,
+      },
+      database: { path: join(dataDir, 'registry.sqlite'), schemaVersion },
+      dataDir,
+      logDir: process.env.ARCHSYNC_LOG_DIR ?? null,
+      startup: { ...startup, uptimeMs: Date.now() - startupStartedAt },
+      projects,
+      environment: {
+        platform: platform(), release: release(), arch: arch(),
+        cpu: cpus()[0]?.model ?? 'unknown', logicalCpus: cpus().length, memoryBytes: totalmem(),
+        electron: process.env.ARCHSYNC_ELECTRON_VERSION ?? null,
+      },
+    };
+  });
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id/architecture/preferences', async (request, reply) => {
     if (!entryById.has(request.params.id)) return reply.code(404).send({ error: { code: 'project_not_found', message: '项目不存在' } });
     return readDiscoveryPreferences(dataDir, request.params.id);
@@ -465,6 +547,24 @@ export async function createServer(overrides?: {
   const watchedEntries = () => registry.monitoredEntries().map(p => p.entry).filter(e => e.rootDir);
   const watchRoots = [...new Set([...liveEntries.values()].map((e) => e.rootDir))];
   log(`文件监听启动: ${liveEntries.size} 个项目 / ${watchRoots.length} 个根`);
+  const sourceDirsFor = (entryId: string): string[] | null => {
+    try {
+      const files = codeIndex.files(entryId);
+      if (files.length === 0) return null;
+      const entry = entryById.get(entryId);
+      if (!entry?.rootDir) return null;
+      const dirs = new Set<string>();
+      for (const file of files) {
+        if (file.status === 'deleted') continue;
+        const absolute = join(entry.rootDir, file.filePath);
+        const index = Math.max(absolute.lastIndexOf('/'), absolute.lastIndexOf('\\'));
+        dirs.add(index === -1 ? absolute : absolute.slice(0, index));
+      }
+      return [...dirs];
+    } catch {
+      return null;
+    }
+  };
   let watcher = new WorkspaceWatcher(
     watchedEntries(),
     { onProjectChanged: (entry) => {
@@ -476,15 +576,15 @@ export async function createServer(overrides?: {
         }
         liveEntries.set(reloaded.id, reloaded);
         scheduleRebuild(reloaded.id);
-      } },
+      },
+      sourceDirs: sourceDirsFor,
+    },
 
     env.watchDebounceMs,
   );
   const monitorPaused = process.env.ARCHSYNC_MONITOR_PAUSED === '1';
   if (monitorPaused) {
     log('监控已暂停（ARCHSYNC_MONITOR_PAUSED）——文件监听未启动');
-  } else {
-    watcher.start();
   }
   dynamicRefs.rewatch = () => rewatchQueue.run('watcher', async () => {
     await watcher.stop();
@@ -498,7 +598,9 @@ export async function createServer(overrides?: {
           }
           liveEntries.set(reloaded.id, reloaded);
           scheduleRebuild(reloaded.id);
-        } },
+        },
+        sourceDirs: sourceDirsFor,
+      },
       env.watchDebounceMs,
     );
     if (!monitorPaused) watcher.start();
@@ -528,16 +630,89 @@ export async function createServer(overrides?: {
   }
   log(`GitHub 同步引擎${process.env.ARCHSYNC_MONITOR_PAUSED === '1' ? '已暂停' : '已启动'}（${env.githubToken ? '授权模式 4800/h' : '匿名模式 55/h'}）`);
 
-  // ---- initial snapshots ----
-  await Promise.all(entries.map((e) => runRebuild(e.id, randomUUID()).catch(() => undefined)));
-
+  // ---- listen first, scan later ----
+  // A registered large repository must never delay the HTTP server (and thus
+  // the desktop window): the persisted snapshot/index are served immediately,
+  // and full rebuilds run in the background with bounded concurrency.
+  startup.phase = 'listening';
   await app.listen({ port: env.port, host: env.host });
   const address = app.server.address();
   const actualPort = typeof address === 'object' && address !== null ? address.port : env.port;
   const displayHost = env.host === '0.0.0.0' || env.host === '::' ? '127.0.0.1' : env.host;
   const url = `http://${displayHost}:${actualPort}`;
-  log(`ArchSync 服务已启动 ${url}`);
+  startup.listenMs = Date.now() - startupStartedAt;
+  log(`ArchSync 服务已启动 ${url}（listen ${startup.listenMs}ms，${startup.restoredProjects} 个项目）`);
+  // Start watching after the server is reachable: source-aware watch targets
+  // come from the restored index, and a large repository's initial walk must
+  // not delay the window or the first background rebuild.
+  if (!monitorPaused) setTimeout(() => watcher.start(), 3500).unref?.();
   log(`鉴权模式: ${env.authMode}${env.authMode === 'code' ? '（访问码）' : env.authMode === 'mock' ? '（演示，仅限本机）' : '（无鉴权，仅限本机）'}`);
+
+  // Prefer the project the user last opened, then everything else.
+  const readActiveProjectId = (): string | null => {
+    try {
+      const row = db.prepare('SELECT payload_json FROM workspace_preferences WHERE project_id=?').get('@active-project') as
+        | { payload_json: string }
+        | undefined;
+      const parsed = row ? z.object({ projectId: z.string().max(256) }).safeParse(JSON.parse(row.payload_json)) : null;
+      return parsed?.success ? parsed.data.projectId : null;
+    } catch {
+      return null;
+    }
+  };
+  const orderedRebuildIds = (() => {
+    const active = readActiveProjectId();
+    const ids = [...new Set([...(active ? [active] : []), ...entries.map((entry) => entry.id)])];
+    return ids.filter((id) => entryById.has(id));
+  })();
+  startup.background.total = orderedRebuildIds.length;
+  startup.phase = orderedRebuildIds.length > 0 ? 'background-scan' : 'ready';
+  const runBackgroundScans = async () => {
+    const concurrency = Math.max(1, Math.min(Number(process.env.ARCHSYNC_STARTUP_CONCURRENCY ?? 2), 4));
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < orderedRebuildIds.length) {
+        const id = orderedRebuildIds[cursor++]!;
+        startup.background.running += 1;
+        const started = Date.now();
+        try {
+          // Old persisted indexes may use module ids from a previous
+          // discovery strategy. Re-map them by path first so the code view is
+          // usable immediately; the rebuild below writes canonical values.
+          const entry = entryById.get(id);
+          if (entry?.rootDir) {
+            const moduleFor = (path: string) => entry.config.modules.find((module) => matchPaths(module.paths, [path]).length > 0)?.id ?? '__observed_unplanned__';
+            const reassigned = codeIndex.reassignModules(id, moduleFor);
+            if (reassigned > 0) {
+              codeVersions.set(id, (codeVersions.get(id) ?? 0) + reassigned);
+              log(`[startup] 重映射 ${id} 的 ${reassigned} 个文件到当前模块`);
+            }
+          }
+          await runRebuild(id, randomUUID());
+          startup.background.completed += 1;
+          log(`[startup] 后台重建完成 ${id}（${Date.now() - started}ms）`);
+        } catch (error) {
+          startup.background.failed += 1;
+          startup.lastError = `${id}: ${(error as Error).message}`;
+          log(`[startup] 后台重建失败 ${id}: ${(error as Error).message}`);
+        } finally {
+          startup.background.running -= 1;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, orderedRebuildIds.length) }, worker));
+    startup.phase = 'ready';
+    log(`[startup] 后台扫描结束（总耗时 ${Date.now() - startupStartedAt}ms，失败 ${startup.background.failed}）`);
+  };
+  // Let the window connect to /healthz first: a large synchronous AST scan
+  // would otherwise block the event loop and make startup look slow.
+  setTimeout(() => {
+    void runBackgroundScans().catch((error) => {
+      startup.phase = 'error';
+      startup.lastError = (error as Error).message;
+      log('[startup] 后台扫描异常', (error as Error).message);
+    });
+  }, Number(process.env.ARCHSYNC_STARTUP_DELAY_MS ?? 2000)).unref?.();
   if (env.githubToken === null) {
     log('未配置 GITHUB_TOKEN：含演示数据的项目将使用 demo fixtures（界面会标记「演示数据」）');
   }

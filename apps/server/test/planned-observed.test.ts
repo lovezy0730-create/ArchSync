@@ -15,7 +15,13 @@ it('keeps unplanned source files separate from YAML-planned modules', async () =
   process.env.PORT = '0';
   const server = await createServer({ repoRoot: root, quiet: true });
   try {
-    const index = await (await fetch(`${server.url}/api/v1/projects/sample/code-index`)).json() as { modules: { id: string }[]; files: { filePath: string; moduleId: string }[] };
+    // Startup now listens before scanning; wait for the background index.
+    let index = { modules: [] as { id: string }[], files: [] as { filePath: string; moduleId: string }[] };
+    for (let i = 0; i < 200; i++) {
+      index = await (await fetch(`${server.url}/api/v1/projects/sample/code-index`)).json() as typeof index;
+      if (index.files.length >= 2) break;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
     expect(index.files.find((file) => file.filePath === 'src/a.ts')?.moduleId).toBe('planned');
     expect(index.files.find((file) => file.filePath === 'extra/b.ts')?.moduleId).toBe('__observed_unplanned__');
     expect(index.modules.some((module) => module.id === '__observed_unplanned__')).toBe(true);
