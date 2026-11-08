@@ -2,6 +2,13 @@
   "projectId": "sticky-notes",
   "versions": [
     {
+      "version": 3,
+      "contentHash": "51d5df4f40da4d68",
+      "generatedAt": "2026-11-08T10:33:44.461Z",
+      "sourceCommitSha": "cc67806600b00c058449bce7edd6d77ba551c720",
+      "file": "v3.json"
+    },
+    {
       "version": 2,
       "contentHash": "d1c7c7234297ddc7",
       "generatedAt": "2026-11-01T10:37:54.206Z",

@@ -2,6 +2,13 @@
   "projectId": "archsync",
   "versions": [
     {
+      "version": 3,
+      "contentHash": "dbc8b40a62d868f4",
+      "generatedAt": "2026-11-08T10:33:44.461Z",
+      "sourceCommitSha": "cc67806600b00c058449bce7edd6d77ba551c720",
+      "file": "v3.json"
+    },
+    {
       "version": 2,
       "contentHash": "0faefeee3dc341bb",
       "generatedAt": "2026-11-01T10:37:54.206Z",
